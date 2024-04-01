@@ -1,0 +1,143 @@
+infra:
+  exp_name: ts2/he/simclr/ok
+  log_dir: /nfs/turbo/umms-tocho-ns/exp/chengjia
+  comment: dev
+  log_gpu: false
+  seed: 1000
+data:
+  set: he
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+        train: /nfs/turbo/umms-tocho-ns/code/chengjia/torchsrh2/ts2/data/78a424ce_slide_all
+        val: /nfs/turbo/umms-tocho-ns/code/chengjia/torchsrh2/ts2/data/78a424ce_slide_all
+  transform:
+    train:
+      base_aug_params: {}
+      strong_aug_config:
+        aug_list:
+        - which: random_horiz_flip
+          params: {}
+        - which: random_vert_flip
+          params: {}
+        - which: gaussian_noise
+          params: {}
+        - which: color_jitter
+          params:
+            brightness: 0.8
+            contrast: 0.8
+            saturation: 0.8
+            hue: 0.2
+        - which: random_autocontrast
+          params: {}
+        - which: random_solarize
+          params:
+            threshold: 0.2
+        - which: random_sharpness
+          params:
+            sharpness_factor: 2
+        - which: gaussian_blur
+          params:
+            kernel_size: 5
+            sigma: 1
+        - which: random_erasing
+          params: {}
+        - which: random_affine
+          params:
+            degrees: 10
+            translate: [0.1, 0.3]
+        - which: random_resized_crop
+          params:
+            size: 300
+        aug_prob: 0.3
+    val: ${.train}
+  dataset:
+    which: TODO
+    params:
+      common:
+        data_root: /nfs/umms-tocho-mr/dropbox/data/root_he_db 
+        num_transforms: 2
+        num_samples: 1
+        num_instance_self_replicate: 1
+        max_hierarchical_replicate: 1
+        balance_instance_class: False
+      train: {}
+      val: {}
+  loader:
+    params:
+      common:
+        pin_memory: True
+        prefetch_factor: 10
+        num_workers: auto
+      train:
+        batch_size: 512 #384
+        drop_last: True
+        shuffle: True
+      val:
+        batch_size: 128
+        drop_last: False
+        shuffle: False
+    val_sampler:
+      num_samples: 64                                                             
+      replacement: False  
+model:
+    backbone:
+        which: resnet34
+        params: {}
+    mlp_hidden: [512]
+    num_embedding_out: 128
+training:
+    num_epochs: 800
+    optimizer:
+        which: adamw
+        scale_lr: True
+        params:
+            lr: 0.001
+            betas: [0.9, 0.999]
+            eps: 1.0e-8
+            weight_decay: 0.01
+            amsgrad: False
+    scheduler:
+        which: cos_linear_warmup
+        params:
+            num_warmup_steps: 0.1
+            num_cycles: 0.5
+    #scheduler:
+    #    which: step_lr
+    #    params:
+    #        step_size: 1
+    #        step_unit: epoch # epoch or step
+    #        gamma: 0.5
+    objective:
+        which: simclr
+        supcon_params: {}
+    #objective:
+    #    which: vicreg
+    #    params:
+    #        sim_coeff: 25.0
+    #        std_coeff: 25.0
+    #        cov_coeff: 1.0
+    #        epsilon: 1.0e-4
+    #objective:
+    #    which: byol
+    #    params:
+    #        ema_beta: 0.99
+    #objective:
+    #    which: simsiam
+    resume_checkpoint: null
+    amp: 'bf16-mixed'                                                             
+    deterministic: False                                                          
+    fl32_preci: medium
+valid:
+    freq:
+        interval: 100
+        unit: "epoch"
+tune:
+    diagonal_items: true
+    params:
+        training/optimizer/params/lr: [0.001, 0.0001, 0.01]
+        infra/comment:
+            - simclr_1000_lr0.001
+            - simclr_1000_lr0.0001
+            - simclr_1000_lr0.01

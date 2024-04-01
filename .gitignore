@@ -1,0 +1,15 @@
+env/
+logs/
+model/
+__pycache__/
+*.egg-info/
+out/
+assets/
+.vscode/
+slurm*.out
+.DS_Store
+*.pt
+*.npy
+*.npz
+.ipynb_checkpoints
+core.*
