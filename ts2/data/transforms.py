@@ -1,7 +1,7 @@
 import random
 import logging
 from functools import partial
-from typing import List, Tuple, Dict, Optional, Callable
+from typing import List, Tuple, Dict, Optional, Callable, Any
 
 import numpy as np
 from PIL import Image
@@ -26,7 +26,7 @@ from torch import Tensor
 class HistologyTransform(torch.nn.Module):
     """Transformation module for histology data training"""
 
-    def __init__(self, which_set, base_aug_params, strong_aug_config):
+    def __init__(self, which_set, base_aug_params, strong_aug_params):
         super().__init__()
         base_augs = {
             "srh": SRHBaseTransform,
@@ -34,7 +34,7 @@ class HistologyTransform(torch.nn.Module):
             "cifar": VisionBaseTransform
         }
         self.base_aug = base_augs[which_set](**base_aug_params)
-        self.strong_aug = StrongTransform(strong_aug_config)
+        self.strong_aug = StrongTransform(**strong_aug_params)
 
     def forward(self, x: Tensor) -> Tensor:  # pylint: disable=missing-function-docstring
         return self.strong_aug(self.base_aug(x))
@@ -80,46 +80,46 @@ class VisionBaseTransform(torch.nn.Module):
             layers.append(Normalize(**imnet_norm_params))
         self.model = Compose(layers)
 
-    def forward(self, x):  # pylint: disable=missing-function-docstring
+    def forward(self, x: torch.Tensor):  # pylint: disable=missing-function-docstring
         return self.model(x)
 
 
 class NoBaseTransform(torch.nn.Module):
     """No base transformation used."""
 
-    def __init__(self):
+    def __init__(self):  # pylint: disable=missing-function-docstring
         super().__init__()
 
-    def forward(self, x):  # pylint: disable=missing-function-docstring
+    def forward(self, x: torch.Tensor):  # pylint: disable=missing-function-docstring
         return x
 
 
 class StrongTransform(torch.nn.Module):
     """Strong transformations for all image data."""
 
-    def __init__(self, strong_aug_config):
+    def __init__(self, aug_list: List[Dict[str, Any]], aug_prob: float):
         super().__init__()
-        prob = strong_aug_config.aug_prob
-        rand_apply_p = partial(self.rand_apply, prob=prob)
+
+        rand_apply_p = partial(self.rand_apply, prob=aug_prob)
         callable_dict = {
             "inpaint_rows_always_apply": InpaintRows,
             "inpaint_rows": partial(rand_apply_p, which=InpaintRows),
             "resize": Resize,
-            "random_horiz_flip": partial(RandomHorizontalFlip, p=prob),
-            "random_vert_flip": partial(RandomVerticalFlip, p=prob),
+            "random_horiz_flip": partial(RandomHorizontalFlip, p=aug_prob),
+            "random_vert_flip": partial(RandomVerticalFlip, p=aug_prob),
             "gaussian_noise": partial(rand_apply_p, which=GaussianNoise),
             "color_jitter": partial(rand_apply_p, which=ColorJitter),
             #partial(rand_apply, which=ColorJitter, p=0.8),
-            "random_autocontrast": partial(RandomAutocontrast, p=prob),
-            "random_solarize": partial(RandomSolarize, p=prob),
-            "random_sharpness": partial(RandomAdjustSharpness, p=prob),
+            "random_autocontrast": partial(RandomAutocontrast, p=aug_prob),
+            "random_solarize": partial(RandomSolarize, p=aug_prob),
+            "random_sharpness": partial(RandomAdjustSharpness, p=aug_prob),
             "drop_color": partial(rand_apply_p, which=Grayscale),
             "gaussian_blur": partial(rand_apply_p, GaussianBlur),
-            "random_erasing": partial(RandomErasing, p=prob),
+            "random_erasing": partial(RandomErasing, p=aug_prob),
             "random_affine": partial(rand_apply_p, RandomAffine),
             "random_crop": partial(RandomCrop),
             "random_resized_crop": partial(rand_apply_p, RandomResizedCrop),
-            "random_grayscale": partial(RandomGrayscale, p=prob),
+            "random_grayscale": partial(RandomGrayscale, p=aug_prob),
             "fft_low_pass_filter": partial(rand_apply_p, FFTLowPassFilter),
             "fft_high_pass_filter": partial(rand_apply_p, FFTHighPassFilter),
             "fft_band_pass_filter": partial(rand_apply_p, FFTBandPassFilter),
@@ -127,10 +127,8 @@ class StrongTransform(torch.nn.Module):
             #"equalize": partial(RandomEqualize, p=rand_prob) TODO
         }
 
-        self.transforms_ = Compose([
-            callable_dict[aug["which"]](**aug["params"])
-            for aug in strong_aug_config.aug_list
-        ])
+        self.transforms_ = Compose(
+            [callable_dict[aug["which"]](**aug["params"]) for aug in aug_list])
 
     @staticmethod
     def rand_apply(which, prob, **kwargs):

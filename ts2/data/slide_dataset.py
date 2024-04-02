@@ -1,6 +1,6 @@
 import logging
 from multiprocessing.sharedctypes import Value
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from abc import ABC
 from os.path import join as opj
 import pandas
@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from torchvision import transforms
 
-from torchsrh.datasets.db_improc import process_read_srh
+from ts2.data.db_improc import process_read_memmap
 from ts2.data.balanced_dataset import BalancedDataset
 
 
@@ -30,18 +30,18 @@ class HierarchicalBaseDataset(BalancedDataset, ABC):
             slide count in each class
     """
 
-    def __init__(
-            self,
-            data_root:str,
-            instances:List,
-            transform: callable,
-            target_transform: Optional[callable] = torch.tensor,
-            num_transforms: int = 1,
-            process_read_im: callable = process_read_srh,
-            num_instance_self_replicate: int = 1,
-            max_hierarchical_replicate: int = 1,
-            balance_instance_class=False,
-            **kwargs) -> None:
+    def __init__(self,
+                 data_root: str,
+                 instances: List,
+                 tensor_shape_map: Dict,
+                 transform: callable,
+                 target_transform: Optional[callable] = torch.tensor,
+                 num_transforms: int = 1,
+                 process_read_im: callable = process_read_memmap,
+                 num_instance_self_replicate: int = 1,
+                 max_hierarchical_replicate: int = 1,
+                 balance_instance_class=False,
+                 **kwargs) -> None:
         """Inits the base abstract dataset
 
         Populate each attribute and walk through each patient to look for patches
@@ -63,6 +63,7 @@ class HierarchicalBaseDataset(BalancedDataset, ABC):
         self.num_replicates_ = -1
 
         self.instances_ = instances
+        self.tensor_shape_map = tensor_shape_map
 
         assert len(self.instances_) > 0
         self.init_weights_ = self.get_weights()
@@ -76,11 +77,10 @@ class HierarchicalBaseDataset(BalancedDataset, ABC):
         assert self.num_replicates_ > 0
         return len(self.instances_) * self.num_replicates_
 
+
 class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
 
-    def __init__(self,
-                 num_samples: int = 1,
-                 **kwargs):
+    def __init__(self, num_samples: int = 1, **kwargs):
 
         super().__init__(**kwargs)
         self.num_samples_ = num_samples
@@ -93,16 +93,23 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
 
     def read_images(self, inst: List):
         """Read in a list of patches, different patches and transformations"""
-        im_id = np.random.permutation(np.arange(len(inst)))
+        im_id = np.random.permutation(np.arange(len(inst["patches"])))
+
         images = []
         imps_take = []
-
         idx = 0
+
         while len(images) < self.num_samples_:
-            curr_inst = inst[im_id[idx % len(im_id)]]
-            curr_path = self.make_im_path(curr_inst["im_path"])
+            curr_inst = inst["patches"][im_id[idx % len(im_id)]]
+            curr_path = self.make_im_path(
+                self.tensor_shape_map[curr_inst["slide_name"]]["path"])
+
             try:
-                images.append(self.process_read_im_(curr_path))
+                images.append(
+                    self.process_read_im_(
+                        curr_path,
+                        tuple(self.tensor_shape_map[inst["name"]]["shape"]),
+                        curr_inst["patch_idx"]))
                 imps_take.append(curr_path)
                 idx += 1
             except:
@@ -120,12 +127,13 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
         idx = idx % len(self.instances_)
         instance = self.instances_[idx]
         target = self.class_to_idx_[instance["label"]]
-        im, imp = self.read_images(instance["patches"])
+        im, imp = self.read_images(instance)
 
         if self.target_transform_ is not None:
             target = self.target_transform_(target)
 
         return {"image": im, "label": target, "path": [imp]}
+
 
 class HierarchicalDataset(HierarchicalBaseDataset):
     """Patient Dataset. Treats each patient to be independent.
@@ -162,6 +170,7 @@ class HierarchicalDataset(HierarchicalBaseDataset):
         logging.info(f"number of replicates {self.num_replicates_}")
 
     def read_images_slide(self, inst: List):
+        raise NotImplementedError()
         """Read in a list of patches, different patches and transformations"""
         im_id = np.random.permutation(np.arange(len(inst)))
         images = []
@@ -209,9 +218,12 @@ class HierarchicalDataset(HierarchicalBaseDataset):
 
         return {"image": im, "label": target, "path": [imp]}
 
+
 HiDiscDataset = HierarchicalDataset
 
 if __name__ == '__main__':
+    raise NotImplementedError()
+
     from torchsrh.datasets.db_improc import get_transformations
     from torch.utils.data import DataLoader
 

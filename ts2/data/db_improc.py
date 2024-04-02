@@ -5,10 +5,31 @@ from tifffile import imread
 import torch
 import torchvision
 from torchvision.transforms.functional import to_tensor
+import einops
+import logging
+
 
 def instantiate_process_read(which: str):
     """Returns the proper process read function"""
-    return {"srh": process_read_srh, "he": process_read_png}[which]
+    return {
+        "srh": process_read_srh,
+        "png": process_read_png,
+        "memmap": process_read_memmap
+    }[which]
+
+
+def process_read_memmap(mm_path, tensor_shape, patch_idx):
+    """Read in two channel image
+
+    Returns:
+        A 2 channel torch Tensor in the shape 2 * H * W
+    """
+
+    im = np.array(
+        np.memmap(mm_path, dtype="uint8", mode="r",
+                  shape=tensor_shape)[patch_idx, ...])
+    return einops.rearrange(
+        torch.from_numpy(im).to(float).contiguous(), "h w c -> c h w")
 
 
 def process_read_srh(imp: str) -> torch.Tensor:
@@ -21,7 +42,6 @@ def process_read_srh(imp: str) -> torch.Tensor:
         A 2 channel torch Tensor in the shape 2 * H * W
     """
 
-    # reference: https://github.com/pytorch/vision/blob/49468279/torchvision/transforms/functional.py#L133
     return torch.from_numpy(imread(imp).astype(np.float32)).contiguous()
 
 
@@ -35,4 +55,4 @@ def process_read_png(imp: str) -> torch.Tensor:
         A TODO
     """
     # https://pytorch.org/vision/main/generated/torchvision.transforms.ToTensor.html
-    return to_tensor(Image.open(imp))[0:3,...]
+    return to_tensor(Image.open(imp))[0:3, ...]

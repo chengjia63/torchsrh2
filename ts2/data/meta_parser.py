@@ -4,7 +4,7 @@ import math
 import random
 import logging
 import itertools
-from typing import List, Any, Optional, Callable, Union
+from typing import List, Any, Optional, Callable, Union, Tuple, Dict
 from abc import ABC, abstractmethod
 from enum import Enum, unique, auto
 from os.path import join as opj
@@ -28,13 +28,20 @@ class DiscriminationLevel(str, Enum):
 
 class CachedCSVParser():
 
-    def __call__(self, cache_dir: str):
-        with open(opj(cache_dir, "instances.json")) as fd:
-            data = json.load(fd)
-        return data
+    def __init__(self, cache_dir: str):
+        self.cache_dir = cache_dir
 
-    def get_meta(self, cache_dir):
-        with open(opj(cache_dir, "meta.json")) as fd:
+    def __call__(self):
+        with open(opj(self.cache_dir, "instances.json")) as fd:
+            data = json.load(fd)
+
+        with open(opj(self.cache_dir, "mmap_info.json")) as fd:
+            ts = json.load(fd)
+
+        return data, ts
+
+    def get_meta(self):
+        with open(opj(self.cache_dir, "meta.json")) as fd:
             data = json.load(fd)
         return data
 
@@ -115,7 +122,7 @@ class SRHCSVParser(ABC):
 class PatchCSVParser(SRHCSVParser):
 
     def __init__(self, data_root: str, seg_model: str, slide_patch_thres: int,
-                 df: Union[pd.DataFrame, str], use_emb: bool,
+                 df: Union[pd.DataFrame, str], which_patch_path_func: str,
                  use_patch_code_as_label: bool, primary_label_idx: int):
 
         if type(df) is pd.DataFrame:
@@ -139,24 +146,25 @@ class PatchCSVParser(SRHCSVParser):
             "data_root": data_root,
             "seg_model": seg_model,
             "slide_patch_thres": slide_patch_thres,
-            "use_emb": use_emb
+            "which_patch_path_func": which_patch_path_func,
         }
 
         assert len(slide_list) == len(set(slide_list))  # slides are unique
 
     def __call__(self, cache_dir: str, level: str):
         if level == DiscriminationLevel.PATCH:
-            inst = self.get_patch_instances()
+            raise NotImplementedError()
+            inst, mmap_info = self.get_patch_instances()
         elif level == DiscriminationLevel.SLIDE:
-            inst = self.get_slide_instances()
+            inst, mmap_info = self.get_slide_instances()
         elif level == DiscriminationLevel.PATIENT:
-            inst = self.get_patient_instances()
+            inst, mmap_info = self.get_patient_instances()
         elif level == DiscriminationLevel.HIERARCHICAL:
-            inst = self.get_hierarchical_instances()
+            inst, mmap_info = self.get_hierarchical_instances()
         else:
             raise ValueError(
-                f"level must be in {{patch, slide, patient, hierarchical}}, ",
-                f"got {level}")
+                "level must be in {slide, patient, hierarchical}, got %s" %
+                level)
 
         params = self.hyper_
         params.update({"gt_parser": self.gt_parser_params_})
@@ -171,44 +179,62 @@ class PatchCSVParser(SRHCSVParser):
         with open(opj(cache_dir, "instances.json"), "w",
                   encoding="utf-8") as fd:
             json.dump(inst, fd)
+        with open(opj(cache_dir, "mmap_info.json"), "w",
+                  encoding="utf-8") as fd:
+            json.dump(mmap_info, fd)
 
     def get_cell_instances(self):
         raise ValueError(
             "Patch CSV Parser does not support cell level instances")
 
-    def get_patch_instances(self):
-        instances = []
+    def get_patch_instances(
+            self) -> Tuple[List[Dict[str, Any]], Dict[str, List[int]]]:
+        raise NotImplementedError()
+        patch_instances = []
+        tensor_shapes = {}
 
         for (inst_name, patient_id), patient_s in tqdm(
                 self.df_.groupby(["institution", "patient"], dropna=False)):
-            instances += PatchMetaParser(
+            inst_i, shape_i = PatchMetaParser(
                 inst_name=inst_name,
                 patient_id=patient_id,
                 get_patch_gt=self.get_gt_,
-                **self.hyper_).process_slides(patient_s)
-        return instances
+                **self.hyper_).process_all_slides(patient_s)
+            patch_instances.extend(inst_i)
+            tensor_shapes.update(shape_i)
+        return patch_instances, tensor_shapes
 
-    def get_slide_instances(self):
-        instances = []
+    def get_slide_instances(
+            self) -> Tuple[List[Dict[str, Any]], Dict[str, List[int]]]:
+        slide_instances = []
+        tensor_shapes = {}
+
         df_gb = tqdm(self.df_.groupby(["institution", "patient"],
                                       dropna=False))
         for (inst_name, patient_id), patient_s in df_gb:
-            mp = PatchMetaParser(inst_name=inst_name,
-                                 patient_id=patient_id,
-                                 get_patch_gt=self.get_gt_,
-                                 **self.hyper_)
+            mp_i = PatchMetaParser(inst_name=inst_name,
+                                   patient_id=patient_id,
+                                   get_patch_gt=self.get_gt_,
+                                   **self.hyper_)
             for _, slide_s in patient_s.iterrows():
-                slide_instance = {
-                    "name": f"{patient_id}/{slide_s['mosaic']}",
-                    "label": self.get_gt_(slide_s, None),
-                    "patches": mp.process_slide(slide_s)
-                }
-                if len(slide_instance):
-                    instances.append(slide_instance)
-        return instances
+                patches_ij, slide_shape_ij = mp_i.process_slide(slide_s)
 
-    def get_patient_instances(self):
-        instances = []
+                if patches_ij:
+                    slide_instance_ij = {
+                        "name": f"{patient_id}-{slide_s['mosaic']}",
+                        "label": self.get_gt_(slide_s, None),
+                        "patches": patches_ij
+                    }
+                    slide_instances.append(slide_instance_ij)
+                    tensor_shapes.update(slide_shape_ij)
+
+        return slide_instances, tensor_shapes
+
+    def get_patient_instances(
+            self) -> Tuple[List[Dict[str, Any]], Dict[str, List[int]]]:
+        patient_instances = []
+        tensor_shapes = {}
+
         group_keys = [
             "institution", "patient",
             self.get_gt_.get_gt_col_name(self.df_)
@@ -218,51 +244,65 @@ class PatchCSVParser(SRHCSVParser):
             if pd.isna(prime_label): prime_label = "None"
             logging.info(f"grouped patient ({inst_name}, {patient_id}, " +
                          f"{prime_label}, {len(patient_s)})")
-            mp = PatchMetaParser(inst_name=inst_name,
-                                 patient_id=patient_id,
-                                 get_patch_gt=self.get_gt_,
-                                 **self.hyper_)
+            mp_i = PatchMetaParser(inst_name=inst_name,
+                                   patient_id=patient_id,
+                                   get_patch_gt=self.get_gt_,
+                                   **self.hyper_)
 
-            patient_instance = {
-                "name": patient_id,
-                "label": prime_label,
-                "patches": mp.process_slides(patient_s)
-            }
-            if len(patient_instance):
-                instances.append(patient_instance)
-        return instances
+            patches_i, slides_shape_i = mp_i.process_all_slides(patient_s)
 
-    def get_hierarchical_instances(self):
-        instances = []
-        group_keys = [
-            "institution", "patient",
-            self.get_gt_.get_gt_col_name(self.df_)
-        ]
-        df_gb = tqdm(self.df_.groupby(group_keys, dropna=False))
-        for ((inst_name, patient_id, prime_label), patient_s) in df_gb:
-
-            if pd.isna(prime_label): prime_label = "None"
-            logging.info(f"grouped patient ({inst_name}, {patient_id}, " +
-                         f"{prime_label}, {len(patient_s)})")
-            mp = PatchMetaParser(inst_name=inst_name,
-                                 patient_id=patient_id,
-                                 get_patch_gt=self.get_gt_,
-                                 **self.hyper_)
-
-            slides = [{
-                "name": f"{patient_id}/{slide_s['mosaic']}",
-                "label": self.get_gt_(slide_s, None),
-                "patches": mp.process_slide(slide_s)
-            } for _, slide_s in patient_s.iterrows()]
-            slides = [s for s in slides if len(s)]
-
-            if len(slides):
-                instances.append({
+            if patches_i:
+                patient_instance_i = {
                     "name": patient_id,
                     "label": prime_label,
-                    "slides": slides
+                    "patches": patches_i
+                }
+
+                patient_instances.append(patient_instance_i)
+                tensor_shapes.update(slides_shape_i)
+
+        return patient_instances, tensor_shapes
+
+    def get_hierarchical_instances(
+            self) -> Tuple[List[Dict[str, Any]], Dict[str, List[int]]]:
+        patient_instances = []
+        mmap_info = {}
+
+        group_keys = [
+            "institution", "patient",
+            self.get_gt_.get_gt_col_name(self.df_)
+        ]
+        df_gb = tqdm(self.df_.groupby(group_keys, dropna=False))
+        for ((inst_name, patient_id, prime_label), patient_s) in df_gb:
+
+            if pd.isna(prime_label): prime_label = "None"
+            logging.info(f"grouped patient ({inst_name}, {patient_id}, " +
+                         f"{prime_label}, {len(patient_s)})")
+            mp_i = PatchMetaParser(inst_name=inst_name,
+                                   patient_id=patient_id,
+                                   get_patch_gt=self.get_gt_,
+                                   **self.hyper_)
+
+            slides_i = []
+            for _, slide_s in patient_s.iterrows():
+                patches_ij, slide_shape = mp_i.process_slide(slide_s)
+
+                if patches_ij:
+                    slides_i.append({
+                        "name": f"{patient_id}-{slide_s['mosaic']}",
+                        "label": self.get_gt_(slide_s, None),
+                        "patches": patches_ij
+                    })
+                    mmap_info.update(slide_shape)
+
+            if slides_i:
+                patient_instances.append({
+                    "name": patient_id,
+                    "label": prime_label,
+                    "slides": slides_i
                 })
-        return instances
+
+        return patient_instances, mmap_info
 
 
 class SRHMetaParser(ABC):
@@ -276,6 +316,7 @@ class SRHMetaParser(ABC):
 
         Produces path to the image
         """
+        raise NotImplementedError()
         path = os.path.join(slide_s["institution"], slide_s["patient"],
                             str(slide_s.mosaic), "patches", patch_id)
         if not (path.endswith(".tif") or path.endswith(".tiff")
@@ -284,7 +325,7 @@ class SRHMetaParser(ABC):
 
         return path
 
-    def make_emb_path(self, patch_id: str, slide_s: pd.Series):
+    def make_slide_emb_path(self, slide_s: pd.Series):
         """Parser for patch data.
 
         Produces partial path requiring the comment and .pt suffix to the pt
@@ -294,16 +335,25 @@ class SRHMetaParser(ABC):
                             str(slide_s.mosaic),
                             f"{slide_s['patient']}.{slide_s['mosaic']}")
 
+    def make_slide_memmap_path(self, slide_s: pd.Series):
+        """Parser for patch data.
+
+        Memmap for wholeslide
+        """
+        return os.path.join(
+            slide_s["institution"], slide_s["patient"], str(slide_s.mosaic),
+            "patches", f"{slide_s['patient']}-{slide_s['mosaic']}-patches.dat")
+
     @abstractmethod
-    def process_slides(self):
+    def process_all_slides(self, patient_s=None):
         raise NotImplementedError()
 
     @abstractmethod
-    def process_slide(self):
+    def process_slide(self, slide_s=None):
         raise NotImplementedError()
 
     @abstractmethod
-    def ceil_instance_thres(self):
+    def ceil_instance_thres(self, instances=None):
         raise NotImplementedError()
 
 
@@ -331,7 +381,7 @@ class PatchMetaParser(SRHMetaParser):
                  data_root: str,
                  seg_model: str,
                  slide_patch_thres: Optional[int] = None,
-                 use_emb: bool = False,
+                 which_patch_path_func: str = "make_im_path",
                  get_patch_gt: Optional[Callable] = None):
         """Inits the SRH Metadata parser"""
         self.data_root_ = data_root
@@ -343,25 +393,31 @@ class PatchMetaParser(SRHMetaParser):
         with open(meta_file) as fd:
             self.p_meta_ = json.load(fd)
 
-        if use_emb:
-            self.patch_path_func_ = self.make_emb_path
-        else:
-            self.patch_path_func_ = self.make_im_path
+        self.patch_path_func_ = {
+            "make_slide_emb_path": self.make_slide_emb_path,
+            "make_slide_memmap_path": self.make_slide_memmap_path
+        }[which_patch_path_func]
 
-    def process_slides(self, patient_s: pd.Series):
-        return list(
-            itertools.chain(*[
-                self.process_slide(slide_s)
-                for _, slide_s in patient_s.iterrows()
-            ]))
+    def process_all_slides(self, patient_s: pd.Series):
 
-    def process_slide(self, slide_s: pd.Series):
+        inst = []
+        mmap_info = {}
+
+        for _, slide_s in patient_s.iterrows():
+            inst_i, shape_i = self.process_slide(slide_s)
+            inst.extend(inst_i)
+            mmap_info.update(shape_i)
+
+        return inst, mmap_info
+
+    def process_slide(self, slide_s: pd.Series):  # one slide
         slide_name = str(slide_s.mosaic)
         if slide_name not in self.p_meta_["slides"]:
             logging.warning(
                 f"Slide {slide_s['patient']}/{slide_s['mosaic']} DNE")
-            return []
+            return [], {}
 
+        patient_slide_name = f"{slide_s.patient}-{slide_s.mosaic}"
         all_patches_slide = self.p_meta_["slides"][slide_name]["predictions"][
             self.seg_model_]
         patch_code_decoded = patch_code_to_list(slide_s["patch_code"])
@@ -372,16 +428,19 @@ class PatchMetaParser(SRHMetaParser):
         if patch_code_diff:
             logging.warning(f"Slide {slide_s.patient} - {slide_s.mosaic} " +
                             f"does not have any patches in {patch_code_diff}")
-
-        slide_instances = [{
-            "im_path":
-            self.patch_path_func_(p_name, slide_s),
-            "label": (self.label_parser_.get_gt(slide_s, p_code)
-                      if self.label_parser_ else None),
-            "patch_name":
-            p_name
-        } for p_code in patch_code_decoded
-                           for p_name in all_patches_slide[p_code]]
+        slide_instances = [
+            {
+                #"label": (self.label_parser_.get_gt(slide_s, p_code)
+                #          if self.label_parser_ else None),
+                "slide_name":
+                patient_slide_name,
+                "patch_name":
+                p_name.removeprefix(patient_slide_name).removeprefix("-"),
+                "patch_idx":
+                all_patches_slide[p_code][p_name]
+            } for p_code in patch_code_decoded
+            for p_name in all_patches_slide[p_code]
+        ]
 
         if len(slide_instances) > 0:
             if self.label_parser_:
@@ -399,7 +458,14 @@ class PatchMetaParser(SRHMetaParser):
 
         if self.slide_patch_thres_:
             slide_instances = self.ceil_instance_thres(slide_instances)
-        return slide_instances
+
+        slide_mmap_info = {
+            patient_slide_name: {
+                "path": self.patch_path_func_(slide_s),
+                "shape": all_patches_slide["tensor_shape"]
+            }
+        }
+        return slide_instances, slide_mmap_info
 
     def ceil_instance_thres(self, instances: List[Any]):
         """random sample thres number of instances from instances list
@@ -413,6 +479,12 @@ class PatchMetaParser(SRHMetaParser):
             thres: the threshold for number of instances(slides/patches) to be
                 sampled / oversampled
             """
+
+        logging.critical("About to execute ceil_instance_thres. " +
+                         "That is so 2021. " +
+                         "Are you sure you want to do this?")
+        logging.critical("If you really want to do this, come remove this")
+        raise ValueError()
 
         num_repeat = math.ceil(self.slide_patch_thres_ / len(instances))
         random.shuffle(instances)
@@ -429,7 +501,7 @@ if __name__ == "__main__":
         seg_model: 08dc928c
         slide_patch_thres: null
         df: /nfs/turbo/umms-tocho-ns/data/data_splits/he_all/he_toy.csv
-        use_emb: False
+        which_patch_path_func: make_slide_memmap_path
         use_patch_code_as_label: True
         primary_label_idx: 0
     """

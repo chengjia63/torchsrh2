@@ -20,7 +20,7 @@ from ts2.data.transforms import HistologyTransform
 class PatchDataModule(pl.LightningDataModule):
     possible_sets: List[str] = ["train", "val", "pred"]
 
-    def __init__(self, log_root: str, config: OmegaConf):
+    def __init__(self, config: OmegaConf):
         super().__init__()
         self.set_ = config.data.set
         self.transforms_ = {
@@ -32,14 +32,10 @@ class PatchDataModule(pl.LightningDataModule):
 
         self.parser_config_ = config.data.parser
 
-        self.dset_config_ = config.data.dataset
-        self.train_dataset_ = self.val_dataset_ = None
-
-        self.loader_config_ = config.data.loader
-        self.seed_ = config.infra.seed
-
         # run parser and save, if need be
         if self.parser_config_.which == "PatchCSVParser":
+            log_root = config.data.parser.cache_root
+
             inst_hash = uuid.uuid4().hex[:8]
             level = self.parser_config_.level
             self.instance_cache_fname_ = {
@@ -56,33 +52,48 @@ class PatchDataModule(pl.LightningDataModule):
         else:
             self.instance_cache_fname_ = self.parser_config_.params.cached_parser_file
 
-        self.train_dset_len_ = CachedCSVParser().get_meta(
-            self.instance_cache_fname_["train"])["instance_len"]
+        #self.train_dset_len_ = CachedCSVParser(self.instance_cache_fname_["train"])["instance_len"]).get_meta()
+
+        self.dset_config_ = config.data.dataset
+        self.loader_config_ = config.data.loader
+        self.seed_ = config.infra.seed
+        self.train_dataset_, self.val_dataset_ = None, None
 
     def setup(self, stage: str):
-        prf = instantiate_process_read(which=self.set_)
+        datasets = {
+            "SingleLevelHierarchicalDataset": SingleLevelHierarchicalDataset
+        }
+        prf = instantiate_process_read(
+            which=self.dset_config_.which_process_read)
 
         if stage == "fit":
-            train_inst = CachedCSVParser()(self.instance_cache_fname_["train"])
-            self.train_dataset_ = SingleLevelHierarchicalDataset(
+            train_inst, train_tsm = CachedCSVParser(
+                self.instance_cache_fname_["train"])()
+            self.train_dataset_ = datasets[self.dset_config_.which](
                 instances=train_inst,
+                tensor_shape_map=train_tsm,
                 transform=self.transforms_["train"],
                 process_read_im=prf,
                 **self.dset_config_.params.common,
                 **self.dset_config_.params.train)
-            val_inst = CachedCSVParser()(self.instance_cache_fname_["val"])
-            self.val_dataset_ = SingleLevelHierarchicalDataset(
+
+            val_inst, val_tsm = CachedCSVParser(
+                self.instance_cache_fname_["val"])()
+            self.val_dataset_ = datasets[self.dset_config_.which](
                 instances=val_inst,
+                tensor_shape_map=val_tsm,
                 transform=self.transforms_["val"],
                 process_read_im=prf,
                 **self.dset_config_.params.common,
                 **self.dset_config_.params.val)
 
         if stage in {"test", "predict"}:
-            val_inst = CachedCSVParser()(self.instance_cache_fname_["val"])
-            self.val_dataset_ = SingleLevelHierarchicalDataset(
+            val_inst, val_tsm = CachedCSVParser(
+                self.instance_cache_fname_["test"])()
+            self.val_dataset_ = datasets[self.dset_config_.which](
                 instances=val_inst,
-                transform=self.transforms_["val"],
+                tensor_shape_map=val_tsm,
+                transform=self.transforms_["test"],
                 process_read_im=prf,
                 **self.dset_config_.params.common,
                 **self.dset_config_.params.val)
@@ -159,23 +170,24 @@ if __name__ == "__main__":
         set: he
         parser:
             which: PatchCSVParser
-            level: slide
+            cache_root: ./data/
+            level: slide #hierarchical
             params:
                 common:
-                    data_root: /nfs/umms-tocho-mr/dropbox/data/root_he_db
-                    seg_model: 08dc928c
+                    data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
+                    seg_model: 226232a4
                     slide_patch_thres: null
-                    use_emb: False
+                    which_patch_path_func: make_slide_memmap_path
                     use_patch_code_as_label: True
                     primary_label_idx: 0
                 train:
-                    df: /nfs/turbo/umms-tocho-ns/data/data_splits/he_all/he_train.csv
+                    df: /nfs/turbo/umms-tocho/data/data_splits/he_neuro/he_toy.csv
                 val:
-                    df: /nfs/turbo/umms-tocho-ns/data/data_splits/he_all/he_all.csv
+                    df: /nfs/turbo/umms-tocho/data/data_splits/he_neuro/he_train.csv
         transform:
             train:
                 base_aug_params: {}
-                strong_aug_config:
+                strong_aug_params:
                     aug_list:
                     - which: random_horiz_flip
                       params: {}
@@ -209,7 +221,8 @@ if __name__ == "__main__":
                     aug_prob: 0.3
             val: ${.train}
         dataset:
-            which: TODOl
+            which: SingleLevelHierarchicalDataset
+            which_process_read: memmap
             params:
                 common:
                     num_transforms: 1
@@ -237,6 +250,7 @@ if __name__ == "__main__":
               num_samples: 64                                                             
               replacement: False  
     """
+
     params2 = """
     infra:
         seed: 1000
@@ -246,12 +260,14 @@ if __name__ == "__main__":
             which: CachedCSVParser
             params:
                 cached_parser_file:
-                    train: ./2f00f9f2_slide_train
-                    val: ./2f00f9f2_slide_val
+                    train: ./data/cca90400_slide_train
+                    val: ./data/cca90400_slide_toy
         transform:
                 train:
                     base_aug_params: {}
-                    strong_aug_config:
+                        #laser_noise_config: null
+                        #base_aug: three_channels
+                    strong_aug_params:
                         aug_list:
                         - which: random_horiz_flip
                           params: {}
@@ -260,7 +276,11 @@ if __name__ == "__main__":
                         - which: gaussian_noise
                           params: {}
                         - which: color_jitter
-                          params: {}
+                          params:
+                            brightness: 0.4
+                            contrast: 0.4 
+                            saturation: 0.4
+                            hue: 0.2
                         - which: random_autocontrast
                           params: {}
                         - which: random_solarize
@@ -285,9 +305,11 @@ if __name__ == "__main__":
                         aug_prob: 0.3
                 val: ${.train}
         dataset:
-            which: TODO
+            which: SingleLevelHierarchicalDataset
+            which_process_read: memmap
             params:
                 common:
+                    data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
                     num_transforms: 1
                     num_samples: 1
                     num_instance_self_replicate: 1
@@ -310,16 +332,20 @@ if __name__ == "__main__":
                     drop_last: False
                     shuffle: False
             val_sampler:
-              num_samples: 64                                                             
+              num_samples: 64
               replacement: False  
     """
-    pdm = PatchDataModule(log_root=".", config=OmegaConf.create(params))
+    #pdm = PatchDataModule(config=OmegaConf.create(params))
+    #exit(0)
+
+    pdm = PatchDataModule(config=OmegaConf.create(params2))
     pdm.prepare_data()
     pdm.setup(stage="fit")
     tl = pdm.train_dataloader()
     vl = pdm.val_dataloader()
-    import pdb
-    pdb.set_trace()
 
-    #laser_noise_config: null
-    #base_aug: three_channels
+    tl.dataset.__getitem__(0)
+    from tqdm import tqdm
+    for _ in range(10):
+        for i in tqdm(iter(tl)):
+            print(i.keys())
