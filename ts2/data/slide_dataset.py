@@ -9,10 +9,10 @@ import torch
 from torchvision import transforms
 
 from ts2.data.db_improc import process_read_memmap
-from ts2.data.balanced_dataset import BalancedDataset
+from ts2.data.balanceable_dataset import BalanceableBaseDataset
 
 
-class HierarchicalBaseDataset(BalancedDataset, ABC):
+class HierarchicalBaseDataset(BalanceableBaseDataset, ABC):
     """Patient Base Dataset. Abstract class.
 
     Attributes:
@@ -54,9 +54,9 @@ class HierarchicalBaseDataset(BalancedDataset, ABC):
 
         self.process_read_im_ = process_read_im
 
-        self.classes_ = None
-        self.class_to_idx_ = None
-        self.weights_ = None
+        self.classes_ = []
+        self.class_to_idx_ = {}
+        self.weights_ = []
 
         self.num_instance_self_replicate_ = num_instance_self_replicate
         self.max_hierarchical_replicate_ = max_hierarchical_replicate
@@ -67,8 +67,11 @@ class HierarchicalBaseDataset(BalancedDataset, ABC):
 
         assert len(self.instances_) > 0
         self.init_weights_ = self.get_weights()
-        if balance_instance_class: self.replicate_balance_instances()
+        if balance_instance_class:
+            self.replicate_balance_instances()
         self.get_weights()
+
+        logging.info(self.transform_)
 
     def make_im_path(self, x):
         return opj(self.data_root_, x)
@@ -131,7 +134,7 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
 
         if self.target_transform_ is not None:
             target = self.target_transform_(target)
-
+        #return im
         return {"image": im, "label": target, "path": [imp]}
 
 
@@ -220,50 +223,3 @@ class HierarchicalDataset(HierarchicalBaseDataset):
 
 
 HiDiscDataset = HierarchicalDataset
-
-if __name__ == '__main__':
-    raise NotImplementedError()
-
-    from torchsrh.datasets.db_improc import get_transformations
-    from torch.utils.data import DataLoader
-
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format=
-        "[%(levelname)-s|%(asctime)s|%(filename)s:%(lineno)d|%(funcName)s] %(message)s",
-        datefmt="%H:%M:%S",
-        handlers=[logging.StreamHandler()])
-    logging.info("Patch Data Debug Log")
-
-    csv_path = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh/torchsrh/train/data/srh7v1/srh7v1_toy.csv"
-    data_root = "/nfs/turbo/umms-tocho/root_srh_db/"
-    tx, vx = get_transformations()
-
-    dset_params = {
-        "data_root": data_root,
-        "slides_file": csv_path,
-        "segmentation_model": "03207B00",
-        "transform": tx,
-        "balance_instance_class": True,
-        "num_instance_self_replicate": 2
-    }
-
-    dset = SingleLevelHierarchicalDataset(**dset_params)
-    data = dset.__getitem__(10)
-
-    dset = HierarchicalDataset(data_root=data_root,
-                               slides_file=csv_path,
-                               segmentation_model="03207B00",
-                               transform=tx,
-                               balance_instance_class=True,
-                               num_slide_samples=6,
-                               num_patch_samples=5,
-                               num_transforms=4,
-                               max_hierarchical_replicate=6 * 5 * 4)
-    dl = DataLoader(dset, batch_size=7)
-    batch1 = next(iter(dl))
-    assert batch1["image"].shape == torch.Size([7, 6, 5, 4, 3, 300, 300])
-    # (#patient(batch size)) * (#slide per patient) * (#patch per slide) * (#xform per patch) * im_size
-    assert batch1["label"].shape == torch.Size([7])
-    assert np.array(batch1["path"]).shape == (1, 6, 5, 7)
-    import pdb; pdb.set_trace() #yapf:disable

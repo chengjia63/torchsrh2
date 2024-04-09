@@ -18,8 +18,8 @@ class PrimaryLabelFunc():
         return x[self.idx]
 
 
-class BalancedDataset(Dataset):
-    """Balanced Base Dataset.
+class BalanceableBaseDataset(Dataset):
+    """Balanceable Base Dataset.
 
     Datasets that allows data from each class to be balanced
 

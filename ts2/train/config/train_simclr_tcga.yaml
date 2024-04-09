@@ -1,8 +1,8 @@
 infra:
-  exp_name: ts2/he/simclr/ok
-  log_dir: /nfs/turbo/umms-tocho-ns/exp/chengjia
+  exp_name: ts2/he_neuro/simclr
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
-  log_gpu: false
+  log_gpu: True
   seed: 1000
 data:
   set: he
@@ -10,13 +10,15 @@ data:
     which: CachedCSVParser
     params:
       cached_parser_file:
-        train: /nfs/turbo/umms-tocho-ns/code/chengjia/torchsrh2/ts2/data/78a424ce_slide_all
-        val: /nfs/turbo/umms-tocho-ns/code/chengjia/torchsrh2/ts2/data/78a424ce_slide_all
+        train: ../data/data/35e11675_slide_all
+        val: ../data/data/35e11675_slide_toy
   transform:
     train:
       base_aug_params: {}
-      strong_aug_config:
-        aug_list:
+        #laser_noise_config: null
+        #base_aug: three_channels
+      strong_aug_params:
+        aug_list: 
         - which: random_horiz_flip
           params: {}
         - which: random_vert_flip
@@ -25,9 +27,9 @@ data:
           params: {}
         - which: color_jitter
           params:
-            brightness: 0.8
-            contrast: 0.8
-            saturation: 0.8
+            brightness: 0.4
+            contrast: 0.4 
+            saturation: 0.4
             hue: 0.2
         - which: random_autocontrast
           params: {}
@@ -53,91 +55,96 @@ data:
         aug_prob: 0.3
     val: ${.train}
   dataset:
-    which: TODO
-    params:
-      common:
-        data_root: /nfs/umms-tocho-mr/dropbox/data/root_he_db 
-        num_transforms: 2
-        num_samples: 1
-        num_instance_self_replicate: 1
-        max_hierarchical_replicate: 1
-        balance_instance_class: False
-      train: {}
-      val: {}
+      which: SingleLevelHierarchicalDataset
+      which_process_read: memmap
+      params:
+        common:
+          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
+          num_transforms: 2
+          num_samples: 1
+          num_instance_self_replicate: 1
+          max_hierarchical_replicate: 1
+          balance_instance_class: False
+        train: {}
+        val: {}
   loader:
     params:
       common:
         pin_memory: True
-        prefetch_factor: 10
-        num_workers: auto
+        persistent_workers: True
+        prefetch_factor: 1
+        num_workers: 4
       train:
-        batch_size: 512 #384
+        batch_size: 512
         drop_last: True
         shuffle: True
       val:
-        batch_size: 128
+        batch_size: 64
         drop_last: False
         shuffle: False
     val_sampler:
-      num_samples: 64                                                             
-      replacement: False  
+      num_samples: 64
+      replacement: False 
 model:
-    backbone:
-        which: resnet34
-        params: {}
-    mlp_hidden: [512]
-    num_embedding_out: 128
+  backbone:
+    which: resnet34
+    params: {}
+  mlp_hidden: [512]
+  num_embedding_out: 128
 training:
-    num_epochs: 800
-    optimizer:
-        which: adamw
-        scale_lr: True
-        params:
-            lr: 0.001
-            betas: [0.9, 0.999]
-            eps: 1.0e-8
-            weight_decay: 0.01
-            amsgrad: False
-    scheduler:
-        which: cos_linear_warmup
-        params:
-            num_warmup_steps: 0.1
-            num_cycles: 0.5
-    #scheduler:
-    #    which: step_lr
-    #    params:
-    #        step_size: 1
-    #        step_unit: epoch # epoch or step
-    #        gamma: 0.5
-    objective:
-        which: simclr
-        supcon_params: {}
-    #objective:
-    #    which: vicreg
-    #    params:
-    #        sim_coeff: 25.0
-    #        std_coeff: 25.0
-    #        cov_coeff: 1.0
-    #        epsilon: 1.0e-4
-    #objective:
-    #    which: byol
-    #    params:
-    #        ema_beta: 0.99
-    #objective:
-    #    which: simsiam
-    resume_checkpoint: null
-    amp: 'bf16-mixed'                                                             
-    deterministic: False                                                          
-    fl32_preci: medium
-valid:
-    freq:
-        interval: 100
-        unit: "epoch"
-tune:
-    diagonal_items: true
+  num_epochs: 8000
+  optimizer:
+    which: adamw
+    scale_lr: True
     params:
-        training/optimizer/params/lr: [0.001, 0.0001, 0.01]
-        infra/comment:
-            - simclr_1000_lr0.001
-            - simclr_1000_lr0.0001
-            - simclr_1000_lr0.01
+      lr: 0.001
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 0.01
+      amsgrad: False
+  scheduler:
+    which: cos_linear_warmup
+    params:
+      num_warmup_steps: 0.1
+      num_cycles: 0.5
+  #scheduler:
+  #    which: step_lr
+  #    params:
+  #        step_size: 1
+  #        step_unit: epoch # epoch or step
+  #        gamma: 0.5
+  objective:
+    which: simclr
+    supcon_params: {}
+  #objective:
+  #    which: vicreg
+  #    params:
+  #        sim_coeff: 25.0
+  #        std_coeff: 25.0
+  #        cov_coeff: 1.0
+  #        epsilon: 1.0e-4
+  #objective:
+  #    which: byol
+  #    params:
+  #        ema_beta: 0.99
+  #objective:
+  #    which: simsiam
+  resume_checkpoint: null
+  amp: 'bf16-mixed'                                                             
+  deterministic: False                                                          
+  fl32_preci: medium
+valid:
+  freq:
+    interval: 400
+    unit: "epoch"
+tune:
+  diagonal_items: true
+  params:
+    training/optimizer/params/lr:
+    - 0.001
+    - 0.0001
+    - 0.01
+    infra/comment:
+    - simclr_1000_lr0.001
+    - simclr_1000_lr0.0001
+    - simclr_1000_lr0.01

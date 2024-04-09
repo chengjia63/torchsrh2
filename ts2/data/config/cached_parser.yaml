@@ -1,0 +1,82 @@
+infra:
+  seed: 1000
+data:
+  set: he
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+        train: ./data/3c35b1d6_patch_all_400 #cca90400_slide_train
+        val: ./data/3c35b1d6_patch_toy_400
+  transform:
+    train:
+      base_aug_params: {}
+        #laser_noise_config: null
+        #base_aug: three_channels
+      strong_aug_params:
+        aug_list:
+          - which: random_horiz_flip
+            params: {}
+          - which: random_vert_flip
+            params: {}
+          - which: gaussian_noise
+            params: {}
+          - which: color_jitter
+            params:
+              brightness: 0.4
+              contrast: 0.4
+              saturation: 0.4
+              hue: 0.2
+          - which: random_autocontrast
+            params: {}
+          - which: random_solarize
+            params:
+              threshold: 0.2
+          - which: random_sharpness
+            params:
+              sharpness_factor: 2
+          - which: gaussian_blur
+            params:
+              kernel_size: 5
+              sigma: 1
+          - which: random_erasing
+            params: {}
+          - which: random_affine
+            params:
+              degrees: 10
+              translate: [0.1, 0.3]
+          - which: random_resized_crop
+            params:
+              size: 300
+        aug_prob: 0.3
+    val: ${.train}
+  dataset:
+    which: PatchDataset # SingleLevelHierarchicalDataset
+    which_process_read: memmap
+    params:
+      common:
+        data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
+        num_transforms: 1
+        #num_samples: 1
+        #num_instance_self_replicate: 1
+        #max_hierarchical_replicate: 1
+        balance_instance_class: False
+      train: {}
+      val: {}
+  loader:
+    params:
+      common:
+        pin_memory: True
+        prefetch_factor: 10
+        num_workers: auto
+      train:
+        batch_size: 512
+        drop_last: True
+        shuffle: True
+      val:
+        batch_size: 128
+        drop_last: False
+        shuffle: False
+    val_sampler:
+      num_samples: 64
+      replacement: False

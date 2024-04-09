@@ -4,17 +4,17 @@ import logging
 import torch
 import pytorch_lightning as pl
 from omegaconf import OmegaConf
+from typing import Dict, Any
 from torchsrh.train.common import (get_num_it_per_ep, setup_checkpoints)
 from torchsrh.train.infra import parse_args, setup_infra_light
-from ts2.lm.ssl_systems import (SimCLRSystem, SupConSystem,
-                                                    VICRegSystem,
-                                                    VICRegSystemWithMask,
-                                                    SimSiamSystem, BYOLSystem)
+from ts2.lm.ssl_systems import (SimCLRSystem, SupConSystem, VICRegSystem,
+                                VICRegSystemWithMask, SimSiamSystem,
+                                BYOLSystem)
 from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
 from torchsrh.lightning_modules.xmplr_systems import ExemplarLearningSystem
 from torchsrh.datasets.utils import DSU
 #from opensrh.train.common import get_contrastive_dataloaders as get_opensrh_contrastive_dataloaders
-from ts2.data.data_module import PatchDataModule
+from ts2.data.histology_data_module import PatchDataModule
 
 objective_system_map = {
     "supcon": SupConSystem,
@@ -31,7 +31,16 @@ objective_system_map = {
 }
 
 
-def get_num_it_per_train_ep(train_len, cf):
+def get_num_it_per_train_ep(train_len: int, cf: OmegaConf) -> int:
+    """Calcualtes the number of iteration in each epoch.
+
+    Args:
+        train_len: length of the training set
+        cf: global config
+
+    Returns:
+        num_it_per_ep: number of iteration in each epoch
+    """
     if torch.cuda.is_available():
         world_size = cf.infra.SLURM_GPUS_ON_NODE * cf.infra.SLURM_JOB_NUM_NODES
     else:
@@ -40,10 +49,11 @@ def get_num_it_per_train_ep(train_len, cf):
     effective_batch_size = (cf.data.loader.params.train.batch_size *
                             world_size *
                             cf.training.get("accumulate_grad_batches", 1))
+
     num_it_per_ep = train_len // effective_batch_size
 
     if not cf.data.loader.params.train.drop_last:
-        num_it_per_ep += 1
+        num_it_per_ep += ((train_len % effective_batch_size) > 0)
 
     return num_it_per_ep
 
@@ -60,9 +70,8 @@ def main():
     cf = OmegaConf.create(cf)
 
     # setup data
-    dm = PatchDataModule(log_root=exp_root, config=cf)
-    dm.prepare_data()
-    num_it_per_ep = get_num_it_per_train_ep(dm.train_dset_len_,cf)
+    dm = PatchDataModule(config=cf)
+    num_it_per_ep = get_num_it_per_train_ep(dm.train_dset_len_, cf)
     logging.info(f"actual num_it_per_ep {num_it_per_ep}")
 
     # setup lightning module
@@ -111,7 +120,7 @@ def main():
                                          log_momentum=False)
     ]
 
-    device_stat_monitor = [pl.callbacks.DeviceStatsMonitor()]
+    device_stat_monitor = [pl.callbacks.DeviceStatsMonitor(cpu_stats=True)]
 
     if cf["infra"].get("log_gpu", False):
         callbacks = ckpts + lr_monitor + device_stat_monitor
@@ -139,6 +148,7 @@ def main():
         deterministic=cf["training"].get("deterministic", True),
         gradient_clip_val=0.5,
         #gradient_clip_algorithm="value",
+        #profiler="simple",
         **ckpt_params)
 
     trainer.fit(con_exp, datamodule=dm)

@@ -3,21 +3,22 @@ import copy
 from functools import partial
 from typing import Dict, Any
 from abc import ABC
+import gc
+import psutil
 import torch
 from torch import nn
 import pytorch_lightning as pl
-
 import torchmetrics
 
 from torchsrh.losses.supcon import SupConLoss
 from torchsrh.losses.vicreg import GeneralVICRegLoss, FastGeneralVICRegLoss
-
 from torchsrh.train.common import get_backbone
-
 from torchsrh.models import (MLP, ContrastiveLearningNetwork, VICRegNetwork,
                              SimSiamNetwork)
 from torchsrh.models.cnn import VICRegNetworkWithMask, EvalNetwork
 from ts2.optim.utils import get_optimizer_scheduler
+
+from memory_profiler import profile
 
 
 class EvalSystem(pl.LightningModule):
@@ -121,9 +122,17 @@ class ContrastiveSystem(pl.LightningModule, ABC):
         else:
             return [opt]
 
-    def configure_ddp(self, *args, **kwargs):
-        logging.basicConfig(level=logging.INFO)
-        return super().configure_ddp(*args, **kwargs)
+    def on_train_epoch_end(self):
+        gc.collect()
+
+    def on_validation_epoch_end(self):
+        gc.collect()
+
+    def on_test_epoch_end(self):
+        gc.collect()
+
+    def on_predict_epoch_end(self):
+        gc.collect()
 
 
 class SimCLRSystem(ContrastiveSystem):
@@ -136,9 +145,9 @@ class SimCLRSystem(ContrastiveSystem):
                 **cf["training"]["objective"]["supcon_params"])
 
     def training_step(self, batch, _):
-        #torch.save(batch, "cifar_batch.pt")
-        #exit(99)
         pred = [
+            #self.model(batch[:, i, ...])["proj"]
+            #for i in range(batch.shape[1])
             self.model(batch["image"][:, i, ...])["proj"]
             for i in range(batch["image"].shape[1])
         ]
@@ -150,19 +159,30 @@ class SimCLRSystem(ContrastiveSystem):
         loss = self.criterion(pred_gather)["loss"]
 
         bs = batch["image"][0].shape[0] * torch.distributed.get_world_size()
+        #bs = batch[0].shape[0] * torch.distributed.get_world_size()
         self.log("train/contrastive",
-                 loss,
+                 loss.detach().item(),
                  on_step=True,
                  on_epoch=True,
                  batch_size=bs,
                  rank_zero_only=True)
-        self.train_loss.update(loss, weight=bs)
+        self.train_loss.update(loss.detach().item(), weight=bs)
+
+        self.log("cpu/mem",
+                 psutil.virtual_memory().used,
+                 on_step=True,
+                 on_epoch=True,
+                 batch_size=1,
+                 rank_zero_only=True)
         return loss
 
     @torch.inference_mode()
     def validation_step(self, batch, batch_idx):
         bs = batch["image"][0].shape[0] * torch.distributed.get_world_size()
+        #bs = batch[0].shape[0] * torch.distributed.get_world_size()
         pred = [
+            #self.model(batch[:, i, ...])["proj"]
+            #for i in range(batch.shape[1])
             self.model(batch["image"][:, i, ...])["proj"]
             for i in range(batch["image"].shape[1])
         ]
@@ -170,7 +190,7 @@ class SimCLRSystem(ContrastiveSystem):
         pred_gather = self.all_gather(pred, sync_grads=False)
         pred_gather = pred_gather.reshape(-1, *pred_gather.shape[-2:])
 
-        loss = self.criterion(pred_gather)["loss"]
+        loss = self.criterion(pred_gather)["loss"].detach().item()
         self.val_loss.update(loss, weight=bs)
 
 

@@ -1,0 +1,23 @@
+infra:
+  seed: 1000
+data:
+  set: he
+  parser:
+    which: PatchCSVParser
+    cache_root: ./data/
+    level: patch #slide #hierarchical
+    params:
+      common:
+        data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
+        seg_model: 226232a4
+        slide_patch_thres: 400
+        which_patch_path_func: make_slide_memmap_path
+        use_patch_code_as_label: True
+        primary_label_idx: 0
+      train:
+        df: /nfs/turbo/umms-tocho/data/data_splits/he_neuro/toy_he_slides.csv
+      val:
+        df: /nfs/turbo/umms-tocho/data/data_splits/he_neuro/all_he_slides.csv
+  transform: null
+  dataset: null
+  loader: null

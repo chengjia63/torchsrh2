@@ -24,12 +24,12 @@ def process_read_memmap(mm_path, tensor_shape, patch_idx):
     Returns:
         A 2 channel torch Tensor in the shape 2 * H * W
     """
-
-    im = np.array(
-        np.memmap(mm_path, dtype="uint8", mode="r",
-                  shape=tensor_shape)[patch_idx, ...])
+    fd = np.memmap(mm_path, dtype="uint8", mode="r", shape=tensor_shape)
+    im = np.array(fd[patch_idx, ...])
+    fd._mmap.close()
+    del fd
     return einops.rearrange(
-        torch.from_numpy(im).to(float).contiguous(), "h w c -> c h w")
+        torch.from_numpy(im).to(torch.float32), "h w c -> c h w").contiguous()
 
 
 def process_read_srh(imp: str) -> torch.Tensor:
