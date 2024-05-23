@@ -81,8 +81,8 @@ class PatchDataset(BalanceableBaseDataset):
         target = self.class_to_idx_[inst["label"]]
         try:
             mmap_info = self.tensor_shape_map[inst["slide_name"]]
-            im = self.process_read_im_(self.make_im_path(mmap_info["path"]),
-                                       tuple(mmap_info["shape"]),
+            mmap_path = self.make_im_path(mmap_info["path"])
+            im = self.process_read_im_(mmap_path, tuple(mmap_info["shape"]),
                                        inst["patch_idx"])
         except:
             logging.error("bad_file - {}".format(inst.im_path))
@@ -93,4 +93,8 @@ class PatchDataset(BalanceableBaseDataset):
         if self.target_transform_ is not None:
             target = self.target_transform_(target)
 
-        return {"image": im, "label": target}
+        return {
+            "image": im,
+            "label": target,
+            "path": ["@".join([inst["slide_name"], inst["patch_name"]])]
+        }

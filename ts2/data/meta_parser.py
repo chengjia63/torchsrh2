@@ -168,6 +168,7 @@ class PatchCSVParser(SRHCSVParser):
         params.update({"gt_parser": self.gt_parser_params_})
         params["df"] = self.df_name_
         params["instance_len"] = len(inst)
+        params["labels"] = sorted({i["label"] for i in inst})
 
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
@@ -214,7 +215,7 @@ class PatchCSVParser(SRHCSVParser):
                                    get_patch_gt=self.get_gt_,
                                    **self.hyper_)
             for _, slide_s in patient_s.iterrows():
-                patches_ij, slide_shape_ij = mp_i.process_slide(slide_s)
+                patches_ij, slide_shape_ij = mp_i.process_slide(slide_s, keep_label=False)
 
                 if patches_ij:
                     slide_instance_ij = {

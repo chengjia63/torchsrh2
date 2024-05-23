@@ -29,15 +29,23 @@ from torchsrh.optim.cosine_schedule_warmup import (
     get_cosine_schedule_with_warmup)
 from torchsrh.models.vit import get_vit_backbone
 
-def get_optimizer_scheduler(cf: Dict, model, num_it_per_ep: int):
-    opt_str = cf["training"]["optimizer"]["which"]
-    opt_params = cf["training"]["optimizer"]["params"]
 
-    if cf["training"]["optimizer"].get("scale_lr", False):
+def convert_epoch_to_iter(unit, steps, num_it_per_ep):
+    if unit == "epoch":
+        return num_it_per_ep * steps  # per epoch
+    elif unit == "iter":
+        return steps
+    else:
+        NotImplementedError("unit must be one of [epoch, iter]")
+
+
+def get_optimizer_scheduler(model, opt_cf: Dict, schd_cf: Dict,
+                            num_it_per_ep: int, eff_bz: int):
+    opt_str = opt_cf["which"]
+    opt_params = opt_cf["params"]
+
+    if opt_cf.get("scale_lr", False):
         assert "lr" in opt_params
-        world_size = (cf["infra"].get("SLURM_GPUS_ON_NODE", 1) *
-                      cf["infra"].get("SLURM_JOB_NUM_NODES", 1))
-        eff_bz = cf.data.loader.params.train["batch_size"] * world_size
 
         logging.info("scaling learn rate, " +
                      f"was {cf['training']['optimizer']['params']['lr']}")
@@ -78,15 +86,17 @@ def get_optimizer_scheduler(cf: Dict, model, num_it_per_ep: int):
             layer_decay=opt_params["layer_decay"])
         optimizer = opt_func(param_groups, lr=opt_params["lr"])
     else:
-        optimizer = opt_func(filter(lambda p: p.requires_grad, model.parameters()), **opt_params)
+        optimizer = opt_func(
+            filter(lambda p: p.requires_grad, model.parameters()),
+            **opt_params)
 
     if "scheduler" not in cf["training"]:
         return optimizer, None
 
     # ==========================================================================
 
-    sch_str = cf["training"]["scheduler"]["which"]
-    sch_params = cf["training"]["scheduler"]["params"]
+    sch_str = schd_cf["which"]
+    sch_params = schd_cf["params"]
     required_params = {
         "step_lr": {"step_size", "step_unit", "gamma"},
         "cos_warm_restart": {"t0", "t0_unit", "t_mult", "eta_min"},
@@ -122,5 +132,3 @@ def get_optimizer_scheduler(cf: Dict, model, num_it_per_ep: int):
             "Scheduler must be one of [step_lr, cos_warm_restart]")
 
     return optimizer, scheduler
-
-

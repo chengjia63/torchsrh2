@@ -10,8 +10,10 @@ data:
     which: CachedCSVParser
     params:
       cached_parser_file:
-        train: ../data/data/35e11675_slide_all
-        val: ../data/data/35e11675_slide_toy
+        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmetacache/he_neuro/35e11675_slide_all
+        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmetacache/he_neuro/35e11675_slide_toy
+        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmetacache/tcga_glioma/5f03c12d_patch_train
+        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmetacache/tcga_glioma/5f03c12d_patch_trainval
   transform:
     train:
       base_aug_params: {}
@@ -53,7 +55,12 @@ data:
           params:
             size: 300
         aug_prob: 0.3
-    val: ${.train}
+    trainval: ${.train}
+    test:
+      base_aug_params: {}
+      strong_aug_params:
+        aug_list: []
+        aug_prob: 0
   dataset:
       which: SingleLevelHierarchicalDataset
       which_process_read: memmap
@@ -62,11 +69,21 @@ data:
           data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
           num_transforms: 2
           num_samples: 1
-          num_instance_self_replicate: 1
+          num_instance_self_replicate: 30
           max_hierarchical_replicate: 1
           balance_instance_class: False
         train: {}
-        val: {}
+        trainval: {}
+  test_dataset:
+      which: PatchDataset
+      which_process_read: memmap
+      params:
+          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
+          num_transforms: 1
+          balance_instance_class: False
+      negative_class_index": 1
+      classes_reorder": [2,0,1]
+      camera_ready_classes": [Astro, GBM, Oligo]
   loader:
     params:
       common:
@@ -78,73 +95,84 @@ data:
         batch_size: 512
         drop_last: True
         shuffle: True
-      val:
+      trainval:
         batch_size: 64
         drop_last: False
         shuffle: False
-    val_sampler:
+      test:
+        batch_size: 63
+        drop_last: False
+        shuffle: False
+    trainval_sampler:
       num_samples: 64
       replacement: False 
-model:
-  backbone:
-    which: resnet34
-    params: {}
-  mlp_hidden: [512]
-  num_embedding_out: 128
+lightning_module:
+  which: supcon
+  params:
+    model_hyperparams:
+      backbone_cf:
+        which: resnet34
+        params: {}
+      proj_params:
+        hidden_layers: [512]
+        n_out: 128
+        activation: relu
+        drop: 0
+        bias: True
+    loss_params: {}
+    opt_cf:
+      which: adamw
+      scale_lr: True
+      params:
+        lr: 0.001
+        betas: [0.9, 0.999]
+        eps: 1.0e-8
+        weight_decay: 0.01
+        amsgrad: False
+    schd_cf:
+      which: cos_linear_warmup
+      params:
+        num_warmup_steps: 0.1
+        num_cycles: 0.5
 training:
-  num_epochs: 8000
-  optimizer:
-    which: adamw
-    scale_lr: True
-    params:
-      lr: 0.001
-      betas: [0.9, 0.999]
-      eps: 1.0e-8
-      weight_decay: 0.01
-      amsgrad: False
-  scheduler:
-    which: cos_linear_warmup
-    params:
-      num_warmup_steps: 0.1
-      num_cycles: 0.5
-  #scheduler:
-  #    which: step_lr
-  #    params:
-  #        step_size: 1
-  #        step_unit: epoch # epoch or step
-  #        gamma: 0.5
-  objective:
-    which: simclr
-    supcon_params: {}
-  #objective:
-  #    which: vicreg
-  #    params:
-  #        sim_coeff: 25.0
-  #        std_coeff: 25.0
-  #        cov_coeff: 1.0
-  #        epsilon: 1.0e-4
-  #objective:
-  #    which: byol
-  #    params:
-  #        ema_beta: 0.99
-  #objective:
-  #    which: simsiam
   resume_checkpoint: null
-  amp: 'bf16-mixed'                                                             
-  deterministic: False                                                          
+  trainer_params:
+    max_epochs: 2 #8000
+    gradient_clip_val: 0.5
+    enable_progress_bar: True
+    precision: 'bf16-mixed'                                                             
+    deterministic: False                                                          
   fl32_preci: medium
-valid:
-  freq:
-    interval: 400
-    unit: "epoch"
+  trainval:
+    freq:
+      interval: 1 #400
+      unit: "epoch"
+testing:
+  eval_mode: patch_knn
+  save_train_pred: true
+  knn:
+    do_knn: True
+    knn_params:
+      batch_size: 1536
+      k: 200
+      t: 0.07
+  tsne:
+    interactive: False
+    num_patches: [8192]
+    which_set: [val]
+    embed_images: true
+    class_params:
+      perplexity: 50
+      learning_rate: auto
+      init : pca
 tune:
   diagonal_items: true
   params:
-    training/optimizer/params/lr:
+    lightning_module/params/opt_cf/params/lr:
     - 0.001
     - 0.0001
     - 0.01
     infra/comment:
-    - simclr_1000_lr0.001
+    - DEBUG_DELETE_ME_simclr_1000_lr0.001
     - simclr_1000_lr0.0001
     - simclr_1000_lr0.01

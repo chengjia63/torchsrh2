@@ -15,9 +15,9 @@ data:
         use_patch_code_as_label: True
         primary_label_idx: 0
       train:
-        df: /nfs/turbo/umms-tocho/data/data_splits/he_neuro/toy_he_slides.csv
-      val:
-        df: /nfs/turbo/umms-tocho/data/data_splits/he_neuro/all_he_slides.csv
+        df: /nfs/turbo/umms-tocho/data/data_splits/he_glioma/trainval_v2/glioma_tcga_train.csv
+      trainval:
+        df: /nfs/turbo/umms-tocho/data/data_splits/he_glioma/trainval_v2/glioma_val.csv
   transform: null
   dataset: null
   loader: null

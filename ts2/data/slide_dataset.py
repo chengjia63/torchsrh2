@@ -113,7 +113,8 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
                         curr_path,
                         tuple(self.tensor_shape_map[inst["name"]]["shape"]),
                         curr_inst["patch_idx"]))
-                imps_take.append(curr_path)
+                imps_take.append("@".join(
+                    [curr_inst["slide_name"], curr_inst["patch_name"]]))
                 idx += 1
             except:
                 logging.error("bad_file - {}".format(curr_path))

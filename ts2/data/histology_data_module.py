@@ -19,7 +19,9 @@ from ts2.data.transforms import HistologyTransform
 
 
 class PatchDataModule(pl.LightningDataModule):
-    possible_sets: List[str] = ["train", "val", "pred"]
+    possible_sets: List[str] = [
+        "train", "trainval", "test_databank", "test", "pred"
+    ]
 
     def __init__(self, config: OmegaConf):
         super().__init__()
@@ -51,20 +53,29 @@ class PatchDataModule(pl.LightningDataModule):
             )["instance_len"]
 
         self.xform_config_ = config.data.transform
-        self.dset_config_ = config.data.dataset
+        
+        if "dataset" in config.data:
+            self.dset_config_ = config.data.dataset
+
+        if "test_dataset" in config.data:
+            self.test_dset_config_ = config.data.test_dataset
+            self.test_get_train_ = config.testing.get("knn",
+                                                      {}).get("do_knn", False)
         self.loader_config_ = config.data.loader
         self.seed_ = config.infra.seed
-        self.train_dataset_, self.val_dataset_ = None, None
+
+        self.train_dataset_, self.trainval_dataset_ = None, None
+        self.test_dataset_ = None
 
     def setup(self, stage: str):
         datasets = {
             "PatchDataset": PatchDataset,
             "SingleLevelHierarchicalDataset": SingleLevelHierarchicalDataset
         }
-        prf = instantiate_process_read(
-            which=self.dset_config_.which_process_read)
 
         if stage == "fit":
+            prf = instantiate_process_read(
+                which=self.dset_config_.which_process_read)
             train_inst, train_tsm = CachedCSVParser(
                 cache_dir=self.instance_cache_fname_["train"])()
             self.train_dataset_ = datasets[self.dset_config_.which](
@@ -76,28 +87,44 @@ class PatchDataModule(pl.LightningDataModule):
                 **self.dset_config_.params.common,
                 **self.dset_config_.params.train)
 
-            val_inst, val_tsm = CachedCSVParser(
-                cache_dir=self.instance_cache_fname_["val"])()
-            self.val_dataset_ = datasets[self.dset_config_.which](
-                instances=val_inst,
-                tensor_shape_map=val_tsm,
+            trainval_inst, trainval_tsm = CachedCSVParser(
+                cache_dir=self.instance_cache_fname_["trainval"])()
+            self.trainval_dataset_ = datasets[self.dset_config_.which](
+                instances=trainval_inst,
+                tensor_shape_map=trainval_tsm,
                 transform=HistologyTransform(which_set=self.set_,
-                                             **self.xform_config_["val"]),
+                                             **self.xform_config_["trainval"]),
                 process_read_im=prf,
                 **self.dset_config_.params.common,
-                **self.dset_config_.params.val)
+                **self.dset_config_.params.trainval)
 
-        if stage in {"test", "predict"}:
-            val_inst, val_tsm = CachedCSVParser(
+        if stage == "predict":
+            prf = instantiate_process_read(
+                which=self.test_dset_config_.which_process_read)
+
+            test_inst, test_tsm = CachedCSVParser(
                 cache_dir=self.instance_cache_fname_["test"])()
-            self.val_dataset_ = datasets[self.dset_config_.which](
-                instances=val_inst,
-                tensor_shape_map=val_tsm,
+            test_dataset = datasets[self.test_dset_config_.which](
+                instances=test_inst,
+                tensor_shape_map=test_tsm,
                 transform=HistologyTransform(which_set=self.set_,
                                              **self.xform_config_["test"]),
                 process_read_im=prf,
-                **self.dset_config_.params.common,
-                **self.dset_config_.params.val)
+                **self.test_dset_config_.params)
+
+            if self.test_get_train_:
+                dbank_inst, dbank_tsm = CachedCSVParser(
+                    cache_dir=self.instance_cache_fname_["test"])()
+                dbank_dataset = datasets[self.test_dset_config_.which](
+                    instances=dbank_inst,
+                    tensor_shape_map=dbank_tsm,
+                    transform=HistologyTransform(which_set=self.set_,
+                                                 **self.xform_config_["test"]),
+                    process_read_im=prf,
+                    **self.test_dset_config_.params)
+                self.test_dataset_ = [dbank_dataset, test_dataset]
+            else:
+                self.test_dataset_ = [test_dataset]
 
     @staticmethod
     def get_seed_worker_and_generator(seed=torch.initial_seed() % 2**32):
@@ -106,7 +133,7 @@ class PatchDataModule(pl.LightningDataModule):
         Reference: https://pytorch.org/docs/stable/notes/randomness.html
         """
 
-        def seed_worker(worker_id):
+        def seed_worker(_):
             np.random.seed(seed)
             random.seed(seed)
 
@@ -130,37 +157,33 @@ class PatchDataModule(pl.LightningDataModule):
         return DataLoader(self.train_dataset_, **loader_params)
 
     def val_dataloader(self):
-        loader_params = OmegaConf.to_container(self.loader_config_.params.val)
+        loader_params = OmegaConf.to_container(
+            self.loader_config_.params.trainval)
         loader_params.update(self.get_seed_worker_and_generator(self.seed_))
         loader_params.update(self.loader_config_.params.common)
         if loader_params.get("num_workers") == "auto":
             loader_params["num_workers"] = get_num_worker()
 
-        if (("val_sampler" in self.loader_config_)
-                and (self.loader_config_.val_sampler.num_samples > 0)):
+        if (("trainval_sampler" in self.loader_config_)
+                and (self.loader_config_.trainval_sampler.num_samples > 0)):
             loader_params.update({
                 "sampler":
-                RandomSampler(self.val_dataset_,
-                              **self.loader_config_.val_sampler)
+                RandomSampler(self.trainval_dataset_,
+                              **self.loader_config_.trainval_sampler)
             })
         print(loader_params)
-        return DataLoader(self.val_dataset_, **loader_params)
+        return DataLoader(self.trainval_dataset_, **loader_params)
 
     def test_dataloader(self):
-        loader_params = OmegaConf.to_container(self.loader_config_.params.val)
-        loader_params.update(self.get_seed_worker_and_generator(self.seed_))
-        loader_params.update(self.loader_config_.params.common)
-        if loader_params.get("num_workers") == "auto":
-            loader_params["num_workers"] = get_num_worker()
-        return DataLoader(self.val_dataset_, **loader_params)
+        raise NotImplementedError()
 
     def predict_dataloader(self):
-        loader_params = OmegaConf.to_container(self.loader_config_.params.val)
+        loader_params = OmegaConf.to_container(self.loader_config_.params.test)
         loader_params.update(self.get_seed_worker_and_generator(self.seed_))
         loader_params.update(self.loader_config_.params.common)
         if loader_params.get("num_workers") == "auto":
             loader_params["num_workers"] = get_num_worker()
-        return DataLoader(self.val_dataset_, **loader_params)
+        return [DataLoader(ds, **loader_params) for ds in self.test_dataset_]
 
 
 if __name__ == "__main__":
@@ -190,7 +213,7 @@ if __name__ == "__main__":
         pdm.prepare_data()
         pdm.setup(stage="fit")
         tl = pdm.train_dataloader()
-        vl = pdm.val_dataloader()
+        vl = pdm.trainval_dataloader()
 
         data = tl.dataset.__getitem__(0)
         import pdb
