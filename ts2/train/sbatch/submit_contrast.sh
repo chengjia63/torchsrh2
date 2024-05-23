@@ -18,12 +18,12 @@
 #SBATCH --partition=tocho
 #SBATCH --cpus-per-task=8
 #SBATCH --mem-per-cpu=7739m
-#SBATCH --gres=gpu:1
-#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:4
+#SBATCH --ntasks-per-node=4
 # SBATCH --gpu_cmode=shared
 
 # SBATCH --nodelist=armis28003
 
-#SBATCH --array=0
+#SBATCH --array=0-2
 
 srun python train_contrastive.py -c=config/train_simclr_tcga.yaml

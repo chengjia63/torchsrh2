@@ -22,7 +22,8 @@ from torchsrh.datasets.utils import DSU
 from ts2.data.histology_data_module import PatchDataModule
 
 
-def instantiate_lightning_module(which, params, num_it_per_ep):
+def instantiate_lightning_module(which, params, training_params):
+
     lms = {
         "supcon": SupConSystem,
         "simclr": SimCLRSystem,
@@ -35,7 +36,7 @@ def instantiate_lightning_module(which, params, num_it_per_ep):
         "hidisc_vicreg": HiDiscSystem,
         "xmplr": ExemplarLearningSystem
     }
-    return lms[which](**params, **num_it_per_ep)
+    return lms[which](training_params=training_params, **params)
 
 
 def get_num_it_per_train_ep(train_len: int, cf: OmegaConf) -> int:
@@ -86,12 +87,14 @@ def main():
 
     # setup data
     dm = PatchDataModule(config=cf)
-    num_it_per_ep = get_num_it_per_train_ep(dm.train_dset_len_, cf)
-    logging.info(f"actual num_it_per_ep {num_it_per_ep}")
+    training_params = get_num_it_per_train_ep(dm.train_dset_len_, cf)
+    training_params.update(
+        {"num_ep_total": cf["training"]["trainer_params"]["max_epochs"]})
+    logging.info(f"actual num_it_per_ep {training_params}")
 
     # setup lightning module
     con_exp = instantiate_lightning_module(**cf["lightning_module"],
-                                           num_it_per_ep=num_it_per_ep)
+                                           training_params=training_params)
 
     #if "load_backbone" in cf["training"]:
     #    # load lightning checkpint
@@ -118,9 +121,9 @@ def main():
 
         # config callbacks
         logging.info(con_exp.model)
-        ckpts, ckpt_params = setup_checkpoints(cf["training"]["trainval"],
-                                               model_dir,
-                                               num_it_per_ep["num_it_per_ep"])
+        ckpts, ckpt_params = setup_checkpoints(
+            cf["training"]["trainval"], model_dir,
+            training_params["num_it_per_ep"])
         lr_monitor = [
             pl.callbacks.LearningRateMonitor(logging_interval="step",
                                              log_momentum=False)
@@ -206,8 +209,7 @@ def main():
             val_pred_fname = opj(prediction_dir, "val_predictions.pt.gz")
             with gzip.open(val_pred_fname, "w") as fd:
                 torch.save(pred["val"], fd)
-        import pdb
-        pdb.set_trace()
+
         # metrics reporting
         do_eval(cf, results_dir, pred, is_knn=True)
 

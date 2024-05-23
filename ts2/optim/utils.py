@@ -39,20 +39,22 @@ def convert_epoch_to_iter(unit, steps, num_it_per_ep):
         NotImplementedError("unit must be one of [epoch, iter]")
 
 
-def get_optimizer_scheduler(model, opt_cf: Dict, schd_cf: Dict,
-                            num_it_per_ep: int, eff_bz: int):
+def get_optimizer_scheduler(model,
+                            opt_cf: Dict,
+                            num_it_per_ep: int,
+                            effective_batch_size: int,
+                            num_ep_total: int,
+                            schd_cf: Dict = None):
     opt_str = opt_cf["which"]
     opt_params = opt_cf["params"]
 
     if opt_cf.get("scale_lr", False):
         assert "lr" in opt_params
 
-        logging.info("scaling learn rate, " +
-                     f"was {cf['training']['optimizer']['params']['lr']}")
-        opt_params["lr"] = opt_params["lr"] * eff_bz / 256
-        logging.info(
-            f"With effective batch size: {eff_bz}, scaling learn rate, now {opt_params['lr']}"
-        )
+        logging.info(f"scaling learn rate, was {opt_params['lr']}")
+        opt_params["lr"] = opt_params["lr"] * effective_batch_size / 256
+        logging.info(f"With effective batch size: {effective_batch_size}, " +
+                     f"learn rate now {opt_params['lr']}")
 
     required_params = {
         "sgd": {"lr", "momentum", "dampening", "weight_decay", "nesterov"},
@@ -90,7 +92,7 @@ def get_optimizer_scheduler(model, opt_cf: Dict, schd_cf: Dict,
             filter(lambda p: p.requires_grad, model.parameters()),
             **opt_params)
 
-    if "scheduler" not in cf["training"]:
+    if not schd_cf:
         return optimizer, None
 
     # ==========================================================================
@@ -112,13 +114,12 @@ def get_optimizer_scheduler(model, opt_cf: Dict, schd_cf: Dict,
                            step_size=step_size,
                            gamma=sch_params["gamma"])
     elif sch_str == "cos_linear_warmup":
-        num_epochs = cf['training']['num_epochs']
         if sch_params['num_warmup_steps'] < 1:
             sch_params['num_warmup_steps'] = int(
-                sch_params['num_warmup_steps'] * num_epochs * num_it_per_ep)
+                sch_params['num_warmup_steps'] * num_ep_total * num_it_per_ep)
         scheduler = get_cosine_schedule_with_warmup(
             optimizer, sch_params['num_warmup_steps'],
-            num_epochs * num_it_per_ep, sch_params['num_cycles'])
+            num_ep_total * num_it_per_ep, sch_params['num_cycles'])
     elif sch_str == "cos_warm_restart":
         t0 = convert_epoch_to_iter(sch_params['t0_unit'], sch_params['t0'],
                                    num_it_per_ep)

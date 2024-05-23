@@ -44,9 +44,11 @@ class MLP(nn.Module):
         }[activation]
 
         layers_list = []
-        for a, b in zip(layers_in, layers_out):
+        for i, (a, b) in enumerate(zip(layers_in, layers_out)):
             layers_list.append(nn.Linear(a, b, bias=bias))
-            layers_list.append(act_callable())
+
+            if i is not len(layers_in) - 1:
+                layers_list.append(act_callable())
 
             if drop > 1e-6:
                 layers_list.append(nn.Dropout(drop))

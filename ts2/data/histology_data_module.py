@@ -18,6 +18,12 @@ from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
 
 
+def get_num_replicate(num_instance_self_replicate, max_hierarchical_replicate,
+                      num_samples):
+    return max(1, (num_instance_self_replicate * max_hierarchical_replicate //
+                   num_samples))
+
+
 class PatchDataModule(pl.LightningDataModule):
     possible_sets: List[str] = [
         "train", "trainval", "test_databank", "test", "pred"
@@ -48,14 +54,19 @@ class PatchDataModule(pl.LightningDataModule):
         else:
             self.instance_cache_fname_ = self.parser_config_.params.cached_parser_file
 
-        self.train_dset_len_ = CachedCSVParser(
-            cache_dir=self.instance_cache_fname_["train"]).get_meta(
-            )["instance_len"]
-
         self.xform_config_ = config.data.transform
-        
+
         if "dataset" in config.data:
             self.dset_config_ = config.data.dataset
+
+            combined_train_cf = {}
+            combined_train_cf.update(self.dset_config_.params.common)
+            combined_train_cf.update(self.dset_config_.params.train)
+            num_replicate = combined_train_cf.get("num_instance_self_replicate", 1)
+
+            self.train_dset_len_ = CachedCSVParser(
+                cache_dir=self.instance_cache_fname_["train"]).get_meta(
+                )["instance_len"] * num_replicate
 
         if "test_dataset" in config.data:
             self.test_dset_config_ = config.data.test_dataset
@@ -114,7 +125,7 @@ class PatchDataModule(pl.LightningDataModule):
 
             if self.test_get_train_:
                 dbank_inst, dbank_tsm = CachedCSVParser(
-                    cache_dir=self.instance_cache_fname_["test"])()
+                    cache_dir=self.instance_cache_fname_["test_databank"])()
                 dbank_dataset = datasets[self.test_dset_config_.which](
                     instances=dbank_inst,
                     tensor_shape_map=dbank_tsm,

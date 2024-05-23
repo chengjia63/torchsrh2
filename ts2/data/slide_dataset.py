@@ -39,7 +39,6 @@ class HierarchicalBaseDataset(BalanceableBaseDataset, ABC):
                  num_transforms: int = 1,
                  process_read_im: callable = process_read_memmap,
                  num_instance_self_replicate: int = 1,
-                 max_hierarchical_replicate: int = 1,
                  balance_instance_class=False,
                  **kwargs) -> None:
         """Inits the base abstract dataset
@@ -58,9 +57,8 @@ class HierarchicalBaseDataset(BalanceableBaseDataset, ABC):
         self.class_to_idx_ = {}
         self.weights_ = []
 
-        self.num_instance_self_replicate_ = num_instance_self_replicate
-        self.max_hierarchical_replicate_ = max_hierarchical_replicate
-        self.num_replicates_ = -1
+        self.num_replicates_ = num_instance_self_replicate
+        logging.info(f"number of replicates {self.num_replicates_}")
 
         self.instances_ = instances
         self.tensor_shape_map = tensor_shape_map
@@ -88,11 +86,6 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
         super().__init__(**kwargs)
         self.num_samples_ = num_samples
 
-        # hack: replicate the dataset to make sure different sampling
-        #       strategy will have the same length in dataset
-        self.num_replicates_ = max(
-            1, (self.num_instance_self_replicate_ *
-                self.max_hierarchical_replicate_ // self.num_samples_))
 
     def read_images(self, inst: List):
         """Read in a list of patches, different patches and transformations"""
@@ -165,13 +158,7 @@ class HierarchicalDataset(HierarchicalBaseDataset):
         self.num_slide_samples_ = num_slide_samples
         self.num_patch_samples_ = num_patch_samples
 
-        # hack: replicate the dataset to make sure different sampling
-        #       strategy will have the same length in dataset
-        self.num_replicates_ = max(
-            1, (self.num_instance_self_replicate_ *
-                self.max_hierarchical_replicate_) //
-            (num_slide_samples * num_patch_samples * self.num_transforms_))
-        logging.info(f"number of replicates {self.num_replicates_}")
+
 
     def read_images_slide(self, inst: List):
         raise NotImplementedError()

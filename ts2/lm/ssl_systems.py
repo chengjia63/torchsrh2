@@ -48,14 +48,12 @@ class ContrastiveBaseSystem(EvalBaseSystem):
                  model_hyperparams,
                  opt_cf=None,
                  schd_cf=None,
-                 num_it_per_ep: int = None,
-                 effective_batch_size: int = None):
+                 training_params: Dict = {}):
         super().__init__()
 
         self.opt_cf_ = opt_cf
         self.schd_cf_ = schd_cf
-        self.num_it_per_ep = num_it_per_ep
-        self.eff_bz = effective_batch_size
+        self.training_params_ = training_params
 
         self.model = ContrastiveLearningNetwork(**model_hyperparams)
         self.criterion = None
@@ -88,12 +86,13 @@ class ContrastiveBaseSystem(EvalBaseSystem):
         self.val_loss.reset()
 
     def configure_optimizers(self):
-        if self.opt_cf_:
+        if not self.opt_cf_:
             return None  # if not training, no optimizer
 
-        opt, sch = get_optimizer_scheduler(self.model, self.opt_cf,
-                                           self.schd_cf, self.num_it_per_ep,
-                                           self.eff_bz)
+        opt, sch = get_optimizer_scheduler(self.model,
+                                           opt_cf=self.opt_cf_,
+                                           schd_cf=self.schd_cf_,
+                                           **self.training_params_)
 
         if sch:
             # get learn rate scheduler
@@ -119,7 +118,6 @@ class SimCLRSystem(ContrastiveBaseSystem):
 
     def __init__(self, loss_params, **kwargs):
         super().__init__(**kwargs)
-
         if self.opt_cf_:
             self.criterion = SupConLoss(**loss_params)
 
