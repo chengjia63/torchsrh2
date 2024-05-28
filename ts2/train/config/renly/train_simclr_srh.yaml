@@ -1,0 +1,191 @@
+infra:
+  exp_name: ts2/srh_usup/simclr
+  log_dir: /nfs/turbo/umms-tocho/exp/renly
+  comment: dev
+  log_gpu: True
+  seed: 1000
+data:
+  set: srh 
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+        train: /nfs/mm-isilon/brainscans/dropbox/exp/renly/srh_parser/616189bb_slide_train
+        trainval: /nfs/mm-isilon/brainscans/dropbox/exp/renly/srh_parser/616189bb_slide_trainval
+        test_databank: /nfs/mm-isilon/brainscans/dropbox/exp/renly/srh_parser/616189bb_slide_train
+        test: /nfs/mm-isilon/brainscans/dropbox/exp/renly/srh_parser/616189bb_slide_trainval
+  transform:
+    train:
+      base_aug_params: {}
+        #laser_noise_config: null
+        #base_aug: three_channels
+      strong_aug_params:
+        aug_list: 
+        - which: random_horiz_flip
+          params: {}
+        - which: random_vert_flip
+          params: {}
+        - which: gaussian_noise
+          params: {}
+        - which: color_jitter
+          params:
+            brightness: 0.4
+            contrast: 0.4 
+            saturation: 0.4
+            hue: 0.2
+        - which: random_autocontrast
+          params: {}
+        - which: random_solarize
+          params:
+            threshold: 0.2
+        - which: random_sharpness
+          params:
+            sharpness_factor: 2
+        - which: gaussian_blur
+          params:
+            kernel_size: 5
+            sigma: 1
+        - which: random_erasing
+          params: {}
+        - which: random_affine
+          params:
+            degrees: 10
+            translate: [0.1, 0.3]
+        - which: random_resized_crop
+          params:
+            size: 300
+        aug_prob: 0.3
+    trainval: ${.train}
+    test:
+      base_aug_params: {}
+      strong_aug_params:
+        aug_list: []
+        aug_prob: 0
+  dataset:
+      which: SingleLevelHierarchicalDataset
+      which_process_read: memmap
+      params:
+        common:
+          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/srh/
+          num_transforms: 2
+          num_samples: 1
+          balance_instance_class: False
+        train:
+          num_instance_self_replicate: 30
+        trainval: {}
+  test_dataset:
+      which: PatchDataset
+      which_process_read: memmap
+      params:
+          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/srh/
+          num_transforms: 1
+          balance_instance_class: False
+      negative_class_index: 4
+      classes_reorder: [0, 1, 2, 3, 5, 6, 4]
+      camera_ready_classes: [HGG, LGG, Mening, Mets, Normal, Pit, Schwan]
+  loader:
+    params:
+      common:
+        pin_memory: False
+        persistent_workers: True
+        prefetch_factor: 4
+        num_workers: 4
+      train:
+        batch_size: 512
+        drop_last: True
+        shuffle: True
+      trainval:
+        batch_size: 8
+        drop_last: False
+        shuffle: False
+      test:
+        batch_size: 64
+        drop_last: False
+        shuffle: False
+    trainval_sampler:
+      num_samples: 8
+      replacement: False 
+lightning_module:
+  which: simclr
+  params:
+    model_hyperparams:
+      backbone_cf:
+        which: resnet34
+        params: {}
+      proj_params:
+        hidden_layers: [512]
+        n_out: 128
+        activation: relu
+        drop: 0
+        bias: True
+    loss_params: {}
+    opt_cf:
+      which: adamw
+      scale_lr: True
+      params:
+        lr: 0.001
+        betas: [0.9, 0.999]
+        eps: 1.0e-8
+        weight_decay: 0.01
+        amsgrad: False
+    #opt_cf:
+    #  which: lars
+    #  scale_lr: True
+    #  params:
+    #    lr: 0.001
+    #    weight_decay: 1.0e-4
+    #    momentum: 0.9
+    #    #eta: 0.001
+    schd_cf:
+      which: cos_linear_warmup
+      params:
+        num_warmup_steps: 0.1
+        num_cycles: 0.5
+training:
+  resume_checkpoint: null
+  trainer_params:
+    max_epochs: 50
+    gradient_clip_val: 0.5
+    enable_progress_bar: True
+    precision: 'bf16-mixed'
+    deterministic: False                                                          
+  fl32_preci: medium
+  trainval:
+    freq:
+      interval: 10
+      unit: "epoch"
+testing:
+  eval_mode: patch_knn
+  save_train_pred: true
+  knn:
+    do_knn: True
+    knn_params:
+      batch_size: 1536
+      k: 200
+      t: 0.07
+  tsne:
+    interactive: False
+    num_patches: [8192]
+    which_set: [val]
+    embed_images: true
+    class_params:
+      perplexity: 50
+      learning_rate: auto
+      init : pca
+tune:
+  diagonal_items: true
+  params:
+    lightning_module/params/opt_cf/params/lr:
+    - 0.02
+    - 0.01
+    - 0.001
+    - 0.005
+    - 0.0005
+    - 0.0001
+    infra/comment:
+    - simclr_1000_lr0.02
+    - simclr_1000_lr0.01
+    - simclr_1000_lr0.001
+    - simclr_1000_lr0.005
+    - simclr_1000_lr0.0005
+    - simclr_1000_lr0.0001

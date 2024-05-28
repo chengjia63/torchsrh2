@@ -16,10 +16,8 @@ data:
         primary_label_idx: 0
       train:
         df: /nfs/turbo/umms-tocho/data/data_splits/srh_nio/srh7v1_nio_train.csv
-        #df: /nfs/turbo/umms-tocho/data/data_splits/he_glioma/trainval_v2/glioma_tcga_train.csv
       trainval:
         df: /nfs/turbo/umms-tocho/data/data_splits/srh_nio/srh7v1_nio_test.csv
-        #df: /nfs/turbo/umms-tocho/data/data_splits/he_glioma/trainval_v2/glioma_val.csv
   transform: null
   dataset: null
   loader: null
