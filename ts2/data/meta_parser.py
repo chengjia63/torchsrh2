@@ -425,7 +425,7 @@ class PatchMetaParser(SRHMetaParser):
             return [], {}
 
         all_patches_slide = self.p_meta_["slides"][slide_name]["predictions"][
-            self.seg_model_]
+            self.seg_model_]['patches']
         patch_code_decoded = patch_code_to_list(slide_s["patch_code"])
         if patch_code_decoded == ['all']:
             patch_code_decoded = list(all_patches_slide.keys())
@@ -443,7 +443,6 @@ class PatchMetaParser(SRHMetaParser):
                 return {"label": None}
 
             return {}
-
         slide_instances = [{
             "slide_name":
             patient_slide_name,
@@ -476,7 +475,8 @@ class PatchMetaParser(SRHMetaParser):
         slide_mmap_info = {
             patient_slide_name: {
                 "path": self.patch_path_func_(slide_s),
-                "shape": all_patches_slide["tensor_shape"]
+                "shape": self.p_meta_["slides"][slide_name]["predictions"][
+            self.seg_model_]["tensor_shape"]
             }
         }
         return slide_instances, slide_mmap_info
