@@ -443,6 +443,7 @@ class PatchMetaParser(SRHMetaParser):
                 return {"label": None}
 
             return {}
+
         slide_instances = [{
             "slide_name":
             patient_slide_name,
@@ -474,9 +475,11 @@ class PatchMetaParser(SRHMetaParser):
 
         slide_mmap_info = {
             patient_slide_name: {
-                "path": self.patch_path_func_(slide_s),
-                "shape": self.p_meta_["slides"][slide_name]["predictions"][
-            self.seg_model_]["tensor_shape"]
+                "path":
+                self.patch_path_func_(slide_s),
+                "shape":
+                self.p_meta_["slides"][slide_name]["predictions"][
+                    self.seg_model_]["tensor_shape"]
             }
         }
         return slide_instances, slide_mmap_info
