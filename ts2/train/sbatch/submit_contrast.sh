@@ -6,7 +6,7 @@
 #SBATCH --output=slurm_out/%A_%a.out
 
 #SBATCH --account=tocho_owned1
-#SBATCH --time=14-00:00:00
+#SBATCH --time=4-00:00:00
 
 # SBATCH --account=precisionhealth_owned1
 # SBATCH --partition=precisionhealth
@@ -22,8 +22,8 @@
 #SBATCH --ntasks-per-node=4
 # SBATCH --gpu_cmode=shared
 
-# SBATCH --nodelist=armis28003
+# SBATCH --nodelist=armis26001
 
-#SBATCH --array=0-2
+#SBATCH --array=0-5
 
 srun python train_contrastive.py -c=config/train_simclr_tcga.yaml

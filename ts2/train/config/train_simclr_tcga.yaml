@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/he_neuro/simclr_
+  exp_name: ts2/tcga_usup/simclr
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -10,10 +10,10 @@ data:
     which: CachedCSVParser
     params:
       cached_parser_file:
-        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmetacache/he_neuro/35e11675_slide_all
-        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmetacache/he_neuro/35e11675_slide_toy
-        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmetacache/tcga_glioma/5f03c12d_patch_train
-        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmetacache/tcga_glioma/5f03c12d_patch_trainval
+        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma_usup/695a2029_slide_all
+        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma_usup/695a2029_slide_toy
+        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/5f03c12d_patch_train
+        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/5f03c12d_patch_trainval
   transform:
     train:
       base_aug_params: {}
@@ -80,33 +80,33 @@ data:
           data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
           num_transforms: 1
           balance_instance_class: False
-      negative_class_index": 1
-      classes_reorder": [2,0,1]
-      camera_ready_classes": [Astro, GBM, Oligo]
+      negative_class_index: 1
+      classes_reorder: [2,0,1]
+      camera_ready_classes: [Astro, GBM, Oligo]
   loader:
     params:
       common:
-        pin_memory: True
+        pin_memory: False
         persistent_workers: True
-        prefetch_factor: 1
+        prefetch_factor: 4
         num_workers: 4
       train:
         batch_size: 512
         drop_last: True
         shuffle: True
       trainval:
-        batch_size: 64
+        batch_size: 8
         drop_last: False
         shuffle: False
       test:
-        batch_size: 63
+        batch_size: 64
         drop_last: False
         shuffle: False
     trainval_sampler:
-      num_samples: 64
+      num_samples: 8
       replacement: False 
 lightning_module:
-  which: supcon
+  which: simclr
   params:
     model_hyperparams:
       backbone_cf:
@@ -128,6 +128,14 @@ lightning_module:
         eps: 1.0e-8
         weight_decay: 0.01
         amsgrad: False
+    #opt_cf:
+    #  which: lars
+    #  scale_lr: True
+    #  params:
+    #    lr: 0.001
+    #    weight_decay: 1.0e-4
+    #    momentum: 0.9
+    #    #eta: 0.001
     schd_cf:
       which: cos_linear_warmup
       params:
@@ -139,7 +147,7 @@ training:
     max_epochs: 50
     gradient_clip_val: 0.5
     enable_progress_bar: True
-    precision: 'bf16-mixed'                                                             
+    precision: 'bf16-mixed'
     deterministic: False                                                          
   fl32_preci: medium
   trainval:
@@ -168,10 +176,16 @@ tune:
   diagonal_items: true
   params:
     lightning_module/params/opt_cf/params/lr:
-    - 0.001
-    - 0.0001
+    - 0.02
     - 0.01
+    - 0.001
+    - 0.005
+    - 0.0005
+    - 0.0001
     infra/comment:
-    - simclr_1000_lr0.001
-    - simclr_1000_lr0.0001
+    - simclr_1000_lr0.02
     - simclr_1000_lr0.01
+    - simclr_1000_lr0.001
+    - simclr_1000_lr0.005
+    - simclr_1000_lr0.0005
+    - simclr_1000_lr0.0001

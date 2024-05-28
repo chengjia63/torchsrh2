@@ -21,22 +21,29 @@ from torchsrh.datasets.utils import DSU
 
 from ts2.data.histology_data_module import PatchDataModule
 
+lms = {
+    "supcon": SupConSystem,
+    "simclr": SimCLRSystem,
+    #"simsiam": SimSiamSystem,
+    #"byol": BYOLSystem,
+    "vicreg": VICRegSystem,
+    "hss_simclr": HiDiscSystem,
+    "hss_vicreg": HiDiscSystem,
+    "hidisc_simclr": HiDiscSystem,
+    "hidisc_vicreg": HiDiscSystem,
+    "xmplr": ExemplarLearningSystem
+}
 
-def instantiate_lightning_module(which, params, training_params):
 
-    lms = {
-        "supcon": SupConSystem,
-        "simclr": SimCLRSystem,
-        #"simsiam": SimSiamSystem,
-        #"byol": BYOLSystem,
-        "vicreg": VICRegSystem,
-        "hss_simclr": HiDiscSystem,
-        "hss_vicreg": HiDiscSystem,
-        "hidisc_simclr": HiDiscSystem,
-        "hidisc_vicreg": HiDiscSystem,
-        "xmplr": ExemplarLearningSystem
-    }
+def instantiate_lightning_module(which: str, params, training_params):
     return lms[which](training_params=training_params, **params)
+
+
+def instantiate_lightning_module_from_ckpt(which: str, ckpt: str, params,
+                                           training_params):
+    return lms[which].load_from_checkpoint(ckpt,
+                                           training_params=training_params,
+                                           **params)
 
 
 def get_num_it_per_train_ep(train_len: int, cf: OmegaConf) -> int:
@@ -93,8 +100,7 @@ def main():
     logging.info(f"actual num_it_per_ep {training_params}")
 
     # setup lightning module
-    con_exp = instantiate_lightning_module(**cf["lightning_module"],
-                                           training_params=training_params)
+    con_exp = None
 
     #if "load_backbone" in cf["training"]:
     #    # load lightning checkpint
@@ -113,6 +119,8 @@ def main():
     #    logging.info("Training from scratch")
 
     if "training" in cf:
+        con_exp = instantiate_lightning_module(**cf["lightning_module"],
+                                               training_params=training_params)
         # config loggers
         logger = [
             pl.loggers.TensorBoardLogger(save_dir=exp_root, name="tb"),
@@ -156,6 +164,12 @@ def main():
         trainer.fit(con_exp, datamodule=dm)
 
     if ("testing" in cf) and (get_rank() == 0):
+        if not con_exp:
+            con_exp = instantiate_lightning_module_from_ckpt(
+                ckpt=cf.testing.load_ckpt,
+                **cf.lightning_module,
+                training_params=training_params)
+
         embedded_test_name = os.path.basename(exp_root) + "_embeddedeval"
         eval_root = opj(exp_root, "evals", embedded_test_name)
         prediction_dir = opj(eval_root, "predictions")

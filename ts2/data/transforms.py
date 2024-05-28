@@ -89,9 +89,14 @@ class NoBaseTransform(torch.nn.Module):
 
     def __init__(self):  # pylint: disable=missing-function-docstring
         super().__init__()
+        u8_min = (0, 0, 0)
+        u8_max = (255, 255, 255)  # 2^8
+
+        self.model = Normalize(mean=u8_min, std=u8_max)
+
 
     def forward(self, x: torch.Tensor):  # pylint: disable=missing-function-docstring
-        return x
+        return self.model(x)
 
 
 class StrongTransform(torch.nn.Module):

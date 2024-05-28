@@ -1,33 +1,12 @@
-import os
-import time
-import uuid
 import logging
-import time
-import math
-import random
-from datetime import datetime
 from typing import Callable, Optional, Dict, Any, Tuple, List
-from functools import partial
-import pynvml as nvml
-import numpy as np
-from matplotlib import pyplot as plt
 
-import torch
-from torch import nn
-import torch.nn.functional as F
-from torch.nn import CrossEntropyLoss
 from torch import optim
-from torch.optim.lr_scheduler import (StepLR, LambdaLR,
-                                      CosineAnnealingWarmRestarts)
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingWarmRestarts
 
-import pytorch_lightning as pl
-import torchmetrics
-
-from torchsrh.models import Classifier, MLP, resnet_backbone, vit_backbone
 import torchsrh.optim.lr_decay as lrd
-from torchsrh.optim.cosine_schedule_warmup import (
-    get_cosine_schedule_with_warmup)
-from torchsrh.models.vit import get_vit_backbone
+from torchsrh.optim.cosine_schedule_warmup import get_cosine_schedule_with_warmup
+from ts2.optim.lars import LARS
 
 
 def convert_epoch_to_iter(unit, steps, num_it_per_ep):
@@ -56,30 +35,23 @@ def get_optimizer_scheduler(model,
         logging.info(f"With effective batch size: {effective_batch_size}, " +
                      f"learn rate now {opt_params['lr']}")
 
-    required_params = {
-        "sgd": {"lr", "momentum", "dampening", "weight_decay", "nesterov"},
-        "adam": {"lr", "betas", "eps", "weight_decay", "amsgrad"},
-        "adamw": {"lr", "betas", "eps", "weight_decay", "amsgrad"},
-        "adamw_ld": {"lr", "weight_decay", "layer_decay"}
-    }
-
     if opt_str == "sgd":
         if opt_params["momentum"] == 0:
             for _ in range(99):
                 logging.warning(
                     "SGD with no momentum. Are you sure this is what you want?"
                 )
-            time.sleep(60)
         opt_func = optim.SGD
     elif opt_str == "adam":
         opt_func = optim.Adam
     elif opt_str in {"adamw", "adamw_ld"}:
         opt_func = optim.AdamW
+    elif opt_str == "lars":
+        opt_func = LARS
     else:
         raise ValueError(
             "Optimizer must be one of [sgd, adam, adamw, adamw_ld]")
 
-    #assert opt_params.keys() == required_params[opt_str]
     if opt_str == "adamw_ld":
         param_groups = lrd.param_groups_lrd(
             model,

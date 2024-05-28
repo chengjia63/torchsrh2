@@ -56,7 +56,7 @@ class PatchDataModule(pl.LightningDataModule):
 
         self.xform_config_ = config.data.transform
 
-        if "dataset" in config.data:
+        if "dataset" in config.data and config.data.dataset:
             self.dset_config_ = config.data.dataset
 
             combined_train_cf = {}
@@ -68,7 +68,7 @@ class PatchDataModule(pl.LightningDataModule):
                 cache_dir=self.instance_cache_fname_["train"]).get_meta(
                 )["instance_len"] * num_replicate
 
-        if "test_dataset" in config.data:
+        if "test_dataset" in config.data and config.data.test_dataset:
             self.test_dset_config_ = config.data.test_dataset
             self.test_get_train_ = config.testing.get("knn",
                                                       {}).get("do_knn", False)

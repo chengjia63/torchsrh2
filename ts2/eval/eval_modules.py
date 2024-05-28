@@ -793,7 +793,7 @@ class MNISTEvalModule(EvalBaseModule):
                                                       ).tolist())
         print(pred)
 
-        one_v_all_idx = self.cf_["data"].get("one_v_all_index", [])
+        one_v_all_idx = self.cf_.data.test_dataset.get("one_v_all_index", [])
         label_l = torch.tensor(pred["labels"])
         logits_l = torch.tensor(pred["logits"])
         metrics_l, metrics_names_l = self.get_all_metrics(
@@ -954,8 +954,8 @@ class SRHEvalModule(EvalBaseModule):
         normalize_f = lambda x: torch.nn.functional.normalize(
             torch.tensor(np.vstack(x)), dim=1, p=1)
 
-        neg_class_idx = self.cf_["data"]["negative_class_index"]
-        one_v_all_idx = self.cf_["data"].get("one_v_all_index", [])
+        neg_class_idx = self.cf_.data.test_dataset.negative_class_index
+        one_v_all_idx = self.cf_.data.test_dataset.get("one_v_all_index", [])
 
         def get_metrics_level(l):
 
@@ -966,7 +966,7 @@ class SRHEvalModule(EvalBaseModule):
                 logits_l,
                 label_l,
                 neg_class_idx,
-                one_v_all_idx=self.cf_["data"].get("one_v_all_index", []))
+                one_v_all_idx=self.cf_.data.test_dataset.get("one_v_all_index", []))
             cm_l = confusion_matrix(y_true=label_l,
                                     y_pred=logits_l.argmax(dim=1)).tolist()
 
