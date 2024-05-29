@@ -26,4 +26,4 @@
 
 #SBATCH --array=0-5
 
-srun python train_contrastive.py -c=config/train_simclr_tcga.yaml
+srun python train_contrastive.py -c=config/chengjia/train_simclr_tcga.yaml

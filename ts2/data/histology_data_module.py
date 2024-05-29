@@ -13,7 +13,8 @@ from omegaconf import OmegaConf
 from torchsrh.train.common import get_num_worker
 from ts2.data.meta_parser import PatchCSVParser, CachedCSVParser
 from ts2.data.patch_dataset import PatchDataset
-from ts2.data.slide_dataset import SingleLevelHierarchicalDataset, HierarchicalDataset
+from ts2.data.slide_dataset import (SingleLevelHierarchicalDataset,
+                                    HierarchicalDataset, SlideJEPADataset)
 from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
 
@@ -62,7 +63,8 @@ class PatchDataModule(pl.LightningDataModule):
             combined_train_cf = {}
             combined_train_cf.update(self.dset_config_.params.common)
             combined_train_cf.update(self.dset_config_.params.train)
-            num_replicate = combined_train_cf.get("num_instance_self_replicate", 1)
+            num_replicate = combined_train_cf.get(
+                "num_instance_self_replicate", 1)
 
             self.train_dset_len_ = CachedCSVParser(
                 cache_dir=self.instance_cache_fname_["train"]).get_meta(
@@ -81,7 +83,8 @@ class PatchDataModule(pl.LightningDataModule):
     def setup(self, stage: str):
         datasets = {
             "PatchDataset": PatchDataset,
-            "SingleLevelHierarchicalDataset": SingleLevelHierarchicalDataset
+            "SingleLevelHierarchicalDataset": SingleLevelHierarchicalDataset,
+            "SlideJEPADataset": SlideJEPADataset
         }
 
         if stage == "fit":
@@ -218,19 +221,19 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     cf = OmegaConf.create(yaml.safe_load(args.config))
+    cf.data.dataset.params.train.num_instance_self_replicate = 1
     pdm = PatchDataModule(cf)
 
     if cf.data.dataset:
         pdm.prepare_data()
         pdm.setup(stage="fit")
         tl = pdm.train_dataloader()
-        vl = pdm.trainval_dataloader()
+        vl = pdm.val_dataloader()
 
-        data = tl.dataset.__getitem__(0)
         import pdb
         pdb.set_trace()
 
-        #from tqdm import tqdm
-        #for _ in range(10):
-        #    for i in tqdm(iter(tl)):
-        #        print(i.keys())
+        from tqdm import tqdm
+        for i in tqdm(range(len(tl.dataset))):
+            data = tl.dataset.__getitem__(0)
+            #torch.save(data, f"test_data{i}.pt")
