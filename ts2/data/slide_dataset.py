@@ -9,7 +9,7 @@ import torch
 from torchvision import transforms
 from tqdm import tqdm
 import einops
-
+import math
 from ts2.data.db_improc import process_read_memmap
 from ts2.data.balanceable_dataset import BalanceableBaseDataset
 
@@ -133,7 +133,7 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
         return {"image": im, "label": target, "path": [imp]}
 
 
-class SlideJEPADataset(SingleLevelHierarchicalDataset):
+class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
 
     def __init__(self,
                  num_context_samples: int = 1,
@@ -178,9 +178,12 @@ class SlideJEPADataset(SingleLevelHierarchicalDataset):
         target_imps = np.empty(
             [self.num_context_samples_, self.num_target_samples_],
             dtype=object)
-
+        target_delta = np.empty(
+            [self.num_context_samples_, self.num_target_samples_, 2],
+            dtype=int)
         num_context = 0
         context_permute_idx = 0
+        away_round = lambda x: math.ceil(x) if x > 0 else math.floor(x)
 
         while num_context < self.num_context_samples_:
 
@@ -201,8 +204,8 @@ class SlideJEPADataset(SingleLevelHierarchicalDataset):
             num_target = 0
             patience = 0
             while (num_target < self.num_target_samples_) and (patience < 10):
-                dx = np.random.binomial(n=9, p=0.1) + 1
-                dy = np.random.binomial(n=9, p=0.1) + 1
+                dx = away_round(np.random.normal(scale=5))
+                dy = away_round(np.random.normal(scale=5))
                 new_coord = np.array(cxt_coord) + [dx, dy]
                 target_patch_name = f"{new_coord[0]:04d}-{new_coord[1]:04d}"
 
@@ -212,7 +215,8 @@ class SlideJEPADataset(SingleLevelHierarchicalDataset):
                     im_tj, _ = self.process_read_wrap(
                         curr_path, inst["patches"][target_patch_name], inst)
                     target_images[num_context, num_target, ...] = im_tj
-                    target_imps[num_context][num_target] = target_patch_name
+                    target_imps[num_context, num_target] = target_patch_name
+                    target_delta[num_context, num_target, :] = [dx, dy]
                     num_target += 1
 
                 patience += 1
@@ -226,14 +230,18 @@ class SlideJEPADataset(SingleLevelHierarchicalDataset):
 
         assert self.transform_ is not None
 
-        target_images = torch.stack([torch.stack([self.transform_(j) for j in i]) for i in target_images])
-        context_images = torch.stack([self.transform_(i) for i in context_images])
+        target_images = torch.stack([
+            torch.stack([self.transform_(j) for j in i]) for i in target_images
+        ])
+        context_images = torch.stack(
+            [self.transform_(i) for i in context_images])
         imp_maker = np.vectorize(lambda x: "@".join([inst["name"], x]))
         return {
             "context_image": context_images,
             "target_image": target_images,
-            "context_path": imp_maker(context_imps),
-            "target_path": imp_maker(target_imps)
+            "context_path": imp_maker(context_imps).tolist(),
+            "target_path": imp_maker(target_imps).tolist(),
+            "target_delta": torch.tensor(target_delta)
         }
 
     def __getitem__(self, idx: int):

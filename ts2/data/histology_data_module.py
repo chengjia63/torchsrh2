@@ -14,7 +14,7 @@ from torchsrh.train.common import get_num_worker
 from ts2.data.meta_parser import PatchCSVParser, CachedCSVParser
 from ts2.data.patch_dataset import PatchDataset
 from ts2.data.slide_dataset import (SingleLevelHierarchicalDataset,
-                                    HierarchicalDataset, SlideJEPADataset)
+                                    HierarchicalDataset, InterPatchJEPADataset)
 from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
 
@@ -84,7 +84,7 @@ class PatchDataModule(pl.LightningDataModule):
         datasets = {
             "PatchDataset": PatchDataset,
             "SingleLevelHierarchicalDataset": SingleLevelHierarchicalDataset,
-            "SlideJEPADataset": SlideJEPADataset
+            "InterPatchJEPADataset": InterPatchJEPADataset
         }
 
         if stage == "fit":

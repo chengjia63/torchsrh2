@@ -8,7 +8,7 @@ import timm
 
 from torchvision import models
 
-from ts2.models.vit import get_vit_backbone
+from ts2.models.vit_backbone import get_vit_backbone
 from ts2.models.resnet_backbone import get_resnet_backbone
 
 
@@ -89,16 +89,6 @@ class Classifier(nn.Module):
         bb_out = self.bb(x)
         return {'logits': self.head(bb_out), 'embeddings': bb_out}
 
-
-#def vit_backbone(params):
-#    """Function used to call ViT model from PyTorch Image Models.
-#    ViT source code in PyTorch Image Models (timm):
-#    https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py.
-#    """
-#    model = timm.create_model(**params)
-#    model.head = nn.Identity()
-#    model.num_out = model.embed_dim
-#    return model
 
 #class EvalNetwork(nn.Module):
 #

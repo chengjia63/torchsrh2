@@ -94,7 +94,6 @@ class NoBaseTransform(torch.nn.Module):
 
         self.model = Normalize(mean=u8_min, std=u8_max)
 
-
     def forward(self, x: torch.Tensor):  # pylint: disable=missing-function-docstring
         return self.model(x)
 
@@ -109,6 +108,7 @@ class StrongTransform(torch.nn.Module):
         callable_dict = {
             "inpaint_rows_always_apply": InpaintRows,
             "inpaint_rows": partial(rand_apply_p, which=InpaintRows),
+            "resize_always_apply": Resize,
             "resize": Resize,
             "random_horiz_flip": partial(RandomHorizontalFlip, p=aug_prob),
             "random_vert_flip": partial(RandomVerticalFlip, p=aug_prob),

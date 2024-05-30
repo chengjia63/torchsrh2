@@ -12,7 +12,8 @@ from ts2.train.common import get_num_it_per_ep, setup_checkpoints
 from ts2.eval.common import get_knn_logits
 from ts2.eval.eval_modules import do_eval
 from torchsrh.train.infra import parse_args, setup_infra_light, get_rank
-from ts2.lm.ssl_systems import (SimCLRSystem, SupConSystem, VICRegSystem)  #,
+from ts2.lm.ssl_systems import (SimCLRSystem, SupConSystem, VICRegSystem,
+                                InterPatchJEPASystem)  #,
 #SimSiamSystem, BYOLSystem)
 from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
 from torchsrh.lightning_modules.xmplr_systems import ExemplarLearningSystem
@@ -22,16 +23,13 @@ from torchsrh.datasets.utils import DSU
 from ts2.data.histology_data_module import PatchDataModule
 
 lms = {
-    "supcon": SupConSystem,
-    "simclr": SimCLRSystem,
-    #"simsiam": SimSiamSystem,
-    #"byol": BYOLSystem,
-    "vicreg": VICRegSystem,
-    "hss_simclr": HiDiscSystem,
-    "hss_vicreg": HiDiscSystem,
-    "hidisc_simclr": HiDiscSystem,
-    "hidisc_vicreg": HiDiscSystem,
-    "xmplr": ExemplarLearningSystem
+    "SupConSystem": SupConSystem,
+    "SimCLRSystem": SimCLRSystem,
+    #"SimSiamSystem": SimSiamSystem,
+    #"BYOLSystem": BYOLSystem,
+    "VICRegSystem": VICRegSystem,
+    "HiDiscSystem": HiDiscSystem,
+    "InterPatchJEPASystem": InterPatchJEPASystem,
 }
 
 
