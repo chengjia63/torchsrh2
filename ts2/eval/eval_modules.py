@@ -1087,9 +1087,7 @@ class SRHEvalModule(EvalBaseModule):
             return self.get_patient_srh(x)
 
     def get_patient_srh(self, x):
-        raise NotImplementedError()
-        return re.findall(f"(?:INV|NIO)_(?:{self.inst_reg_})_[0-9]+",
-                          x.split("/")[self.pt_str_id_])[0]
+        return re.findall(f"(?:INV|NIO)_[a-zA-Z]+_[0-9]+",x.split("@")[0].split("-")[0])[0]
 
     def get_patient_tcga(self, x):
         return x.split("@")[0].split("-")[0]
