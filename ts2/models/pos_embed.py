@@ -174,7 +174,6 @@ class AbsolutePositionEmbedding(nn.Module):
         super().__init__()
         self.seq_len = seq_len
         self.prefix_len = prefix_len
-        self.pos_embed_grad = pos_emb_grad
         self.pos_embed = nn.Parameter(torch.zeros(1, seq_len + self.prefix_len,
                                                   embed_dim),
                                       requires_grad=pos_emb_grad)
@@ -211,21 +210,8 @@ class AbsolutePositionEmbedding(nn.Module):
         pos_embed = pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
         return torch.cat((class_emb, pos_embed), dim=1)
 
-    def lookup_pos_encoding(self, coords):
-        '''
-        coords: [(0,0),...,(17,17)]
-        '''
-        coords = list(range(self.prefix_len)) + [
-            self.prefix_len + i * self.side_length + j for (i, j) in coords
-        ]
-        return self.pos_embed[:, torch.tensor(coords), :]
-
-    def forward(self, x, coords=None):
-        if not self.pos_embed_grad:
-            return x + self.interpolate_pos_encoding(x.shape[1])
-        elif coords:
-            return x + self.lookup_pos_encoding(coords)
-        return x
+    def forward(self, x):
+        return x + self.interpolate_pos_encoding(x.shape[1])
 
 
 class FourierFeaturePositionalEncoding(nn.Module):
