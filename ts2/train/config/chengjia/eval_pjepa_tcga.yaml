@@ -1,0 +1,105 @@
+infra:
+  exp_name: ts2/tcga_usup/pjepa
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
+  comment: dev
+  log_gpu: True
+  seed: 1000
+  float32_matmul_precision: medium
+data:
+  set: he
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/69ecabd1_patch40_train
+        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/69ecabd1_patch40_trainval/
+  transform:
+    test:
+      which: HistologyTransform
+      params:
+        base_aug_params: {}
+        strong_aug_params:
+          aug_list:
+          - which: resize_always_apply
+            params:
+              size: 224
+          aug_prob: 1
+  test_dataset:
+      which: PatchDataset
+      which_process_read: memmap
+      params:
+          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
+          num_transforms: 1
+          balance_instance_class: False
+      negative_class_index: 1
+      classes_reorder: [2,0,1]
+      camera_ready_classes: [Astro, GBM, Oligo]
+  loader:
+    params:
+      common:
+        pin_memory: False
+        persistent_workers: True
+        prefetch_factor: 1
+        num_workers: 1
+      test:
+        batch_size: 64
+        drop_last: False
+        shuffle: False
+lightning_module:
+  which: InterPatchJEPASystem
+  params:
+    model_hyperparams:
+      backbone_cf:
+        which: vit_tiny
+        params:
+          img_size: 224
+          patch_size: 16
+          global_pool: "avg"
+          fc_norm: False
+          class_token: False
+      pred_params:
+        predictor_embed_dim: 192
+        depth: 6
+        drop_path_rate: 0.0
+        init_std: 0.02
+        pos_emb_params:
+          prefix_len: 0
+          pos_emb_grad: True
+        block_params:
+          num_heads: 4
+          mlp_ratio: 4.0
+          qkv_bias: True
+          qk_scale: null
+          drop: 0.0
+          attn_drop: 0.0
+testing:
+  eval_mode: patch_knn
+  save_train_pred: true
+  
+  #eval_predictions
+  knn:
+    do_knn: True
+    knn_params:
+      batch_size: 1536
+      k: 20
+      t: 0.07
+  tsne:
+    interactive: False
+    num_patches: [8192]
+    which_set: [val]
+    embed_images: true
+    class_params:
+      perplexity: 50
+      learning_rate: auto
+      init : pca
+tune:
+  diagonal_items: true
+  params:
+    infra/comment:
+    - standaloneeval_dev
+    - standaloneeval_dev
+    - standaloneeval_dev
+    testing/ckpt_path:
+    - 1d713266_May31-00-47-09_sd1000_pjepa_1000_lr0.005_tune0/models/ckpt-epoch49-step300-loss0.00.ckpt
+    - 41b96d5f_May31-00-47-09_sd1000_pjepa_1000_lr0.0001_tune2/models/ckpt-epoch49-step300-loss0.00.ckpt
+    - 6cf91638_May31-00-47-09_sd1000_pjepa_1000_lr0.001_tune1/models/ckpt-epoch49-step300-loss0.00.ckpt

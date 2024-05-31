@@ -302,19 +302,21 @@ class InterPatchJEPASystem(EvalBaseSystem):
 
     def __init__(self,
                  model_hyperparams,
-                 loss_params,
-                 ema_beta,
+                 loss_params: Optional[Dict] = None,
+                 ema_beta: Optional[float] = None,
                  opt_cf: Optional[Dict] = None,
                  schd_cf: Optional[Dict] = None,
                  training_params: Optional[Dict] = None):
         super().__init__()
 
+        self.model = InterPatchJEPANetwork(**model_hyperparams)
+
+        self.beta = ema_beta
         self.opt_cf_ = opt_cf
         self.schd_cf_ = schd_cf
         self.training_params_ = training_params
-        self.beta = ema_beta
-        self.model = InterPatchJEPANetwork(**model_hyperparams)
-        if self.opt_cf_:
+
+        if training_params:
             self.criterion = torch.nn.SmoothL1Loss(**loss_params)
         else:
             self.criterion = None
