@@ -10,7 +10,7 @@ from torchvision import transforms
 from tqdm import tqdm
 import einops
 import math
-from ts2.data.db_improc import process_read_memmap
+from ts2.data.db_improc import MemmapReader
 from ts2.data.balanceable_dataset import BalanceableBaseDataset
 
 
@@ -39,7 +39,7 @@ class HierarchicalBaseDataset(BalanceableBaseDataset, ABC):
                  transform: callable,
                  target_transform: Optional[callable] = torch.tensor,
                  num_transforms: int = 1,
-                 process_read_im: callable = process_read_memmap,
+                 process_read_im: callable = MemmapReader("srh"),
                  num_instance_self_replicate: int = 1,
                  balance_instance_class=False,
                  **kwargs) -> None:
@@ -101,17 +101,17 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
             curr_path = self.make_im_path(
                 self.tensor_shape_map[curr_inst["slide_name"]]["path"])
 
-            try:
-                images.append(
-                    self.process_read_im_(
-                        curr_path,
-                        tuple(self.tensor_shape_map[inst["name"]]["shape"]),
-                        curr_inst["patch_idx"]))
-                imps_take.append("@".join(
-                    [curr_inst["slide_name"], curr_inst["patch_name"]]))
-                idx += 1
-            except:
-                logging.error("bad_file - {}".format(curr_path))
+            #try:
+            images.append(
+                self.process_read_im_(
+                    curr_path,
+                    tuple(self.tensor_shape_map[inst["name"]]["shape"]),
+                    curr_inst["patch_idx"]))
+            imps_take.append("@".join(
+                [curr_inst["slide_name"], curr_inst["patch_name"]]))
+            idx += 1
+            #except:
+            #    logging.error("bad_file - {}".format(curr_path))
 
         assert self.transform_ is not None
         xformed_im = torch.stack([

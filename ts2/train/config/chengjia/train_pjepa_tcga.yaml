@@ -67,7 +67,7 @@ data:
           data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
           num_transforms: 1
           num_context_samples: 1
-          num_target_samples: 7
+          num_target_samples: 3
           balance_instance_class: False
         train:
           num_instance_self_replicate: 3
@@ -90,7 +90,7 @@ data:
         prefetch_factor: 2
         num_workers: 4
       train:
-        batch_size: 64
+        batch_size: 128
         drop_last: True
         shuffle: True
       trainval:
@@ -157,14 +157,14 @@ lightning_module:
 training:
   resume_checkpoint: null
   trainer_params:
-    max_epochs: 50
+    max_epochs: 40
     gradient_clip_val: 0.5
     enable_progress_bar: True
     precision: 'bf16-mixed'
     deterministic: False
   trainval:
     freq:
-      interval: 5
+      interval: 2
       unit: "epoch"
 testing:
   #lightning_module:

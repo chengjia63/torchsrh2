@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from torchsrh.datasets.common import get_chnl_min, get_chnl_max
 
-from ts2.data.db_improc import process_read_memmap
+from ts2.data.db_improc import MemmapReader
 from ts2.data.balanceable_dataset import BalanceableBaseDataset
 
 
@@ -43,7 +43,7 @@ class PatchDataset(BalanceableBaseDataset):
                  transform: callable,
                  target_transform: callable = torch.tensor,
                  num_transforms: int = 1,
-                 process_read_im: callable = process_read_memmap,
+                 process_read_im: callable = MemmapReader("srh"),
                  balance_instance_class=False,
                  **kwargs) -> None:
 

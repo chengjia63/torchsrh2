@@ -89,7 +89,8 @@ class PatchDataModule(pl.LightningDataModule):
         transforms = {"HistologyTransform": HistologyTransform}
         if stage == "fit":
             prf = instantiate_process_read(
-                which=self.dset_config_.which_process_read)
+                which=self.dset_config_.which_process_read,
+                which_set=self.set_)
             train_inst, train_tsm = CachedCSVParser(
                 cache_dir=self.instance_cache_fname_["train"])()
             self.train_dataset_ = datasets[self.dset_config_.which](
@@ -114,7 +115,8 @@ class PatchDataModule(pl.LightningDataModule):
 
         if stage == "predict":
             prf = instantiate_process_read(
-                which=self.test_dset_config_.which_process_read)
+                which=self.test_dset_config_.which_process_read,
+                which_set=self.set_)
 
             test_inst, test_tsm = CachedCSVParser(
                 cache_dir=self.instance_cache_fname_["test"])()
