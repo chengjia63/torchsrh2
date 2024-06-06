@@ -13,7 +13,8 @@ from omegaconf import OmegaConf
 from torchsrh.train.common import get_num_worker
 from ts2.data.meta_parser import PatchCSVParser, CachedCSVParser
 from ts2.data.patch_dataset import PatchDataset
-from ts2.data.slide_dataset import SingleLevelHierarchicalDataset, HierarchicalDataset
+from ts2.data.slide_dataset import (SingleLevelHierarchicalDataset,
+                                    HierarchicalDataset, InterPatchJEPADataset)
 from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
 
@@ -62,7 +63,8 @@ class PatchDataModule(pl.LightningDataModule):
             combined_train_cf = {}
             combined_train_cf.update(self.dset_config_.params.common)
             combined_train_cf.update(self.dset_config_.params.train)
-            num_replicate = combined_train_cf.get("num_instance_self_replicate", 1)
+            num_replicate = combined_train_cf.get(
+                "num_instance_self_replicate", 1)
 
             self.train_dset_len_ = CachedCSVParser(
                 cache_dir=self.instance_cache_fname_["train"]).get_meta(
@@ -81,19 +83,21 @@ class PatchDataModule(pl.LightningDataModule):
     def setup(self, stage: str):
         datasets = {
             "PatchDataset": PatchDataset,
-            "SingleLevelHierarchicalDataset": SingleLevelHierarchicalDataset
+            "SingleLevelHierarchicalDataset": SingleLevelHierarchicalDataset,
+            "InterPatchJEPADataset": InterPatchJEPADataset
         }
-
+        transforms = {"HistologyTransform": HistologyTransform}
         if stage == "fit":
             prf = instantiate_process_read(
-                which=self.dset_config_.which_process_read)
+                which=self.dset_config_.which_process_read,
+                which_set=self.set_)
             train_inst, train_tsm = CachedCSVParser(
                 cache_dir=self.instance_cache_fname_["train"])()
             self.train_dataset_ = datasets[self.dset_config_.which](
                 instances=train_inst,
                 tensor_shape_map=train_tsm,
-                transform=HistologyTransform(which_set=self.set_,
-                                             **self.xform_config_["train"]),
+                transform=transforms[self.xform_config_.train.which](
+                    which_set=self.set_, **self.xform_config_.train.params),
                 process_read_im=prf,
                 **self.dset_config_.params.common,
                 **self.dset_config_.params.train)
@@ -103,23 +107,24 @@ class PatchDataModule(pl.LightningDataModule):
             self.trainval_dataset_ = datasets[self.dset_config_.which](
                 instances=trainval_inst,
                 tensor_shape_map=trainval_tsm,
-                transform=HistologyTransform(which_set=self.set_,
-                                             **self.xform_config_["trainval"]),
+                transform=transforms[self.xform_config_.trainval.which](
+                    which_set=self.set_, **self.xform_config_.trainval.params),
                 process_read_im=prf,
                 **self.dset_config_.params.common,
                 **self.dset_config_.params.trainval)
 
         if stage == "predict":
             prf = instantiate_process_read(
-                which=self.test_dset_config_.which_process_read)
+                which=self.test_dset_config_.which_process_read,
+                which_set=self.set_)
 
             test_inst, test_tsm = CachedCSVParser(
                 cache_dir=self.instance_cache_fname_["test"])()
             test_dataset = datasets[self.test_dset_config_.which](
                 instances=test_inst,
                 tensor_shape_map=test_tsm,
-                transform=HistologyTransform(which_set=self.set_,
-                                             **self.xform_config_["test"]),
+                transform=transforms[self.xform_config_.test.which](
+                    which_set=self.set_, **self.xform_config_.test.params),
                 process_read_im=prf,
                 **self.test_dset_config_.params)
 
@@ -129,8 +134,8 @@ class PatchDataModule(pl.LightningDataModule):
                 dbank_dataset = datasets[self.test_dset_config_.which](
                     instances=dbank_inst,
                     tensor_shape_map=dbank_tsm,
-                    transform=HistologyTransform(which_set=self.set_,
-                                                 **self.xform_config_["test"]),
+                    transform=transforms[self.xform_config_.test.which](
+                        which_set=self.set_, **self.xform_config_.test.params),
                     process_read_im=prf,
                     **self.test_dset_config_.params)
                 self.test_dataset_ = [dbank_dataset, test_dataset]
@@ -218,19 +223,19 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     cf = OmegaConf.create(yaml.safe_load(args.config))
+    #cf.data.dataset.params.train.num_instance_self_replicate = 1
     pdm = PatchDataModule(cf)
 
     if cf.data.dataset:
         pdm.prepare_data()
         pdm.setup(stage="fit")
         tl = pdm.train_dataloader()
-        vl = pdm.trainval_dataloader()
+        vl = pdm.val_dataloader()
 
-        data = tl.dataset.__getitem__(0)
         import pdb
         pdb.set_trace()
 
-        #from tqdm import tqdm
-        #for _ in range(10):
-        #    for i in tqdm(iter(tl)):
-        #        print(i.keys())
+        from tqdm import tqdm
+        for i in tqdm(range(len(tl.dataset))):
+            data = tl.dataset.__getitem__(0)
+            #torch.save(data, f"test_data{i}.pt")

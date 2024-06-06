@@ -1,23 +1,46 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
+""" Vision Transformer (ViT) in PyTorch
 
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-# --------------------------------------------------------
-# References:
-# timm: https://github.com/rwightman/pytorch-image-models/tree/master/timm
-# DeiT: https://github.com/facebookresearch/deit
-# --------------------------------------------------------
+A PyTorch implement of Vision Transformers as described in:
+
+'An Image Is Worth 16 x 16 Words: Transformers for Image Recognition at Scale'
+    - https://arxiv.org/abs/2010.11929
+
+`How to train your ViT? Data, Augmentation, and Regularization in Vision Transformers`
+    - https://arxiv.org/abs/2106.10270
+
+The official jax code is released and available at https://github.com/google-research/vision_transformer
+
+Acknowledgments:
+* The paper authors for releasing code and weights, thanks!
+* I fixed my class token impl based on Phil Wang's https://github.com/lucidrains/vit-pytorch ... check it out
+for some einops/einsum fun
+* Simple transformer style inspired by Andrej Karpathy's https://github.com/karpathy/minGPT
+* Bert reference code checks against Huggingface Transformers and Tensorflow Bert
+
+Hacked together by / Copyright 2020, Ross Wightman
+"""
 import math
+import logging
 from functools import partial
-import numpy as np
+from collections import OrderedDict
+from typing import Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import torch.utils.checkpoint
 
-import timm.models.vision_transformer
+from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD, IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD,\
+    OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
+from timm.models.helpers import build_model_with_cfg, resolve_pretrained_cfg, named_apply, adapt_input_conv, checkpoint_seq
+from timm.models.layers import PatchEmbed, Mlp, DropPath, trunc_normal_, lecun_normal_
+from timm.models.registry import register_model
+from timm.models.vision_transformer import (
+    default_cfgs, _cfg, init_weights_vit_timm, init_weights_vit_jax,
+    init_weights_vit_moco, get_init_weights_vit, _load_weights,
+    resize_pos_embed, _convert_openai_clip, checkpoint_filter_fn)
 
-from typing import Dict
+#_logger = logging.getLogger(__name__)
 
 
 class Attention(nn.Module):
@@ -26,13 +49,13 @@ class Attention(nn.Module):
                  dim,
                  num_heads=8,
                  qkv_bias=False,
-                 qk_scale=None,
                  attn_drop=0.,
                  proj_drop=0.):
         super().__init__()
+        assert dim % num_heads == 0, 'dim should be divisible by num_heads'
         self.num_heads = num_heads
         head_dim = dim // num_heads
-        self.scale = qk_scale or head_dim**-0.5
+        self.scale = head_dim**-0.5
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop)
@@ -43,7 +66,8 @@ class Attention(nn.Module):
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads,
                                   C // self.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]
+        q, k, v = qkv.unbind(
+            0)  # make torchscript happy (cannot use tensor as tuple)
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
         attn = attn.softmax(dim=-1)
@@ -52,57 +76,18 @@ class Attention(nn.Module):
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
-        return x, attn
-
-
-def drop_path(x, drop_prob: float = 0., training: bool = False):
-    if drop_prob == 0. or not training:
         return x
-    keep_prob = 1 - drop_prob
-    shape = (x.shape[0], ) + (1, ) * (
-        x.ndim - 1)  # work with diff dim tensors, not just 2D ConvNets
-    random_tensor = keep_prob + torch.rand(
-        shape, dtype=x.dtype, device=x.device)
-    random_tensor.floor_()  # binarize
-    output = x.div(keep_prob) * random_tensor
-    return output
 
 
-class DropPath(nn.Module):
-    """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
-    """
+class LayerScale(nn.Module):
 
-    def __init__(self, drop_prob=None):
-        super(DropPath, self).__init__()
-        self.drop_prob = drop_prob
-
-    def forward(self, x):
-        return drop_path(x, self.drop_prob, self.training)
-
-
-class MLP(nn.Module):
-
-    def __init__(self,
-                 in_features,
-                 hidden_features=None,
-                 out_features=None,
-                 act_layer=nn.GELU,
-                 drop=0.):
+    def __init__(self, dim, init_values=1e-5, inplace=False):
         super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
-        self.drop = nn.Dropout(drop)
+        self.inplace = inplace
+        self.gamma = nn.Parameter(init_values * torch.ones(dim))
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.drop(x)
-        x = self.fc2(x)
-        x = self.drop(x)
-        return x
+        return x.mul_(self.gamma) if self.inplace else x * self.gamma
 
 
 class Block(nn.Module):
@@ -112,9 +97,9 @@ class Block(nn.Module):
                  num_heads,
                  mlp_ratio=4.,
                  qkv_bias=False,
-                 qk_scale=None,
                  drop=0.,
                  attn_drop=0.,
+                 init_values=None,
                  drop_path=0.,
                  act_layer=nn.GELU,
                  norm_layer=nn.LayerNorm):
@@ -123,167 +108,331 @@ class Block(nn.Module):
         self.attn = Attention(dim,
                               num_heads=num_heads,
                               qkv_bias=qkv_bias,
-                              qk_scale=qk_scale,
                               attn_drop=attn_drop,
                               proj_drop=drop)
-        self.drop_path = DropPath(
+        self.ls1 = LayerScale(
+            dim, init_values=init_values) if init_values else nn.Identity()
+        # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
+        self.drop_path1 = DropPath(
             drop_path) if drop_path > 0. else nn.Identity()
+
         self.norm2 = norm_layer(dim)
-        mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = MLP(in_features=dim,
-                       hidden_features=mlp_hidden_dim,
+        self.mlp = Mlp(in_features=dim,
+                       hidden_features=int(dim * mlp_ratio),
                        act_layer=act_layer,
                        drop=drop)
+        self.ls2 = LayerScale(
+            dim, init_values=init_values) if init_values else nn.Identity()
+        self.drop_path2 = DropPath(
+            drop_path) if drop_path > 0. else nn.Identity()
 
-    def forward(self, x, return_attention=False):
-        y, attn = self.attn(self.norm1(x))
-        if return_attention:
-            return attn
-        x = x + self.drop_path(y)
-        residual = x
-
-        x = self.drop_path(self.mlp(self.norm2(x)))
-
-        x = residual + x
+    def forward(self, x):
+        x = x + self.drop_path1(self.ls1(self.attn(self.norm1(x))))
+        x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
         return x
 
 
-class ViTBackbone(timm.models.vision_transformer.VisionTransformer):
-    """ Vision Transformer with support for global average pooling
+class ResPostBlock(nn.Module):
+
+    def __init__(self,
+                 dim,
+                 num_heads,
+                 mlp_ratio=4.,
+                 qkv_bias=False,
+                 drop=0.,
+                 attn_drop=0.,
+                 init_values=None,
+                 drop_path=0.,
+                 act_layer=nn.GELU,
+                 norm_layer=nn.LayerNorm):
+        super().__init__()
+        self.init_values = init_values
+
+        self.attn = Attention(dim,
+                              num_heads=num_heads,
+                              qkv_bias=qkv_bias,
+                              attn_drop=attn_drop,
+                              proj_drop=drop)
+        self.norm1 = norm_layer(dim)
+        self.drop_path1 = DropPath(
+            drop_path) if drop_path > 0. else nn.Identity()
+
+        self.mlp = Mlp(in_features=dim,
+                       hidden_features=int(dim * mlp_ratio),
+                       act_layer=act_layer,
+                       drop=drop)
+        self.norm2 = norm_layer(dim)
+        self.drop_path2 = DropPath(
+            drop_path) if drop_path > 0. else nn.Identity()
+
+        self.init_weights()
+
+    def init_weights(self):
+        # NOTE this init overrides that base model init with specific changes for the block type
+        if self.init_values is not None:
+            nn.init.constant_(self.norm1.weight, self.init_values)
+            nn.init.constant_(self.norm2.weight, self.init_values)
+
+    def forward(self, x):
+        x = x + self.drop_path1(self.norm1(self.attn(x)))
+        x = x + self.drop_path2(self.norm2(self.mlp(x)))
+        return x
+
+
+class ParallelBlock(nn.Module):
+
+    def __init__(self,
+                 dim,
+                 num_heads,
+                 num_parallel=2,
+                 mlp_ratio=4.,
+                 qkv_bias=False,
+                 init_values=None,
+                 drop=0.,
+                 attn_drop=0.,
+                 drop_path=0.,
+                 act_layer=nn.GELU,
+                 norm_layer=nn.LayerNorm):
+        super().__init__()
+        self.num_parallel = num_parallel
+        self.attns = nn.ModuleList()
+        self.ffns = nn.ModuleList()
+        for _ in range(num_parallel):
+            self.attns.append(
+                nn.Sequential(
+                    OrderedDict([('norm', norm_layer(dim)),
+                                 ('attn',
+                                  Attention(dim,
+                                            num_heads=num_heads,
+                                            qkv_bias=qkv_bias,
+                                            attn_drop=attn_drop,
+                                            proj_drop=drop)),
+                                 ('ls',
+                                  LayerScale(dim, init_values=init_values)
+                                  if init_values else nn.Identity()),
+                                 ('drop_path', DropPath(drop_path)
+                                  if drop_path > 0. else nn.Identity())])))
+            self.ffns.append(
+                nn.Sequential(
+                    OrderedDict([('norm', norm_layer(dim)),
+                                 ('mlp',
+                                  Mlp(dim,
+                                      hidden_features=int(dim * mlp_ratio),
+                                      act_layer=act_layer,
+                                      drop=drop)),
+                                 ('ls',
+                                  LayerScale(dim, init_values=init_values)
+                                  if init_values else nn.Identity()),
+                                 ('drop_path', DropPath(drop_path)
+                                  if drop_path > 0. else nn.Identity())])))
+
+    def _forward_jit(self, x):
+        x = x + torch.stack([attn(x) for attn in self.attns]).sum(dim=0)
+        x = x + torch.stack([ffn(x) for ffn in self.ffns]).sum(dim=0)
+        return x
+
+    @torch.jit.ignore
+    def _forward(self, x):
+        x = x + sum(attn(x) for attn in self.attns)
+        x = x + sum(ffn(x) for ffn in self.ffns)
+        return x
+
+    def forward(self, x):
+        if torch.jit.is_scripting() or torch.jit.is_tracing():
+            return self._forward_jit(x)
+        else:
+            return self._forward(x)
+
+
+class VisionTransformer(nn.Module):
+    """ Vision Transformer
+
+    A PyTorch impl of : `An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale`
+        - https://arxiv.org/abs/2010.11929
     """
 
-    def __init__(self, global_pool=False, **kwargs):
-        super(ViTBackbone, self).__init__(**kwargs)
+    def __init__(
+        self,
+        img_size=224,
+        patch_size=16,
+        in_chans=3,
+        num_classes=1000,
+        global_pool='token',
+        embed_dim=768,
+        depth=12,
+        num_heads=12,
+        mlp_ratio=4.,
+        qkv_bias=True,
+        init_values=None,
+        class_token=True,
+        no_embed_class=False,
+        pre_norm=False,
+        fc_norm=None,
+        drop_rate=0.,
+        attn_drop_rate=0.,
+        drop_path_rate=0.,
+        weight_init='',
+        embed_layer=PatchEmbed,
+        norm_layer=None,
+        act_layer=None,
+        block_fn=Block,
+    ):
+        """
+        Args:
+            img_size (int, tuple): input image size
+            patch_size (int, tuple): patch size
+            in_chans (int): number of input channels
+            num_classes (int): number of classes for classification head
+            global_pool (str): type of global pooling for final sequence (default: 'token')
+            embed_dim (int): embedding dimension
+            depth (int): depth of transformer
+            num_heads (int): number of attention heads
+            mlp_ratio (int): ratio of mlp hidden dim to embedding dim
+            qkv_bias (bool): enable bias for qkv if True
+            init_values: (float): layer-scale init values
+            class_token (bool): use class token
+            fc_norm (Optional[bool]): pre-fc norm after pool, set if global_pool == 'avg' if None (default: None)
+            drop_rate (float): dropout rate
+            attn_drop_rate (float): attention dropout rate
+            drop_path_rate (float): stochastic depth rate
+            weight_init (str): weight init scheme
+            embed_layer (nn.Module): patch embedding layer
+            norm_layer: (nn.Module): normalization layer
+            act_layer: (nn.Module): MLP activation layer
+        """
+        super().__init__()
+        assert global_pool in ('', 'avg', 'token')
+        assert class_token or global_pool != 'token'
+        use_fc_norm = global_pool == 'avg' if fc_norm is None else fc_norm
+        norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6)
+        act_layer = act_layer or nn.GELU
 
+        self.num_classes = num_classes
         self.global_pool = global_pool
-        if self.global_pool:
-            norm_layer = kwargs['norm_layer']
-            embed_dim = kwargs['embed_dim']
-            self.fc_norm = norm_layer(embed_dim)
+        self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
+        self.num_prefix_tokens = 1 if class_token else 0
+        self.no_embed_class = no_embed_class
+        self.grad_checkpointing = False
 
-            del self.norm  # remove the original norm
-        self.num_out = self.embed_dim
+        self.patch_embed = embed_layer(
+            img_size=img_size,
+            patch_size=patch_size,
+            in_chans=in_chans,
+            embed_dim=embed_dim,
+            bias=not pre_norm,  # disable bias if pre-norm is used (e.g. CLIP)
+        )
+        num_patches = self.patch_embed.num_patches
+
+        self.cls_token = nn.Parameter(torch.zeros(
+            1, 1, embed_dim)) if class_token else None
+        embed_len = num_patches if no_embed_class else num_patches + self.num_prefix_tokens
+        self.pos_embed = nn.Parameter(
+            torch.randn(1, embed_len, embed_dim) * .02)
+        self.pos_drop = nn.Dropout(p=drop_rate)
+        self.norm_pre = norm_layer(embed_dim) if pre_norm else nn.Identity()
+
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)
+               ]  # stochastic depth decay rule
+        self.blocks = nn.Sequential(*[
+            block_fn(dim=embed_dim,
+                     num_heads=num_heads,
+                     mlp_ratio=mlp_ratio,
+                     qkv_bias=qkv_bias,
+                     init_values=init_values,
+                     drop=drop_rate,
+                     attn_drop=attn_drop_rate,
+                     drop_path=dpr[i],
+                     norm_layer=norm_layer,
+                     act_layer=act_layer) for i in range(depth)
+        ])
+        self.norm = norm_layer(embed_dim) if not use_fc_norm else nn.Identity()
+
+        # Classifier Head
+        self.fc_norm = norm_layer(embed_dim) if use_fc_norm else nn.Identity()
+        self.head = nn.Linear(
+            self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+
+        if weight_init != 'skip':
+            self.init_weights(weight_init)
+
+    def init_weights(self, mode=''):
+        assert mode in ('jax', 'jax_nlhb', 'moco', '')
+        head_bias = -math.log(self.num_classes) if 'nlhb' in mode else 0.
+        trunc_normal_(self.pos_embed, std=.02)
+        if self.cls_token is not None:
+            nn.init.normal_(self.cls_token, std=1e-6)
+        named_apply(get_init_weights_vit(mode, head_bias), self)
+
+    def _init_weights(self, m):
+        # this fn left here for compat with downstream users
+        init_weights_vit_timm(m)
+
+    @torch.jit.ignore()
+    def load_pretrained(self, checkpoint_path, prefix=''):
+        _load_weights(self, checkpoint_path, prefix)
+
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        return {'pos_embed', 'cls_token', 'dist_token'}
+
+    @torch.jit.ignore
+    def group_matcher(self, coarse=False):
+        return dict(
+            stem=r'^cls_token|pos_embed|patch_embed',  # stem and embed
+            blocks=[(r'^blocks\.(\d+)', None), (r'^norm', (99999, ))])
+
+    @torch.jit.ignore
+    def set_grad_checkpointing(self, enable=True):
+        self.grad_checkpointing = enable
+
+    @torch.jit.ignore
+    def get_classifier(self):
+        return self.head
+
+    def reset_classifier(self, num_classes: int, global_pool=None):
+        self.num_classes = num_classes
+        if global_pool is not None:
+            assert global_pool in ('', 'avg', 'token')
+            self.global_pool = global_pool
+        self.head = nn.Linear(
+            self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+
+    def _pos_embed(self, x):
+        if self.no_embed_class:
+            # deit-3, updated JAX (big vision)
+            # position embedding does not overlap with class token, add then concat
+            x = x + self.pos_embed
+            if self.cls_token is not None:
+                x = torch.cat((self.cls_token.expand(x.shape[0], -1, -1), x),
+                              dim=1)
+        else:
+            # original timm, JAX, and deit vit impl
+            # pos_embed has entry for class token, concat then add
+            if self.cls_token is not None:
+                x = torch.cat((self.cls_token.expand(x.shape[0], -1, -1), x),
+                              dim=1)
+            x = x + self.pos_embed
+        return self.pos_drop(x)
 
     def forward_features(self, x):
-        B = x.shape[0]
         x = self.patch_embed(x)
-
-        cls_tokens = self.cls_token.expand(
-            B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
-        x = torch.cat((cls_tokens, x), dim=1)
-        x = x + self.pos_embed
-        x = self.pos_drop(x)
-
-        for blk in self.blocks:
-            x = blk(x)
-
-        if self.global_pool:
-            x = x[:, 1:, :].mean(dim=1)  # global pool without cls token
-            outcome = self.fc_norm(x)
+        x = self._pos_embed(x)
+        x = self.norm_pre(x)
+        if self.grad_checkpointing and not torch.jit.is_scripting():
+            x = checkpoint_seq(self.blocks, x)
         else:
-            x = self.norm(x)
-            outcome = x[:, 0]
+            x = self.blocks(x)
+        x = self.norm(x)
+        return x
 
-        return outcome
+    def forward_head(self, x, pre_logits: bool = False):
+        if self.global_pool:
+            x = x[:, self.num_prefix_tokens:].mean(
+                dim=1) if self.global_pool == 'avg' else x[:, 0]
+        x = self.fc_norm(x)
+        return x if pre_logits else self.head(x)
 
     def forward(self, x):
         x = self.forward_features(x)
+        x = self.forward_head(x)
         return x
-
-
-def get_vit_backbone(which: str = "vit_base", params: Dict = {}):
-    if which == "vit_tiny":
-        return ViTBackbone(num_classes=0,
-                           embed_dim=192,
-                           depth=12,
-                           num_heads=3,
-                           mlp_ratio=4,
-                           qkv_bias=True,
-                           norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                           **params)
-    elif which == "vit_small":
-        return ViTBackbone(num_classes=0,
-                           embed_dim=384,
-                           depth=12,
-                           num_heads=6,
-                           mlp_ratio=4,
-                           qkv_bias=True,
-                           norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                           **params)
-    elif which == "vit_base":
-        return ViTBackbone(num_classes=0,
-                           embed_dim=768,
-                           depth=12,
-                           num_heads=12,
-                           mlp_ratio=4,
-                           qkv_bias=True,
-                           norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                           **params)
-    elif which == "vit_large":
-        return ViTBackbone(num_classes=0,
-                           embed_dim=1024,
-                           depth=24,
-                           num_heads=16,
-                           mlp_ratio=4,
-                           qkv_bias=True,
-                           norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                           **params)
-    elif which == "vit_huge":
-        return ViTBackbone(num_classes=0,
-                           embed_dim=1280,
-                           depth=32,
-                           num_heads=16,
-                           mlp_ratio=4,
-                           qkv_bias=True,
-                           norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                           **params)
-    elif which == "vit":
-        return ViTBackbone(**params)
-    else:
-        raise ValueError(
-            "ViT backbone name must be in [tiny, small, base, large, huge]")
-
-
-if __name__ == "__main__":
-    import logging
-    from torch.utils.data import DataLoader
-
-    from torchsrh.datasets.db_improc import get_transformations
-    from torchsrh.datasets.patch_dataset import PatchDataset
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format=
-        "[%(levelname)-s|%(asctime)s|%(filename)s:%(lineno)d|%(funcName)s] %(message)s",
-        datefmt="%H:%M:%S",
-        handlers=[logging.StreamHandler()])
-    logging.info("Vit backbone + patch data debug log")
-
-    csv_path = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh/torchsrh/train/data/srh7v1/srh7v1_toy.csv"
-    data_root = "/nfs/turbo/umms-tocho/root_srh_db/"
-
-    tx, vx = get_transformations({
-        "data": {
-            "train_augmentation": [{
-                "which": "resize",
-                "params": {
-                    "size": 224
-                }
-            }],
-            "valid_augmentation": "same",
-            "augmentation_random_prob": 0
-        }
-    })
-    dset = PatchDataset(data_root=data_root,
-                        slides_file=csv_path,
-                        segmentation_model="03207B00",
-                        transform=tx,
-                        balance_patch_per_class=True)
-    dl = DataLoader(dset, batch_size=5)
-
-    batch1 = next(iter(dl))
-    model = get_vit_backbone()()
-    assert model(torch.zeros_like(batch1["image"])).shape == torch.Size(
-        [5, 768])
-
-    import pdb
-    pdb.set_trace()
