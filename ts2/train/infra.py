@@ -155,8 +155,8 @@ def setup_infra_testing(cf: OmegaConf,
 
 def get_exp_instance_name(cf: OmegaConf):
     all_cmt = f"sd{cf['infra']['seed']}_{cf['infra']['comment']}"
-    if tune_cmt := cf.get("tune", {}).get("taskid"):
-        all_cmt += f"_{tune_cmt}"
+    if tune_cmt := cf.get("tune", {}).get("taskid") is not None:
+        all_cmt += f"_tune{tune_cmt}"
     time = datetime.now().strftime("%b%d-%H-%M-%S")
     return "_".join([uuid.uuid4().hex[:8], time, all_cmt])
 

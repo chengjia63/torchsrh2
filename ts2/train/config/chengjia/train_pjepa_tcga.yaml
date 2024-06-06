@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/tcga_usup/pjepa
+  exp_name: ts2/tcga_usup_dev/pjepa
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -24,9 +24,10 @@ data:
           #base_aug: three_channels
         strong_aug_params:
           aug_list:
-          - which: resize_always_apply
-            params:
-              size: 224
+          - which: random_horiz_flip
+            params: {}
+          - which: random_vert_flip
+            params: {}
           - which: random_autocontrast
             params: {}
           - which: random_sharpness
@@ -44,6 +45,11 @@ data:
               sigma: 1
           - which: gaussian_noise
             params: {}
+          - which: random_erasing
+            params: {}
+          - which: random_resized_crop
+            params:
+              size: 300
           aug_prob: 0.3
     trainval: ${.train}
     test:
@@ -51,11 +57,8 @@ data:
       params:
         base_aug_params: {}
         strong_aug_params:
-          aug_list:
-          - which: resize_always_apply
-            params:
-              size: 224
-          aug_prob: 1
+          aug_list: []
+          aug_prob: 0
   dataset:
       which: InterPatchJEPADataset
       which_process_read: memmap
@@ -64,10 +67,10 @@ data:
           data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
           num_transforms: 1
           num_context_samples: 1
-          num_target_samples: 1
+          num_target_samples: 7
           balance_instance_class: False
         train:
-          num_instance_self_replicate: 1
+          num_instance_self_replicate: 3
         trainval: {}
   test_dataset:
       which: PatchDataset
@@ -84,10 +87,10 @@ data:
       common:
         pin_memory: False
         persistent_workers: True
-        prefetch_factor: 1
-        num_workers: 1
+        prefetch_factor: 2
+        num_workers: 4
       train:
-        batch_size: 256
+        batch_size: 64
         drop_last: True
         shuffle: True
       trainval:
@@ -106,14 +109,14 @@ lightning_module:
   params:
     model_hyperparams:
       backbone_cf:
-        which: vit_tiny
-        params:
-          img_size: 224
-          patch_size: 16
-          global_pool: ""
-          class_token: False
+        which: resnet34
+        params: {}
+        #  img_size: 224
+        #  patch_size: 16
+        #  global_pool: ""
+        #  class_token: False
       pred_params:
-        predictor_embed_dim: 192
+        predictor_embed_dim: 512
         depth: 6
         drop_path_rate: 0.0
         init_std: 0.02
@@ -161,16 +164,43 @@ training:
     deterministic: False
   trainval:
     freq:
-      interval: 10
+      interval: 5
       unit: "epoch"
 testing:
+  #lightning_module:
+  #  which: InterPatchJEPASystem
+  #  params:
+  #    model_hyperparams:
+  #      backbone_cf:
+  #        which: vit_tiny
+  #        params:
+  #          img_size: 224
+  #          patch_size: 16
+  #          global_pool: "avg"
+  #          fc_norm: False
+  #          class_token: False
+  #      pred_params:
+  #        predictor_embed_dim: 192
+  #        depth: 6
+  #        drop_path_rate: 0.0
+  #        init_std: 0.02
+  #        pos_emb_params:
+  #          prefix_len: 0
+  #          pos_emb_grad: True
+  #        block_params:
+  #          num_heads: 4
+  #          mlp_ratio: 4.0
+  #          qkv_bias: True
+  #          qk_scale: null
+  #          drop: 0.0
+  #          attn_drop: 0.0
   eval_mode: patch_knn
   save_train_pred: true
   knn:
     do_knn: True
     knn_params:
       batch_size: 1536
-      k: 200
+      k: 20
       t: 0.07
   tsne:
     interactive: False
@@ -185,10 +215,12 @@ tune:
   diagonal_items: true
   params:
     lightning_module/params/opt_cf/params/lr:
-    - 0.005
-    - 0.001
     - 0.0001
+    - 0.001
+    - 0.01
+    - 0.00001
     infra/comment:
-    - pjepa_1000_lr0.005
-    - pjepa_1000_lr0.001
     - pjepa_1000_lr0.0001
+    - pjepa_1000_lr0.001
+    - pjepa_1000_lr0.01
+    - pjepa_1000_lr0.00001

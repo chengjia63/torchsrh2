@@ -26,14 +26,13 @@ class InterPatchJEPANetwork(torch.nn.Module):
         super(InterPatchJEPANetwork, self).__init__()
         self.bb = instantiate_backbone(**backbone_cf)
         self.pred = InterPatchJEPAPredictor(embed_dim=self.bb.num_out,
-                                            img_size=self.bb.img_size,
-                                            patch_size=self.bb.patch_size,
                                             **pred_params)
         self.target_bb = copy.deepcopy(self.bb)
         #self.num_out = self.pred.num_out
 
     def forward(self, batch: Dict) -> torch.Tensor:
         bs, nc, nt, _, _, _ = batch["target_image"].shape
+
         context_im = einops.rearrange(batch["context_image"],
                                       "b nc c h w -> (b nc) c h w")
 
@@ -41,15 +40,12 @@ class InterPatchJEPANetwork(torch.nn.Module):
                                      "b nc nt c h w -> (b nc nt) c h w")
 
         target_delta = einops.rearrange(batch["target_delta"],
-                                        "b nc nt delta -> (b nc nt) delta")
+                                        "b nc nt delta -> (b nc) nt delta")
 
         context_emb = self.bb(context_im)
-        context_emb = einops.rearrange(context_emb,
-                                       "(b nc) p d -> b nc p d",
-                                       b=bs)
-        context_emb = einops.rearrange(context_emb.repeat(nt, 1, 1, 1, 1),
-                                       "nt b nc p d -> (b nc nt) p d")
+        context_emb = einops.rearrange(context_emb, "bnc d -> bnc 1 d")
         target_hat = self.pred(context_emb, target_delta)
+        target_hat = einops.rearrange(target_hat, "b nc d -> (b nc) d")
 
         with torch.no_grad():
             target_emb = self.target_bb(target_im)
@@ -63,8 +59,6 @@ class InterPatchJEPAPredictor(nn.Module):
     """ Vision Transformer """
 
     def __init__(self,
-                 img_size: int,
-                 patch_size: int,
                  pos_emb_params,
                  block_params,
                  embed_dim=768,
@@ -74,8 +68,6 @@ class InterPatchJEPAPredictor(nn.Module):
                  init_std=0.02):
         super().__init__()
 
-        self.num_token_one_dim = img_size // patch_size
-
         self.predictor_embed = nn.Linear(embed_dim,
                                          predictor_embed_dim,
                                          bias=True)
@@ -84,10 +76,6 @@ class InterPatchJEPAPredictor(nn.Module):
             embed_dim=predictor_embed_dim, **pos_emb_params)
 
         # same as timm vit
-        self.intrapatch_pos_embed = nn.Parameter(
-            torch.randn(1, self.num_token_one_dim * self.num_token_one_dim,
-                        predictor_embed_dim) * .02)
-
         norm_layer = partial(nn.LayerNorm, eps=1e-6)
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)
                ]  # stochastic depth decay rule
@@ -104,7 +92,7 @@ class InterPatchJEPAPredictor(nn.Module):
         # ------
         self.init_std = init_std
         #trunc_normal_(self.mask_token, std=self.init_std)
-        trunc_normal_(self.intrapatch_pos_embed, std=.02)
+        #trunc_normal_(self.intrapatch_pos_embed, std=.02)
         self.apply(self._init_weights)
         self.fix_init_weight()
 
@@ -134,21 +122,9 @@ class InterPatchJEPAPredictor(nn.Module):
         # -- map from encoder-dim to pedictor-dim
         x = self.predictor_embed(x)
 
-        # -- add positional embedding to x tokens
-        context_pos_emb = resample_abs_pos_embed(
-            self.intrapatch_pos_embed,
-            (self.num_token_one_dim, self.num_token_one_dim),
-            num_prefix_tokens=0)
-        x += context_pos_emb
-
         # -- concat mask tokens to x
         target_patch_pos_emb = self.interpatch_pos_embed.forward_new(
-            x.shape[1], deltas.shape[0], coords=deltas)
-        target_intrapatch_pos_emb = resample_abs_pos_embed(
-            self.intrapatch_pos_embed,
-            (self.num_token_one_dim, self.num_token_one_dim),
-            num_prefix_tokens=0)
-        target_patch_pos_emb += target_intrapatch_pos_emb
+            coords=deltas)
 
         _, n_ctxt, _ = x.shape
         x = torch.cat([x, target_patch_pos_emb], dim=1)
@@ -162,6 +138,150 @@ class InterPatchJEPAPredictor(nn.Module):
         x = x[:, n_ctxt:]
         x = self.predictor_proj(x)
         return x
+
+
+# class InterPatchJEPANetwork(torch.nn.Module):
+#     """A network consists of a backbone and projection head.
+#     Forward pass returns the normalized embeddings after a projection layer.
+#     """
+#
+#     def __init__(self, backbone_cf: Dict, pred_params: Dict):
+#         super(InterPatchJEPANetwork, self).__init__()
+#         self.bb = instantiate_backbone(**backbone_cf)
+#         self.pred = InterPatchJEPAPredictor(embed_dim=self.bb.num_out,
+#                                             **pred_params)
+#         self.target_bb = copy.deepcopy(self.bb)
+#         #self.num_out = self.pred.num_out
+#
+#     def forward(self, batch: Dict) -> torch.Tensor:
+#         bs, nc, nt, _, _, _ = batch["target_image"].shape
+#         context_im = einops.rearrange(batch["context_image"],
+#                                       "b nc c h w -> (b nc) c h w")
+#
+#         target_im = einops.rearrange(batch["target_image"],
+#                                      "b nc nt c h w -> (b nc nt) c h w")
+#
+#         target_delta = einops.rearrange(batch["target_delta"],
+#                                         "b nc nt delta -> (b nc nt) delta")
+#
+#         context_emb = self.bb(context_im)
+#         context_emb = einops.rearrange(context_emb,
+#                                        "(b nc) p d -> b nc p d",
+#                                        b=bs)
+#         context_emb = einops.rearrange(context_emb.repeat(nt, 1, 1, 1, 1),
+#                                        "nt b nc p d -> (b nc nt) p d")
+#         target_hat = self.pred(context_emb, target_delta)
+#
+#         with torch.no_grad():
+#             target_emb = self.target_bb(target_im)
+#             target_emb = F.layer_norm(target_emb, (target_emb.size(-1), ))
+#             # normalize over feature-dim
+#
+#         return target_hat, target_emb
+
+# class InterPatchJEPAPredictor(nn.Module):
+#     """ Vision Transformer """
+
+#     def __init__(self,
+#                  img_size: int,
+#                  patch_size: int,
+#                  pos_emb_params,
+#                  block_params,
+#                  embed_dim=768,
+#                  predictor_embed_dim=384,
+#                  depth=6,
+#                  drop_path_rate=0.0,
+#                  init_std=0.02):
+#         super().__init__()
+
+#         self.num_token_one_dim = img_size // patch_size
+
+#         self.predictor_embed = nn.Linear(embed_dim,
+#                                          predictor_embed_dim,
+#                                          bias=True)
+
+#         self.interpatch_pos_embed = FourierFeaturePositionalEncoding(
+#             embed_dim=predictor_embed_dim, **pos_emb_params)
+
+#         # same as timm vit
+#         self.intrapatch_pos_embed = nn.Parameter(
+#             torch.randn(1, self.num_token_one_dim * self.num_token_one_dim,
+#                         predictor_embed_dim) * .02)
+
+#         norm_layer = partial(nn.LayerNorm, eps=1e-6)
+#         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)
+#                ]  # stochastic depth decay rule
+#         self.predictor_blocks = nn.ModuleList([
+#             Block(dim=predictor_embed_dim,
+#                   drop_path=dpr[i],
+#                   norm_layer=norm_layer,
+#                   **block_params) for i in range(depth)
+#         ])
+#         self.predictor_norm = norm_layer(predictor_embed_dim)
+#         self.predictor_proj = nn.Linear(predictor_embed_dim,
+#                                         embed_dim,
+#                                         bias=True)
+#         # ------
+#         self.init_std = init_std
+#         #trunc_normal_(self.mask_token, std=self.init_std)
+#         trunc_normal_(self.intrapatch_pos_embed, std=.02)
+#         self.apply(self._init_weights)
+#         self.fix_init_weight()
+
+#     def fix_init_weight(self):
+
+#         def rescale(param, layer_id):
+#             param.div_(math.sqrt(2.0 * layer_id))
+
+#         for layer_id, layer in enumerate(self.predictor_blocks):
+#             rescale(layer.attn.proj.weight.data, layer_id + 1)
+#             rescale(layer.mlp.fc2.weight.data, layer_id + 1)
+
+#     def _init_weights(self, m):
+#         if isinstance(m, nn.Linear):
+#             trunc_normal_(m.weight, std=self.init_std)
+#             if isinstance(m, nn.Linear) and m.bias is not None:
+#                 nn.init.constant_(m.bias, 0)
+#         elif isinstance(m, nn.LayerNorm):
+#             nn.init.constant_(m.bias, 0)
+#             nn.init.constant_(m.weight, 1.0)
+#         elif isinstance(m, nn.Conv2d):
+#             trunc_normal_(m.weight, std=self.init_std)
+#             if m.bias is not None:
+#                 nn.init.constant_(m.bias, 0)
+
+#     def forward(self, x, deltas):
+#         # -- map from encoder-dim to pedictor-dim
+#         x = self.predictor_embed(x)
+
+#         # -- add positional embedding to x tokens
+#         context_pos_emb = resample_abs_pos_embed(
+#             self.intrapatch_pos_embed,
+#             (self.num_token_one_dim, self.num_token_one_dim),
+#             num_prefix_tokens=0)
+#         x += context_pos_emb
+
+#         # -- concat mask tokens to x
+#         target_patch_pos_emb = self.interpatch_pos_embed.forward_new(
+#             x.shape[1], deltas.shape[0], coords=deltas)
+#         target_intrapatch_pos_emb = resample_abs_pos_embed(
+#             self.intrapatch_pos_embed,
+#             (self.num_token_one_dim, self.num_token_one_dim),
+#             num_prefix_tokens=0)
+#         target_patch_pos_emb += target_intrapatch_pos_emb
+
+#         _, n_ctxt, _ = x.shape
+#         x = torch.cat([x, target_patch_pos_emb], dim=1)
+
+#         # -- fwd prop
+#         for blk in self.predictor_blocks:
+#             x = blk(x)
+#         x = self.predictor_norm(x)
+
+#         # -- return preds for mask tokens
+#         x = x[:, n_ctxt:]
+#         x = self.predictor_proj(x)
+#         return x
 
 
 # utils

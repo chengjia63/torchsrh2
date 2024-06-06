@@ -261,20 +261,23 @@ class FourierFeaturePositionalEncoding(nn.Module):
 
         self._mlp.apply(init_weights)
 
-    def forward_new(self, bsz, n_tokens, coords, return_ff: bool = False):
+    def forward_new(self, coords, return_ff: bool = False):
+        bsz, n_tokens, _ = coords.shape
         n = n_tokens - self.prefix_len
 
-        x = coords.unsqueeze(0).float().unsqueeze(-2)  # NxGxM (G=1, M=2)
+        #x = coords.unsqueeze(0).float().unsqueeze(-2)  # NxGxM (G=1, M=2)
+        #ff_vec = self._ff_embed(x)  # NxGx(F/2)
+        #
+        #f = torch.cat([torch.cos(ff_vec), torch.sin(ff_vec)], axis=-1)
+        #f = 1 / np.sqrt(self.dim_ff_) * f  # NxGxF
 
-        ff_vec = self._ff_embed(x)  # NxGx(F/2)
-
+        ff_vec = self._ff_embed(coords.float())  # NxGx(F/2)
         f = torch.cat([torch.cos(ff_vec), torch.sin(ff_vec)], axis=-1)
         f = 1 / np.sqrt(self.dim_ff_) * f  # NxGxF
 
         if return_ff: return f
-        pe = self._mlp(f).reshape(n, self.embed_dim_).unsqueeze(0).repeat(
-            bsz, 1, 1)
-        return einops.rearrange(pe, "inter intra d -> intra inter d")
+
+        return self._mlp(f)
 
     def forward(self, H, coords, return_ff: bool = False):
         bsz, n = H.shape[0], H.shape[1]

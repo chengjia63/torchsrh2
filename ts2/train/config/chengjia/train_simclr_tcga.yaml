@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/tcga_usup/simclr
+  exp_name: ts2/he_neuro_vit/simclr30
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -11,10 +11,10 @@ data:
     which: CachedCSVParser
     params:
       cached_parser_file:
-        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma_usup/695a2029_slide_all
-        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma_usup/695a2029_slide_toy
-        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/5f03c12d_patch_train
-        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/5f03c12d_patch_trainval
+        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/he_neuro/92b8ad49_slide_all
+        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/he_neuro/92b8ad49_slide_toy
+        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/69ecabd1_patch40_train
+        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/69ecabd1_patch40_trainval
   transform:
     train:
       which: HistologyTransform
@@ -23,40 +23,36 @@ data:
           #laser_noise_config: null
           #base_aug: three_channels
         strong_aug_params:
-          aug_list: 
+          aug_list:
+          - which: resize_always_apply
+            params:
+              size: 224
           - which: random_horiz_flip
             params: {}
           - which: random_vert_flip
             params: {}
-          - which: gaussian_noise
-            params: {}
-          - which: color_jitter
-            params:
-              brightness: 0.4
-              contrast: 0.4 
-              saturation: 0.4
-              hue: 0.2
           - which: random_autocontrast
             params: {}
-          - which: random_solarize
-            params:
-              threshold: 0.2
           - which: random_sharpness
             params:
               sharpness_factor: 2
+          - which: color_jitter
+            params:
+              brightness: 0.4
+              contrast: 0.4
+              saturation: 0.4
+              hue: 0.2
           - which: gaussian_blur
             params:
-              kernel_size: 5
+              kernel_size: 29
               sigma: 1
-          - which: random_erasing
+          - which: gaussian_noise
             params: {}
-          - which: random_affine
-            params:
-              degrees: 10
-              translate: [0.1, 0.3]
           - which: random_resized_crop
             params:
-              size: 300
+              size: 224
+          - which: random_erasing
+            params: {}
           aug_prob: 0.3
     trainval: ${.train}
     test:
@@ -64,8 +60,11 @@ data:
       params:
         base_aug_params: {}
         strong_aug_params:
-          aug_list: []
-          aug_prob: 0
+          aug_list:
+          - which: resize_always_apply
+            params:
+              size: 224
+          aug_prob: 1
   dataset:
       which: SingleLevelHierarchicalDataset
       which_process_read: memmap
@@ -109,17 +108,21 @@ data:
         shuffle: False
     trainval_sampler:
       num_samples: 8
-      replacement: False 
+      replacement: False
 lightning_module:
-  which: simclr
+  which: SimCLRSystem
   params:
     model_hyperparams:
       backbone_cf:
-        which: resnet34
-        params: {}
+        which: vit_tiny
+        params:
+          img_size: 224
+          patch_size: 16
+          global_pool: "token"
+          class_token: True
       proj_params:
-        hidden_layers: [512]
-        n_out: 128
+        hidden_layers: [192]
+        n_out: 192
         activation: relu
         drop: 0
         bias: True
@@ -149,11 +152,11 @@ lightning_module:
 training:
   resume_checkpoint: null
   trainer_params:
-    max_epochs: 100
+    max_epochs: 50
     gradient_clip_val: 0.5
     enable_progress_bar: True
     precision: 'bf16-mixed'
-    deterministic: False                                                          
+    deterministic: False
   trainval:
     freq:
       interval: 50
@@ -180,16 +183,10 @@ tune:
   diagonal_items: true
   params:
     lightning_module/params/opt_cf/params/lr:
-    - 0.02
     - 0.01
     - 0.001
-    - 0.005
-    - 0.0005
     - 0.0001
     infra/comment:
-    - simclr_1000_lr0.02
     - simclr_1000_lr0.01
     - simclr_1000_lr0.001
-    - simclr_1000_lr0.005
-    - simclr_1000_lr0.0005
     - simclr_1000_lr0.0001

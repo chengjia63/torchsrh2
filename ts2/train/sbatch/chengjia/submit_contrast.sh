@@ -33,18 +33,18 @@
 # SBATCH --nodelist=armis28003
 #------------------------------------------------------------------------------
 # SBATCH --time=4-00:00:00
-#SBATCH --time=2-00:00:00
+#SBATCH --time=27:00:00
 # SBATCH --time=16:00:00
 #------------------------------------------------------------------------------
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:4
 #SBATCH --ntasks-per-node=4
 #------------------------------------------------------------------------------
-#SBATCH --array=0-2
+#SBATCH --array=0-3
 #------------------------------------------------------------------------------
 
 set -x
 set -e
 
-srun python train_contrastive.py -c=config/chengjia/train_pjepa_tcga.yaml
-#srun python train_contrastive.py -c=config/chengjia/train_simclr_tcga.yaml
+srun python main.py -c=config/chengjia/train_pjepa_tcga.yaml
+#srun python main.py -c=config/chengjia/train_simclr_tcga.yaml

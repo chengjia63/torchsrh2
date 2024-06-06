@@ -158,7 +158,13 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
     eval_root, pred_dir, results_dir, pred_fname = setup_infra_testing(
         cf, embedded_exp_root=embedded_exp_root)
 
-    if not con_exp:
+    if con_exp:
+        if "lightning_module" in cf.testing:
+            exist_statedict = con_exp.state_dict()
+            con_exp = instantiate_lightning_module(
+                **cf.testing.lightning_module,
+                training_params=None).load_state_dict(exist_statedict)
+    else:
         ckpt_path = os.path.join(cf.infra.log_dir, cf.infra.exp_name,
                                  cf.testing.ckpt_path)
         con_exp = instantiate_lightning_module_from_ckpt(ckpt=ckpt_path,
