@@ -1,26 +1,26 @@
 infra:
-  exp_name: ts2/tcga_usup/simclr
+  exp_name: ts2/srh_usup/supcon
   log_dir: /nfs/turbo/umms-tocho/exp/renly
   comment: dev
   log_gpu: True
   seed: 1000
 data:
-  set: he
+  set: srh
   parser:
     which: CachedCSVParser
     params:
       cached_parser_file:
-        train: /nfs/mm-isilon/brainscans/dropbox/exp/renly/he_parser/9404d906_slide_train/
-        trainval: /nfs/mm-isilon/brainscans/dropbox/exp/renly/he_parser/9404d906_slide_trainval/
-        test_databank: /nfs/mm-isilon/brainscans/dropbox/exp/renly/he_parser/glioma_sup_400/807e0236_patch_train/
-        test: /nfs/mm-isilon/brainscans/dropbox/exp/renly/he_parser/glioma_sup_400/807e0236_patch_trainval/
+        train: /nfs/mm-isilon/brainscans/dropbox/exp/renly/srh_parser/616189bb_slide_train
+        trainval: /nfs/mm-isilon/brainscans/dropbox/exp/renly/srh_parser/616189bb_slide_trainval
+        test_databank: /nfs/mm-isilon/brainscans/dropbox/exp/renly/srh_parser/srh7v1_patch_seg/93759c7d_patch_train/
+        test: /nfs/mm-isilon/brainscans/dropbox/exp/renly/srh_parser/srh7v1_patch_seg/93759c7d_patch_trainval/
   transform:
     train:
       base_aug_params: {}
         #laser_noise_config: null
         #base_aug: three_channels
       strong_aug_params:
-        aug_list:
+        aug_list: 
         - which: random_horiz_flip
           params: {}
         - which: random_vert_flip
@@ -30,7 +30,7 @@ data:
         - which: color_jitter
           params:
             brightness: 0.4
-            contrast: 0.4
+            contrast: 0.4 
             saturation: 0.4
             hue: 0.2
         - which: random_autocontrast
@@ -66,7 +66,7 @@ data:
       which_process_read: memmap
       params:
         common:
-          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
+          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/srh/
           num_transforms: 2
           num_samples: 1
           balance_instance_class: False
@@ -77,12 +77,12 @@ data:
       which: PatchDataset
       which_process_read: memmap
       params:
-          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
+          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/srh/
           num_transforms: 1
           balance_instance_class: False
-      negative_class_index: 1
-      classes_reorder: [2,0,1]
-      camera_ready_classes: [Astro, GBM, Oligo]
+      negative_class_index: 4
+      classes_reorder: [0, 1, 2, 3, 5, 6, 4]
+      camera_ready_classes: [HGG, LGG, Mening, Mets, Normal, Pit, Schwan]
   loader:
     params:
       common:
@@ -106,7 +106,7 @@ data:
       num_samples: 8
       replacement: False 
 lightning_module:
-  which: simclr
+  which: supcon
   params:
     model_hyperparams:
       backbone_cf:
@@ -148,13 +148,14 @@ training:
     gradient_clip_val: 0.5
     enable_progress_bar: True
     precision: 'bf16-mixed'
-    deterministic: False
+    deterministic: False                                                          
   fl32_preci: medium
   trainval:
     freq:
       interval: 10
       unit: "epoch"
 testing:
+#  load_ckpt: exp/ts2/srh_usup/simclr/3b89cbb6_May28-18-04-45_sd1000_simclr_1000_lr0.02_tune0/models/ckpt-epoch49-step5950-loss0.00.ckpt 
   eval_mode: patch_knn
   save_train_pred: true
   knn:

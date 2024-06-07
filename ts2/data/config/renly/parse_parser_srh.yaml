@@ -4,7 +4,7 @@ data:
   set: srh
   parser:
     which: PatchCSVParser
-    cache_root: /nfs/mm-isilon/brainscans/dropbox/exp/renly/srh_parser
+    cache_root: /nfs/mm-isilon/brainscans/dropbox/exp/renly/srh_parser/srh7v1_slide_seg_test
     level: slide #patch #slide #hierarchical
     params:
       common:
@@ -15,9 +15,9 @@ data:
         use_patch_code_as_label: True
         primary_label_idx: 0
       train:
-        df: /nfs/turbo/umms-tocho/data/data_splits/srh_nio/srh7v1_nio_train.csv
+        df: /nfs/turbo/umms-tocho/data/data_splits/srh7v1/srh7v1_train.csv
       trainval:
-        df: /nfs/turbo/umms-tocho/data/data_splits/srh_nio/srh7v1_nio_test.csv
+        df: /nfs/turbo/umms-tocho/data/data_splits/srh7v1/srh7v1_test.csv
   transform: null
   dataset: null
   loader: null

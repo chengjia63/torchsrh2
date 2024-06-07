@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/tcga_usup/simclr
+  exp_name: ts2/tcga_usup/dino
   log_dir: /nfs/turbo/umms-tocho/exp/renly
   comment: dev
   log_gpu: True
@@ -20,7 +20,7 @@ data:
         #laser_noise_config: null
         #base_aug: three_channels
       strong_aug_params:
-        aug_list:
+        aug_list: 
         - which: random_horiz_flip
           params: {}
         - which: random_vert_flip
@@ -30,7 +30,7 @@ data:
         - which: color_jitter
           params:
             brightness: 0.4
-            contrast: 0.4
+            contrast: 0.4 
             saturation: 0.4
             hue: 0.2
         - which: random_autocontrast
@@ -106,7 +106,7 @@ data:
       num_samples: 8
       replacement: False 
 lightning_module:
-  which: simclr
+  which: dino
   params:
     model_hyperparams:
       backbone_cf:
@@ -148,7 +148,7 @@ training:
     gradient_clip_val: 0.5
     enable_progress_bar: True
     precision: 'bf16-mixed'
-    deterministic: False
+    deterministic: False                                                          
   fl32_preci: medium
   trainval:
     freq:
