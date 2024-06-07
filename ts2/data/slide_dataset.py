@@ -6,7 +6,6 @@ from os.path import join as opj
 import pandas
 import numpy as np
 import torch
-from torchvision import transforms
 from tqdm import tqdm
 import einops
 import math

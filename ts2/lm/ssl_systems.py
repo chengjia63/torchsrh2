@@ -8,6 +8,7 @@ import gc
 import psutil
 import torch
 from torch import nn
+import torch.nn.functional as F
 import einops
 
 import pytorch_lightning as pl
@@ -18,6 +19,7 @@ from torchsrh.losses.vicreg import GeneralVICRegLoss
 from ts2.models.ssl import (MLP, ContrastiveLearningNetwork, VICRegNetwork)
 #SimSiamNetwork)  #, VICRegNetworkWithMask)
 from ts2.models.pjepa import InterPatchJEPANetwork
+from ts2.models.ijepa import IJEPANetwork, apply_masks, repeat_interleave_batch
 from ts2.optim.utils import get_optimizer_scheduler
 
 from memory_profiler import profile
@@ -215,7 +217,7 @@ class VICRegSystem(ContrastiveBaseSystem):
     def __init__(self, loss_params, **kwargs):
         super().__init__(**kwargs)
 
-        self.model = VICRegNetwork(**model_hyperparams)
+        self.model = VICRegNetwork(**kwargs['model_hyperparams'])
         if self.opt_cf_:
             self.criterion = GeneralVICRegLoss(
                 embedding_dim=self.model.bb.num_out, **loss_params)
@@ -297,6 +299,108 @@ class VICRegSystem(ContrastiveBaseSystem):
         for k in self.val_loss.keys():
             self.val_loss[k].update(losses[k], weight=bs)
 
+
+class IJEPASystem(EvalBaseSystem):
+    
+    def __init__(self,
+                 model_hyperparams,
+                 loss_params: Optional[Dict] = None,
+                 ema_beta: Optional[Dict] = None,
+                 opt_cf: Optional[Dict] = None,
+                 schd_cf: Optional[Dict] = None,
+                 training_params: Optional[Dict] = None):
+        super().__init__()
+
+        self.beta = ema_beta
+        self.opt_cf_ = opt_cf
+        self.schd_cf_ = schd_cf
+        self.training_params_ = training_params
+
+        self.model = IJEPANetwork(**model_hyperparams)
+
+        if training_params:
+            self.criterion = torch.nn.SmoothL1Loss(**loss_params)
+        else:
+            self.criterion = None
+
+        self.train_loss = torchmetrics.MeanMetric()
+        self.val_loss = torchmetrics.MeanMetric()
+        self.test_output = []
+
+    def training_step(self, batch, _):
+        imgs, masks_enc, masks_pred = batch
+        imgs = imgs['image'].squeeze()
+        def forward_target():
+            with torch.no_grad():
+                h = self.model.target_encoder(imgs)
+                h = F.layer_norm(h, (h.size(-1),))
+                B = len(h)
+                # -- create targets (masked regions of h)
+                h = apply_masks(h, masks_pred)
+                h = repeat_interleave_batch(h, B, repeat=len(masks_enc))
+                return h
+
+        def forward_context():
+            z = self.model.encoder(imgs, masks_enc)
+            z = self.model.predictor(z, masks_enc, masks_pred)
+            return z
+        
+        def loss_fn(z, h):
+            loss = self.criterion(z, h)
+            # TODO
+            # loss = AllReduce.apply(loss)
+            return loss
+        
+        h = forward_target()
+        z = forward_context()
+        loss = loss_fn(z, h)
+        return loss
+
+    def on_train_epoch_end(self):
+        train_loss = self.train_loss.compute()
+        self.log("train/contrastive_manualepoch",
+                 train_loss,
+                 on_epoch=True,
+                 sync_dist=True,
+                 rank_zero_only=True)
+        logging.info(f"train/contrastive_manualepoch {train_loss}")
+        self.train_loss.reset()
+        gc.collect()
+
+    def on_validation_epoch_end(self):
+        val_loss = self.val_loss.compute()
+        self.log("val/contrastive_manualepoch",
+                 val_loss,
+                 on_epoch=True,
+                 sync_dist=True,
+                 rank_zero_only=True)
+        logging.info(f"val/contrastive_manualepoch {val_loss}")
+        self.val_loss.reset()
+        gc.collect()
+
+    def on_before_zero_grad(self, _):
+        with torch.no_grad():
+            for p, pt in zip(self.model.encoder.parameters(),
+                             self.model.target_encoder.parameters()):
+                pt.data = self.beta * pt.data + (1 - self.beta) * p.data
+
+    def configure_optimizers(self):
+        if not self.training_params_: return None  # Not training
+
+        opt, sch = get_optimizer_scheduler(self.model,
+                                           opt_cf=self.opt_cf_,
+                                           schd_cf=self.schd_cf_,
+                                           **self.training_params_)
+
+        if sch:
+            return [opt], {
+                "scheduler": sch,
+                "interval": "step",
+                "frequency": 1,
+                "name": "lr"
+            }
+        else:
+            return [opt]
 
 class InterPatchJEPASystem(EvalBaseSystem):
 

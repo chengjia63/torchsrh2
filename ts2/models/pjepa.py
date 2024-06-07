@@ -2,6 +2,7 @@ import copy
 import math
 from itertools import chain
 from functools import partial
+import numpy as np
 from collections import namedtuple
 from typing import List, Optional, Callable, Dict
 

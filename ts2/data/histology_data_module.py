@@ -17,12 +17,19 @@ from ts2.data.slide_dataset import (SingleLevelHierarchicalDataset,
                                     HierarchicalDataset, InterPatchJEPADataset)
 from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
+from ts2.data.collate_func import MBMaskCollator
 
 
 def get_num_replicate(num_instance_self_replicate, max_hierarchical_replicate,
                       num_samples):
     return max(1, (num_instance_self_replicate * max_hierarchical_replicate //
                    num_samples))
+
+def get_collate_fn(which, params):
+    collate_list = {
+        "MBMaskCollator": MBMaskCollator
+    }
+    return collate_list[which](**params)
 
 
 class PatchDataModule(pl.LightningDataModule):
@@ -164,6 +171,8 @@ class PatchDataModule(pl.LightningDataModule):
         loader_params.update(self.loader_config_.params.common)
         if loader_params.get("num_workers") == "auto":
             loader_params["num_workers"] = get_num_worker()
+        if loader_params.get("collate_fn", False):
+            loader_params["collate_fn"] = get_collate_fn(**loader_params['collate_fn'])
 
         #if config["data"]["which"] == "slide_emb":
         #    train_loader_params["collate_fn"] = emb_collate_fn

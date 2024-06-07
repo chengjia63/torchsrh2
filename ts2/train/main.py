@@ -13,7 +13,7 @@ from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
 #from opensrh.train.common import get_contrastive_dataloaders as get_opensrh_contrastive_dataloaders
 
 from ts2.lm.ssl_systems import (SimCLRSystem, SupConSystem, VICRegSystem,
-                                InterPatchJEPASystem)  #,
+                                IJEPASystem, InterPatchJEPASystem)  #,
 #SimSiamSystem, BYOLSystem)
 from ts2.data.histology_data_module import PatchDataModule
 from ts2.train.common import setup_checkpoints
@@ -28,6 +28,7 @@ lms = {
     #"SimSiamSystem": SimSiamSystem,
     #"BYOLSystem": BYOLSystem,
     "VICRegSystem": VICRegSystem,
+    "IJEPASystem": IJEPASystem,
     "HiDiscSystem": HiDiscSystem,
     "InterPatchJEPASystem": InterPatchJEPASystem,
 }
