@@ -13,8 +13,8 @@ from ts2.models.ssl import instantiate_backbone
 
 import torch.nn.functional as F
 
-class IJEPANetwork(torch.nn.Module):
 
+class IJEPANetwork(torch.nn.Module):
     def __init__(self, backbone_cf: Dict, pred_params: Dict):
         super(IJEPANetwork, self).__init__()
         self.encoder = get_ijepa_backbone(**backbone_cf)
@@ -31,7 +31,7 @@ class IJEPANetwork(torch.nn.Module):
             self.init_weights(m)
         self.target_encoder = copy.deepcopy(self.encoder)
         self.bb = self.target_encoder
-        
+
     def init_weights(self, m):
         if isinstance(m, torch.nn.Linear):
             trunc_normal_(m.weight, std=0.02)
@@ -40,6 +40,7 @@ class IJEPANetwork(torch.nn.Module):
         elif isinstance(m, torch.nn.LayerNorm):
             torch.nn.init.constant_(m.bias, 0)
             torch.nn.init.constant_(m.weight, 1.0)
+
 
 # utils
 def apply_masks(x, masks):
@@ -53,59 +54,69 @@ def apply_masks(x, masks):
         all_x += [torch.gather(x, dim=1, index=mask_keep)]
     return torch.cat(all_x, dim=0)
 
+
 def repeat_interleave_batch(x, B, repeat):
     N = len(x) // B
     x = torch.cat([
-        torch.cat([x[i*B:(i+1)*B] for _ in range(repeat)], dim=0)
+        torch.cat([x[i * B:(i + 1) * B] for _ in range(repeat)], dim=0)
         for i in range(N)
-    ], dim=0)
+    ],
+                  dim=0)
     return x
+
 
 class VisionTransformer(nn.Module):
     """ Vision Transformer """
-    def __init__(
-        self,
-        img_size=[224],
-        patch_size=16,
-        in_chans=3,
-        embed_dim=768,
-        predictor_embed_dim=384,
-        depth=12,
-        predictor_depth=12,
-        num_heads=12,
-        mlp_ratio=4.0,
-        qkv_bias=True,
-        qk_scale=None,
-        drop_rate=0.0,
-        attn_drop_rate=0.0,
-        drop_path_rate=0.0,
-        norm_layer=nn.LayerNorm,
-        init_std=0.02,
-        **kwargs
-    ):
+    def __init__(self,
+                 img_size=[224],
+                 patch_size=16,
+                 in_chans=3,
+                 embed_dim=768,
+                 predictor_embed_dim=384,
+                 depth=12,
+                 predictor_depth=12,
+                 num_heads=12,
+                 mlp_ratio=4.0,
+                 qkv_bias=True,
+                 qk_scale=None,
+                 drop_rate=0.0,
+                 attn_drop_rate=0.0,
+                 drop_path_rate=0.0,
+                 norm_layer=nn.LayerNorm,
+                 init_std=0.02,
+                 **kwargs):
         super().__init__()
         self.num_features = self.embed_dim = embed_dim
         self.num_heads = num_heads
         # --
-        self.patch_embed = PatchEmbed(
-            img_size=img_size,
-            patch_size=patch_size,
-            in_chans=in_chans,
-            embed_dim=embed_dim)
+        self.patch_embed = PatchEmbed(img_size=img_size,
+                                      patch_size=patch_size,
+                                      in_chans=in_chans,
+                                      embed_dim=embed_dim)
         num_patches = self.patch_embed.num_patches
         # --
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim), requires_grad=False)
-        pos_embed = get_2d_sincos_pos_embed(self.pos_embed.shape[-1],
-                                            int(self.patch_embed.num_patches**.5),
-                                            prefix_len=0)
-        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim),
+                                      requires_grad=False)
+        pos_embed = get_2d_sincos_pos_embed(
+            self.pos_embed.shape[-1],
+            int(self.patch_embed.num_patches**.5),
+            prefix_len=0)
+        self.pos_embed.data.copy_(
+            torch.from_numpy(pos_embed).float().unsqueeze(0))
         # --
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)
+               ]  # stochastic depth decay rule
         self.blocks = nn.ModuleList([
-            Block(
-                dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
-                drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer)
-            for i in range(depth)])
+            Block(dim=embed_dim,
+                  num_heads=num_heads,
+                  mlp_ratio=mlp_ratio,
+                  qkv_bias=qkv_bias,
+                  qk_scale=qk_scale,
+                  drop=drop_rate,
+                  attn_drop=attn_drop_rate,
+                  drop_path=dpr[i],
+                  norm_layer=norm_layer) for i in range(depth)
+        ])
         self.norm = norm_layer(embed_dim)
         # ------
         self.init_std = init_std
@@ -168,51 +179,65 @@ class VisionTransformer(nn.Module):
         pos_embed = pos_embed[:, 1:]
         dim = x.shape[-1]
         pos_embed = nn.functional.interpolate(
-            pos_embed.reshape(1, int(math.sqrt(N)), int(math.sqrt(N)), dim).permute(0, 3, 1, 2),
+            pos_embed.reshape(1, int(math.sqrt(N)), int(math.sqrt(N)),
+                              dim).permute(0, 3, 1, 2),
             scale_factor=math.sqrt(npatch / N),
             mode='bicubic',
         )
         pos_embed = pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
         return torch.cat((class_emb.unsqueeze(0), pos_embed), dim=1)
 
+
 class VisionTransformerPredictor(nn.Module):
     """ Vision Transformer """
-    def __init__(
-        self,
-        num_patches,
-        embed_dim=768,
-        predictor_embed_dim=384,
-        depth=6,
-        num_heads=12,
-        mlp_ratio=4.0,
-        qkv_bias=True,
-        qk_scale=None,
-        drop_rate=0.0,
-        attn_drop_rate=0.0,
-        drop_path_rate=0.0,
-        norm_layer=nn.LayerNorm,
-        init_std=0.02,
-        **kwargs
-    ):
+    def __init__(self,
+                 num_patches,
+                 embed_dim=768,
+                 predictor_embed_dim=384,
+                 depth=6,
+                 num_heads=12,
+                 mlp_ratio=4.0,
+                 qkv_bias=True,
+                 qk_scale=None,
+                 drop_rate=0.0,
+                 attn_drop_rate=0.0,
+                 drop_path_rate=0.0,
+                 norm_layer=nn.LayerNorm,
+                 init_std=0.02,
+                 **kwargs):
         super().__init__()
-        self.predictor_embed = nn.Linear(embed_dim, predictor_embed_dim, bias=True)
+        self.predictor_embed = nn.Linear(embed_dim,
+                                         predictor_embed_dim,
+                                         bias=True)
         self.mask_token = nn.Parameter(torch.zeros(1, 1, predictor_embed_dim))
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)
+               ]  # stochastic depth decay rule
         # --
-        self.predictor_pos_embed = nn.Parameter(torch.zeros(1, num_patches, predictor_embed_dim),
+        self.predictor_pos_embed = nn.Parameter(torch.zeros(
+            1, num_patches, predictor_embed_dim),
                                                 requires_grad=False)
-        predictor_pos_embed = get_2d_sincos_pos_embed(self.predictor_pos_embed.shape[-1],
-                                                      int(num_patches**.5),
-                                                      prefix_len=0)
-        self.predictor_pos_embed.data.copy_(torch.from_numpy(predictor_pos_embed).float().unsqueeze(0))
+        predictor_pos_embed = get_2d_sincos_pos_embed(
+            self.predictor_pos_embed.shape[-1],
+            int(num_patches**.5),
+            prefix_len=0)
+        self.predictor_pos_embed.data.copy_(
+            torch.from_numpy(predictor_pos_embed).float().unsqueeze(0))
         # --
         self.predictor_blocks = nn.ModuleList([
-            Block(
-                dim=predictor_embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
-                drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer)
-            for i in range(depth)])
+            Block(dim=predictor_embed_dim,
+                  num_heads=num_heads,
+                  mlp_ratio=mlp_ratio,
+                  qkv_bias=qkv_bias,
+                  qk_scale=qk_scale,
+                  drop=drop_rate,
+                  attn_drop=attn_drop_rate,
+                  drop_path=dpr[i],
+                  norm_layer=norm_layer) for i in range(depth)
+        ])
         self.predictor_norm = norm_layer(predictor_embed_dim)
-        self.predictor_proj = nn.Linear(predictor_embed_dim, embed_dim, bias=True)
+        self.predictor_proj = nn.Linear(predictor_embed_dim,
+                                        embed_dim,
+                                        bias=True)
         # ------
         self.init_std = init_std
         trunc_normal_(self.mask_token, std=self.init_std)
@@ -241,7 +266,8 @@ class VisionTransformerPredictor(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x, masks_x, masks):
-        assert (masks is not None) and (masks_x is not None), 'Cannot run predictor without mask indices'
+        assert (masks is not None) and (
+            masks_x is not None), 'Cannot run predictor without mask indices'
 
         if not isinstance(masks_x, list):
             masks_x = [masks_x]
@@ -266,7 +292,8 @@ class VisionTransformerPredictor(nn.Module):
         pos_embs = apply_masks(pos_embs, masks)
         pos_embs = repeat_interleave_batch(pos_embs, B, repeat=len(masks_x))
         # --
-        pred_tokens = self.mask_token.repeat(pos_embs.size(0), pos_embs.size(1), 1)
+        pred_tokens = self.mask_token.repeat(pos_embs.size(0),
+                                             pos_embs.size(1), 1)
         # --
         pred_tokens += pos_embs
         x = x.repeat(len(masks), 1, 1)
@@ -283,59 +310,62 @@ class VisionTransformerPredictor(nn.Module):
 
         return x
 
+
 def vit_predictor(**kwargs):
-    model = VisionTransformerPredictor(
-        mlp_ratio=4, qkv_bias=True, norm_layer=partial(nn.LayerNorm, eps=1e-6),
-        **kwargs)
+    model = VisionTransformerPredictor(mlp_ratio=4,
+                                       qkv_bias=True,
+                                       norm_layer=partial(nn.LayerNorm,
+                                                          eps=1e-6),
+                                       **kwargs)
     return model
 
 
 def get_ijepa_backbone(which: str = "vit_base", params: Dict = {}):
     if which == "vit_tiny":
         return VisionTransformer(num_classes=0,
-                           embed_dim=192,
-                           depth=12,
-                           num_heads=3,
-                           mlp_ratio=4,
-                           qkv_bias=True,
-                           norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                           **params)
+                                 embed_dim=192,
+                                 depth=12,
+                                 num_heads=3,
+                                 mlp_ratio=4,
+                                 qkv_bias=True,
+                                 norm_layer=partial(nn.LayerNorm, eps=1e-6),
+                                 **params)
     elif which == "vit_small":
         return VisionTransformer(num_classes=0,
-                           embed_dim=384,
-                           depth=12,
-                           num_heads=6,
-                           mlp_ratio=4,
-                           qkv_bias=True,
-                           norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                           **params)
+                                 embed_dim=384,
+                                 depth=12,
+                                 num_heads=6,
+                                 mlp_ratio=4,
+                                 qkv_bias=True,
+                                 norm_layer=partial(nn.LayerNorm, eps=1e-6),
+                                 **params)
     elif which == "vit_base":
         return VisionTransformer(num_classes=0,
-                           embed_dim=768,
-                           depth=12,
-                           num_heads=12,
-                           mlp_ratio=4,
-                           qkv_bias=True,
-                           norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                           **params)
+                                 embed_dim=768,
+                                 depth=12,
+                                 num_heads=12,
+                                 mlp_ratio=4,
+                                 qkv_bias=True,
+                                 norm_layer=partial(nn.LayerNorm, eps=1e-6),
+                                 **params)
     elif which == "vit_large":
         return VisionTransformer(num_classes=0,
-                           embed_dim=1024,
-                           depth=24,
-                           num_heads=16,
-                           mlp_ratio=4,
-                           qkv_bias=True,
-                           norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                           **params)
+                                 embed_dim=1024,
+                                 depth=24,
+                                 num_heads=16,
+                                 mlp_ratio=4,
+                                 qkv_bias=True,
+                                 norm_layer=partial(nn.LayerNorm, eps=1e-6),
+                                 **params)
     elif which == "vit_huge":
         return VisionTransformer(num_classes=0,
-                           embed_dim=1280,
-                           depth=32,
-                           num_heads=16,
-                           mlp_ratio=4,
-                           qkv_bias=True,
-                           norm_layer=partial(nn.LayerNorm, eps=1e-6),
-                           **params)
+                                 embed_dim=1280,
+                                 depth=32,
+                                 num_heads=16,
+                                 mlp_ratio=4,
+                                 qkv_bias=True,
+                                 norm_layer=partial(nn.LayerNorm, eps=1e-6),
+                                 **params)
     elif which == "vit":
         return VisionTransformer(**params)
     else:

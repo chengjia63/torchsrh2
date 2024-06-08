@@ -16,7 +16,7 @@ data:
         #trainval: /nfs/mm-isilon/brainscans/dropbox/exp/renly/he_parser/neuro_toy_400_slide/e1a45405_slide_trainval/
         #test_databank: /nfs/mm-isilon/brainscans/dropbox/exp/renly/he_parser/glioma_sup_400/807e0236_patch_train/
         #test: /nfs/mm-isilon/brainscans/dropbox/exp/renly/he_parser/glioma_sup_400/807e0236_patch_trainval/
-        train: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/he_neuro/92b8ad49_slide_all/
+        train: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/he_neuro/92b8ad49_slide_toy/
         trainval: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/he_neuro/92b8ad49_slide_toy/
         test_databank: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/tcga_glioma/69ecabd1_patch40_train/
         test: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/tcga_glioma/69ecabd1_patch40_trainval/
@@ -89,7 +89,7 @@ data:
         num_workers: auto 
       train:
         batch_size: 512
-        drop_last: True
+        drop_last: false
         shuffle: True
         collate_fn: 
           which: MBMaskCollator
@@ -107,6 +107,18 @@ data:
         batch_size: 8
         drop_last: False
         shuffle: False
+        collate_fn: 
+          which: MBMaskCollator
+          params: 
+            input_size: 224
+            patch_size: 16
+            pred_mask_scale: [0.15, 0.2]
+            enc_mask_scale: [0.85, 1.0]
+            aspect_ratio: [0.75, 1.5]
+            nenc: 1
+            npred: 4
+            allow_overlap: false
+            min_keep: 10
       test:
         batch_size: 256 
         drop_last: False
@@ -163,7 +175,7 @@ training:
   fl32_preci: medium
   trainval:
     freq:
-      interval: 10
+      interval: 1
       unit: "epoch"
 testing:
   eval_mode: patch_knn

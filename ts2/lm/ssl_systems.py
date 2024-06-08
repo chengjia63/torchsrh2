@@ -26,7 +26,6 @@ from memory_profiler import profile
 
 
 class EvalBaseSystem(pl.LightningModule, ABC):
-
     @torch.inference_mode()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         assert batch["image"].shape[1] == 1
@@ -45,7 +44,6 @@ class EvalBaseSystem(pl.LightningModule, ABC):
 
 class ContrastiveBaseSystem(EvalBaseSystem):
     """Lightning system for contrastive learning experiments."""
-
     def __init__(self,
                  model_hyperparams,
                  opt_cf: Optional[Dict] = None,
@@ -113,7 +111,6 @@ class ContrastiveBaseSystem(EvalBaseSystem):
 
 class SimCLRSystem(ContrastiveBaseSystem):
     """Lightning system for SimCLR experiment"""
-
     def __init__(self, loss_params, **kwargs):
         super().__init__(**kwargs)
         if self.opt_cf_:
@@ -169,7 +166,6 @@ class SimCLRSystem(ContrastiveBaseSystem):
 
 class SupConSystem(ContrastiveBaseSystem):
     """Lightning system for SupCon experiment"""
-
     def __init__(self, loss_params, **kwargs):
         super().__init__(**kwargs)
 
@@ -213,7 +209,6 @@ class SupConSystem(ContrastiveBaseSystem):
 
 
 class VICRegSystem(ContrastiveBaseSystem):
-
     def __init__(self, loss_params, **kwargs):
         super().__init__(**kwargs)
 
@@ -301,7 +296,6 @@ class VICRegSystem(ContrastiveBaseSystem):
 
 
 class IJEPASystem(EvalBaseSystem):
-    
     def __init__(self,
                  model_hyperparams,
                  loss_params: Optional[Dict] = None,
@@ -330,10 +324,11 @@ class IJEPASystem(EvalBaseSystem):
     def training_step(self, batch, _):
         imgs, masks_enc, masks_pred = batch
         imgs = imgs['image'].squeeze()
+
         def forward_target():
             with torch.no_grad():
                 h = self.model.target_encoder(imgs)
-                h = F.layer_norm(h, (h.size(-1),))
+                h = F.layer_norm(h, (h.size(-1), ))
                 B = len(h)
                 # -- create targets (masked regions of h)
                 h = apply_masks(h, masks_pred)
@@ -344,16 +339,53 @@ class IJEPASystem(EvalBaseSystem):
             z = self.model.encoder(imgs, masks_enc)
             z = self.model.predictor(z, masks_enc, masks_pred)
             return z
-        
+
         def loss_fn(z, h):
             loss = self.criterion(z, h)
             # TODO
             # loss = AllReduce.apply(loss)
             return loss
-        
+
         h = forward_target()
         z = forward_context()
         loss = loss_fn(z, h)
+        self.log("train/contrastive",
+                 loss.detach().item(),
+                 on_step=True,
+                 on_epoch=True,
+                 batch_size=imgs.shape[0],
+                 rank_zero_only=True)
+        self.train_loss.update(loss.detach().item(), weight=imgs.shape[0])
+        return loss
+
+    @torch.inference_mode()
+    def validation_step(self, batch, _):
+        imgs, masks_enc, masks_pred = batch
+        imgs = imgs['image'].squeeze()
+
+        def forward_target():
+            with torch.no_grad():
+                h = self.model.target_encoder(imgs)
+                h = F.layer_norm(h, (h.size(-1), ))
+                B = len(h)
+                # -- create targets (masked regions of h)
+                h = apply_masks(h, masks_pred)
+                h = repeat_interleave_batch(h, B, repeat=len(masks_enc))
+                return h
+
+        def forward_context():
+            z = self.model.encoder(imgs, masks_enc)
+            z = self.model.predictor(z, masks_enc, masks_pred)
+            return z
+
+        def loss_fn(z, h):
+            loss = self.criterion(z, h)
+            return loss
+
+        h = forward_target()
+        z = forward_context()
+        loss = loss_fn(z, h)
+        self.val_loss.update(loss, weight=imgs.shape[0])
         return loss
 
     def on_train_epoch_end(self):
@@ -402,8 +434,8 @@ class IJEPASystem(EvalBaseSystem):
         else:
             return [opt]
 
-class InterPatchJEPASystem(EvalBaseSystem):
 
+class InterPatchJEPASystem(EvalBaseSystem):
     def __init__(self,
                  model_hyperparams,
                  loss_params: Optional[Dict] = None,

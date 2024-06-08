@@ -25,10 +25,9 @@ def get_num_replicate(num_instance_self_replicate, max_hierarchical_replicate,
     return max(1, (num_instance_self_replicate * max_hierarchical_replicate //
                    num_samples))
 
+
 def get_collate_fn(which, params):
-    collate_list = {
-        "MBMaskCollator": MBMaskCollator
-    }
+    collate_list = {"MBMaskCollator": MBMaskCollator}
     return collate_list[which](**params)
 
 
@@ -155,7 +154,6 @@ class PatchDataModule(pl.LightningDataModule):
         
         Reference: https://pytorch.org/docs/stable/notes/randomness.html
         """
-
         def seed_worker(_):
             np.random.seed(seed)
             random.seed(seed)
@@ -172,7 +170,8 @@ class PatchDataModule(pl.LightningDataModule):
         if loader_params.get("num_workers") == "auto":
             loader_params["num_workers"] = get_num_worker()
         if loader_params.get("collate_fn", False):
-            loader_params["collate_fn"] = get_collate_fn(**loader_params['collate_fn'])
+            loader_params["collate_fn"] = get_collate_fn(
+                **loader_params['collate_fn'])
 
         #if config["data"]["which"] == "slide_emb":
         #    train_loader_params["collate_fn"] = emb_collate_fn
@@ -188,6 +187,9 @@ class PatchDataModule(pl.LightningDataModule):
         loader_params.update(self.loader_config_.params.common)
         if loader_params.get("num_workers") == "auto":
             loader_params["num_workers"] = get_num_worker()
+        if loader_params.get("collate_fn", False):
+            loader_params["collate_fn"] = get_collate_fn(
+                **loader_params['collate_fn'])
 
         if (("trainval_sampler" in self.loader_config_)
                 and (self.loader_config_.trainval_sampler.num_samples > 0)):
