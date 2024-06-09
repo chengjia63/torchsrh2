@@ -34,6 +34,7 @@ setup(
         "ijson",
         "gpustat>=1.1.1",
         "omegaconf",
+        "emory_profiler",
         "einops"# yapf:disable
     ],
     dependency_links=['https://download.pytorch.org/whl/cu116'])
