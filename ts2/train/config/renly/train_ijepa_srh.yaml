@@ -1,6 +1,6 @@
 infra:
-  exp_name: ts2/srh_usup/simclr
-  log_dir: /nfs/turbo/umms-tocho/exp/renly
+  exp_name: ts2/srh_usup/ijepa
+  log_dir: /nfs/turbo/umms-tocho-ns/exp/renly
   comment: dev
   log_gpu: True
   seed: 1000
@@ -26,8 +26,11 @@ data:
           aug_list:
           - which: random_resized_crop
             params:
-              size: 300
+              size: 224
               scale: [0.3, 1.0]
+          - which: resize_always_apply
+            params:
+              size: 224
           - which: random_horiz_flip
             params: {}
           - which: random_vert_flip
@@ -42,22 +45,25 @@ data:
             params:
               kernel_size: 5
               sigma: 1
-          aug_prob: 0.3
+          aug_prob: 0.5
     trainval: ${.train}
     test:
       which: HistologyTransform
       params:
         base_aug_params: {}
         strong_aug_params:
-          aug_list: []
-          aug_prob: 0
+          aug_list:
+          - which: resize_always_apply
+            params:
+              size: 224
+          aug_prob: 1
   dataset:
       which: SingleLevelHierarchicalDataset
       which_process_read: memmap
       params:
         common:
           data_root: /nfs/umms-tocho-mr/dropbox/data/root_histology_db/srh/
-          num_transforms: 2
+          num_transforms: 1
           num_samples: 1
           balance_instance_class: False
         train:
@@ -84,31 +90,57 @@ data:
         batch_size: 512
         drop_last: true
         shuffle: true
+        collate_fn: 
+          which: MBMaskCollator
+          params: 
+            input_size: 224
+            patch_size: 16
+            pred_mask_scale: [0.15, 0.2]
+            enc_mask_scale: [0.85, 1.0]
+            aspect_ratio: [0.75, 1.5]
+            nenc: 1
+            npred: 4
+            allow_overlap: false
+            min_keep: 10
       trainval:
         batch_size: 8
         drop_last: False
         shuffle: False
+        collate_fn: 
+          which: MBMaskCollator
+          params: 
+            input_size: 224
+            patch_size: 16
+            pred_mask_scale: [0.15, 0.2]
+            enc_mask_scale: [0.85, 1.0]
+            aspect_ratio: [0.75, 1.5]
+            nenc: 1
+            npred: 4
+            allow_overlap: false
+            min_keep: 10
       test:
-        batch_size: 64
+        batch_size: 256
         drop_last: False
         shuffle: False
     trainval_sampler:
       num_samples: 8
       replacement: False
 lightning_module:
-  which: SimCLRSystem
+  which: IJEPASystem
   params:
     model_hyperparams:
       backbone_cf:
-        which: resnet34
-        params: {}
-      proj_params:
-        hidden_layers: [512]
-        n_out: 128
-        activation: relu
-        drop: 0
-        bias: True
+        which: vit_tiny
+        params:
+          img_size: 224
+          patch_size: 16
+          # global_pool: ""
+          # class_token: False
+      pred_params:
+        predictor_embed_dim: 192
+        depth: 6
     loss_params: {}
+    ema_beta: 0.99
     opt_cf:
       which: adamw
       scale_lr: True
@@ -166,16 +198,10 @@ tune:
   diagonal_items: true
   params:
     lightning_module/params/opt_cf/params/lr:
-    - 0.02
-    - 0.01
+    - 0.002
     - 0.001
-    - 0.005
     - 0.0005
-    - 0.0001
     infra/comment:
-    - simclr_1000_lr0.02
-    - simclr_1000_lr0.01
-    - simclr_1000_lr0.001
-    - simclr_1000_lr0.005
-    - simclr_1000_lr0.0005
-    - simclr_1000_lr0.0001
+    - ijepa_1000_lr0.002
+    - ijepa_1000_lr0.001
+    - ijepa_1000_lr0.0005

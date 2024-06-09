@@ -1,0 +1,91 @@
+infra:
+  exp_name: ts2/srh_usup/ijepa
+  log_dir: /nfs/turbo/umms-tocho-ns/exp/renly
+  comment: k200
+  log_gpu: True
+  Seed: 1000
+  float32_matmul_precision: medium
+data:
+  set: srh
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+        test_databank: /nfs/umms-tocho-mr/dropbox/exp/renly/srh_parser/srh7v1_patch_seg/93759c7d_patch_train/
+        test: /nfs/umms-tocho-mr/dropbox/exp/renly/srh_parser/srh7v1_patch_seg/93759c7d_patch_trainval/
+  transform:
+    test:
+      which: HistologyTransform
+      params:
+        base_aug_params: {}
+        strong_aug_params:
+          aug_list:
+          - which: resize_always_apply
+            params:
+              size: 224
+          aug_prob: 1
+  test_dataset:
+      which: PatchDataset
+      which_process_read: memmap
+      params:
+          data_root: /nfs/umms-tocho-mr/dropbox/data/root_histology_db/srh
+          num_transforms: 1
+          balance_instance_class: False
+      negative_class_index: 4
+      classes_reorder: [0, 1, 2, 3, 5, 6, 4]
+      camera_ready_classes: [HGG, LGG, Mening, Mets, Normal, Pit, Schwan]
+  loader:
+    params:
+      common:
+        pin_memory: False
+        persistent_workers: True
+        prefetch_factor: 4
+        num_workers: auto
+      test:
+        batch_size: 256
+        drop_last: False
+        shuffle: False
+lightning_module:
+  which: IJEPASystem
+  params:
+    model_hyperparams:
+      backbone_cf:
+        which: vit_tiny
+        params:
+          img_size: 224
+          patch_size: 16
+          # global_pool: ""
+          # class_token: False
+      pred_params:
+        predictor_embed_dim: 192
+        depth: 6
+testing:
+  eval_mode: patch_knn
+  save_train_pred: true
+  knn:
+    do_knn: True
+    knn_params:
+      batch_size: 1536
+      k: 200
+      t: 0.07
+  tsne:
+    interactive: False
+    num_patches: [8192]
+    which_set: [val]
+    embed_images: true
+    class_params:
+      perplexity: 50
+      learning_rate: auto
+      init : pca
+tune:
+  diagonal_items: true
+  params:
+    testing/ckpt_path:
+    - 08de6c20_Jun08-23-03-07_sd1000_ijepa_1000_lr0.001_tune1/models/ckpt-epoch49-step2950-loss0.00.ckpt
+    - d4b83d6c_Jun08-23-03-07_sd1000_ijepa_1000_lr0.0005_tune2/models/ckpt-epoch49-step2950-loss0.00.ckpt
+    - dede468d_Jun08-23-03-07_sd1000_ijepa_1000_lr0.002_tune0/models/ckpt-epoch49-step2950-loss0.00.ckpt
+    testing/eval_predictions:
+    - 84cdc307_Jun09-13-15-01_sd1000_dev_tune0
+    - 2bf5178b_Jun09-13-15-01_sd1000_dev_tune1
+    - 78136be1_Jun09-13-15-01_sd1000_dev_tune2
+    

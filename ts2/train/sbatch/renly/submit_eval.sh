@@ -18,8 +18,8 @@
 #SBATCH --partition=spgpu
 #SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=4800m
-#SBATCH --gres=gpu:2
-#SBATCH --ntasks-per-node=2
+#SBATCH --gres=gpu:1
+#SBATCH --ntasks-per-node=1
 #SBATCH --gpu_cmode=shared
 
 # SBATCH --nodelist=armis26001
@@ -27,7 +27,4 @@
 #SBATCH --array=0-2
 source activate ts2
 
-#srun python main.py -c config/renly/train_simclr_srh.yaml
-#python main.py -c config/renly/train_ijepa_tcga.yaml
-srun python main.py -c config/renly/train_ijepa_srh.yaml
-#python main.py -c config/renly/train_pjepa_tcga.yaml
+python main.py -c config/renly/eval_ijepa_srh.yaml
