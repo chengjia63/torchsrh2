@@ -239,7 +239,7 @@ def main():
         logging.info("Doing training")
         con_exp, dm, training_exp_root = do_training(cf)
 
-    if ("testing" in cf) and (get_rank() == 0):
+    if ("testing" in cf) and (get_rank() == 0 or get_rank() is None):
         logging.info("Doing testing on rank 0")
         do_testing(cf, dm, con_exp, training_exp_root)
 

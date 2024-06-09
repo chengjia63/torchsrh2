@@ -7,8 +7,8 @@ setup(
     install_requires=[
         "setuptools>=60.7.0",
         "pip>=22.0.0",
-        "torchvision>=0.16.0",
-        "torch>=2.1.0",
+        "torchvision",
+        "torch",
         "pytorch-lightning>=2.1.1",
         "tensorboard",
         "pytest",
@@ -34,7 +34,7 @@ setup(
         "ijson",
         "gpustat>=1.1.1",
         "omegaconf",
-        "emory_profiler",
+        "memory_profiler",
         "einops"# yapf:disable
     ],
     dependency_links=['https://download.pytorch.org/whl/cu116'])

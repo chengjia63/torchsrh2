@@ -26,9 +26,11 @@ from memory_profiler import profile
 
 
 class EvalBaseSystem(pl.LightningModule, ABC):
+
     @torch.inference_mode()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         assert batch["image"].shape[1] == 1
+
         emb = self.model.bb(batch["image"][:, 0, ...])
         results = {
             "path": batch["path"],
@@ -44,6 +46,7 @@ class EvalBaseSystem(pl.LightningModule, ABC):
 
 class ContrastiveBaseSystem(EvalBaseSystem):
     """Lightning system for contrastive learning experiments."""
+
     def __init__(self,
                  model_hyperparams,
                  opt_cf: Optional[Dict] = None,
@@ -111,6 +114,7 @@ class ContrastiveBaseSystem(EvalBaseSystem):
 
 class SimCLRSystem(ContrastiveBaseSystem):
     """Lightning system for SimCLR experiment"""
+
     def __init__(self, loss_params, **kwargs):
         super().__init__(**kwargs)
         if self.opt_cf_:
@@ -166,6 +170,7 @@ class SimCLRSystem(ContrastiveBaseSystem):
 
 class SupConSystem(ContrastiveBaseSystem):
     """Lightning system for SupCon experiment"""
+
     def __init__(self, loss_params, **kwargs):
         super().__init__(**kwargs)
 
@@ -209,6 +214,7 @@ class SupConSystem(ContrastiveBaseSystem):
 
 
 class VICRegSystem(ContrastiveBaseSystem):
+
     def __init__(self, loss_params, **kwargs):
         super().__init__(**kwargs)
 
@@ -296,6 +302,7 @@ class VICRegSystem(ContrastiveBaseSystem):
 
 
 class IJEPASystem(EvalBaseSystem):
+
     def __init__(self,
                  model_hyperparams,
                  loss_params: Optional[Dict] = None,
@@ -434,8 +441,22 @@ class IJEPASystem(EvalBaseSystem):
         else:
             return [opt]
 
+    @torch.inference_mode()
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        assert batch["image"].shape[1] == 1
+        # use mean pooling here
+        emb = self.model.bb(batch["image"][:, 0, ...]).mean(dim=1)
+        results = {
+            "path": batch["path"],
+            "label": batch["label"],
+            "embeddings": emb
+        }
+
+        return results
+
 
 class InterPatchJEPASystem(EvalBaseSystem):
+
     def __init__(self,
                  model_hyperparams,
                  loss_params: Optional[Dict] = None,
