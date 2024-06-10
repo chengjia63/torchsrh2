@@ -445,7 +445,7 @@ class IJEPASystem(EvalBaseSystem):
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         assert batch["image"].shape[1] == 1
         # use mean pooling here
-        emb = self.model.bb(batch["image"][:, 0, ...]).mean(dim=1)
+        emb = self.model.target_encoder(batch["image"][:, 0, ...]).mean(dim=1)
         results = {
             "path": batch["path"],
             "label": batch["label"],

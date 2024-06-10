@@ -15,6 +15,7 @@ import torch.nn.functional as F
 
 
 class IJEPANetwork(torch.nn.Module):
+
     def __init__(self, backbone_cf: Dict, pred_params: Dict):
         super(IJEPANetwork, self).__init__()
         self.encoder = get_ijepa_backbone(**backbone_cf)
@@ -30,7 +31,8 @@ class IJEPANetwork(torch.nn.Module):
         for m in self.predictor.modules():
             self.init_weights(m)
         self.target_encoder = copy.deepcopy(self.encoder)
-        self.bb = self.target_encoder
+        for p in self.target_encoder.parameters():
+            p.requires_grad = False
 
     def init_weights(self, m):
         if isinstance(m, torch.nn.Linear):
@@ -67,6 +69,7 @@ def repeat_interleave_batch(x, B, repeat):
 
 class VisionTransformer(nn.Module):
     """ Vision Transformer """
+
     def __init__(self,
                  img_size=[224],
                  patch_size=16,
@@ -124,6 +127,7 @@ class VisionTransformer(nn.Module):
         self.fix_init_weight()
 
     def fix_init_weight(self):
+
         def rescale(param, layer_id):
             param.div_(math.sqrt(2.0 * layer_id))
 
@@ -190,6 +194,7 @@ class VisionTransformer(nn.Module):
 
 class VisionTransformerPredictor(nn.Module):
     """ Vision Transformer """
+
     def __init__(self,
                  num_patches,
                  embed_dim=768,
@@ -245,6 +250,7 @@ class VisionTransformerPredictor(nn.Module):
         self.fix_init_weight()
 
     def fix_init_weight(self):
+
         def rescale(param, layer_id):
             param.div_(math.sqrt(2.0 * layer_id))
 
