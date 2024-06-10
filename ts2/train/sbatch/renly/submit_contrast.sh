@@ -24,10 +24,19 @@
 
 # SBATCH --nodelist=armis26001
 
+<<<<<<< Updated upstream
 #SBATCH --array=0-2
 source activate ts2
 
 #srun python main.py -c config/renly/train_simclr_srh.yaml
 #python main.py -c config/renly/train_ijepa_tcga.yaml
 srun python main.py -c config/renly/train_ijepa_srh.yaml
+=======
+#SBATCH --array=3-3
+source activate ts2
+
+#srun python main.py -c config/renly/train_simclr_srh.yaml
+#srun python main.py -c config/renly/train_dino_tcga.yaml
+python main.py -c config/renly/train_ijepa_tcga.yaml
+>>>>>>> Stashed changes
 #python main.py -c config/renly/train_pjepa_tcga.yaml

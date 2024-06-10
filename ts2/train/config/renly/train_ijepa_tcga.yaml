@@ -10,6 +10,7 @@ data:
     which: CachedCSVParser
     params:
       cached_parser_file:
+<<<<<<< Updated upstream
         #train: /nfs/umms-tocho-mr/dropbox/exp/renly/he_parser/9404d906_slide_train/
         #trainval: /nfs/umms-tocho-mr/dropbox/exp/renly/he_parser/9404d906_slide_trainval/
         #train: /nfs/umms-tocho-mr/dropbox/exp/renly/he_parser/neuro_toy_400_slide/e1a45405_slide_train/
@@ -20,6 +21,12 @@ data:
         trainval: /nfs/umms-tocho-mr/dropbox/data/tsmeta/he_neuro/92b8ad49_slide_toy/
         test_databank: /nfs/umms-tocho-mr/dropbox/data/tsmeta/tcga_glioma/69ecabd1_patch40_train/
         test: /nfs/umms-tocho-mr/dropbox/data/tsmeta/tcga_glioma/69ecabd1_patch40_trainval/
+=======
+        train: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/he_neuro/92b8ad49_slide_all/
+        trainval: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/he_neuro/92b8ad49_slide_toy/
+        test_databank: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/tcga_glioma/69ecabd1_patch40_train/
+        test: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/tcga_glioma/69ecabd1_patch40_trainval/
+>>>>>>> Stashed changes
   transform:
     train:
       which: HistologyTransform
@@ -104,7 +111,7 @@ data:
             allow_overlap: false
             min_keep: 10
       trainval:
-        batch_size: 8
+        batch_size: 512
         drop_last: False
         shuffle: False
         collate_fn: 
@@ -131,7 +138,7 @@ lightning_module:
   params:
     model_hyperparams:
       backbone_cf:
-        which: vit_tiny
+        which: vit_small
         params:
           img_size: 224
           patch_size: 16
@@ -141,7 +148,7 @@ lightning_module:
         predictor_embed_dim: 192
         depth: 6
     loss_params: {}
-    ema_beta: 0.99
+    ema_beta: 0.996
     opt_cf:
       which: adamw
       scale_lr: True
@@ -171,7 +178,7 @@ training:
     gradient_clip_val: 0.5
     enable_progress_bar: True
     precision: 'bf16-mixed'
-    deterministic: False
+    deterministic: false
   fl32_preci: medium
   trainval:
     freq:
@@ -199,10 +206,8 @@ tune:
   diagonal_items: true
   params:
     lightning_module/params/opt_cf/params/lr:
-    - 0.002
-    - 0.001
+    - 0.0001
     - 0.0005
     infra/comment:
-    - ijepa_1000_lr0.02
-    - ijepa_1000_lr0.001
+    - ijepa_1000_lr0.0001
     - ijepa_1000_lr0.0005
