@@ -1,6 +1,6 @@
 infra:
   exp_name: ts2/tcga_usup/ijepa
-  log_dir: /nfs/turbo/umms-tocho-ns/exp/renly
+  log_dir: /nfs/turbo/umms-tocho/exp/renly
   comment: dev
   log_gpu: True
   seed: 1000
@@ -10,23 +10,10 @@ data:
     which: CachedCSVParser
     params:
       cached_parser_file:
-<<<<<<< Updated upstream
-        #train: /nfs/umms-tocho-mr/dropbox/exp/renly/he_parser/9404d906_slide_train/
-        #trainval: /nfs/umms-tocho-mr/dropbox/exp/renly/he_parser/9404d906_slide_trainval/
-        #train: /nfs/umms-tocho-mr/dropbox/exp/renly/he_parser/neuro_toy_400_slide/e1a45405_slide_train/
-        #trainval: /nfs/umms-tocho-mr/dropbox/exp/renly/he_parser/neuro_toy_400_slide/e1a45405_slide_trainval/
-        #test_databank: /nfs/umms-tocho-mr/dropbox/exp/renly/he_parser/glioma_sup_400/807e0236_patch_train/
-        #test: /nfs/umms-tocho-mr/dropbox/exp/renly/he_parser/glioma_sup_400/807e0236_patch_trainval/
-        train: /nfs/umms-tocho-mr/dropbox/data/tsmeta/he_neuro/92b8ad49_slide_all/
-        trainval: /nfs/umms-tocho-mr/dropbox/data/tsmeta/he_neuro/92b8ad49_slide_toy/
-        test_databank: /nfs/umms-tocho-mr/dropbox/data/tsmeta/tcga_glioma/69ecabd1_patch40_train/
-        test: /nfs/umms-tocho-mr/dropbox/data/tsmeta/tcga_glioma/69ecabd1_patch40_trainval/
-=======
         train: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/he_neuro/92b8ad49_slide_all/
         trainval: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/he_neuro/92b8ad49_slide_toy/
         test_databank: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/tcga_glioma/69ecabd1_patch40_train/
         test: /nfs/mm-isilon/brainscans/dropbox/data/tsmeta/tcga_glioma/69ecabd1_patch40_trainval/
->>>>>>> Stashed changes
   transform:
     train:
       which: HistologyTransform
@@ -70,7 +57,7 @@ data:
       which_process_read: memmap
       params:
         common:
-          data_root: /nfs/umms-tocho-mr/dropbox/data/root_histology_db/srh/
+          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
           num_transforms: 1
           num_samples: 1
           balance_instance_class: False
@@ -81,7 +68,7 @@ data:
       which: PatchDataset
       which_process_read: memmap
       params:
-          data_root: /nfs/umms-tocho-mr/dropbox/data/root_histology_db/he.plip
+          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
           num_transforms: 1
           balance_instance_class: False
       negative_class_index: 1
