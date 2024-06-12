@@ -29,6 +29,9 @@ class InterPatchJEPANetwork(torch.nn.Module):
         self.pred = InterPatchJEPAPredictor(embed_dim=self.bb.num_out,
                                             **pred_params)
         self.target_bb = copy.deepcopy(self.bb)
+        for param in self.target_bb.parameters():
+            param.requires_grad = False
+
         #self.num_out = self.pred.num_out
 
     def forward(self, batch: Dict) -> torch.Tensor:

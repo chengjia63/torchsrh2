@@ -87,8 +87,8 @@ data:
       common:
         pin_memory: False
         persistent_workers: True
-        prefetch_factor: 2
-        num_workers: 4
+        prefetch_factor: 1
+        num_workers: 3
       train:
         batch_size: 128
         drop_last: True
@@ -117,7 +117,7 @@ lightning_module:
         #  class_token: False
       pred_params:
         predictor_embed_dim: 512
-        depth: 6
+        depth: 2
         drop_path_rate: 0.0
         init_std: 0.02
         pos_emb_params:
@@ -136,19 +136,11 @@ lightning_module:
       which: adamw
       scale_lr: True
       params:
-        lr: 0.001
+        lr: 0.0001
         betas: [0.9, 0.999]
         eps: 1.0e-8
         weight_decay: 0.01
         amsgrad: False
-    #opt_cf:
-    #  which: lars
-    #  scale_lr: True
-    #  params:
-    #    lr: 0.001
-    #    weight_decay: 1.0e-4
-    #    momentum: 0.9
-    #    #eta: 0.001
     schd_cf:
       which: cos_linear_warmup
       params:
@@ -170,30 +162,6 @@ testing:
   #lightning_module:
   #  which: InterPatchJEPASystem
   #  params:
-  #    model_hyperparams:
-  #      backbone_cf:
-  #        which: vit_tiny
-  #        params:
-  #          img_size: 224
-  #          patch_size: 16
-  #          global_pool: "avg"
-  #          fc_norm: False
-  #          class_token: False
-  #      pred_params:
-  #        predictor_embed_dim: 192
-  #        depth: 6
-  #        drop_path_rate: 0.0
-  #        init_std: 0.02
-  #        pos_emb_params:
-  #          prefix_len: 0
-  #          pos_emb_grad: True
-  #        block_params:
-  #          num_heads: 4
-  #          mlp_ratio: 4.0
-  #          qkv_bias: True
-  #          qk_scale: null
-  #          drop: 0.0
-  #          attn_drop: 0.0
   eval_mode: patch_knn
   save_train_pred: true
   knn:
@@ -214,13 +182,15 @@ testing:
 tune:
   diagonal_items: true
   params:
+    infra/comment:
+    - pjepa_1000_pred2_dim256_ema_param_lr0.0001
+    - pjepa_1000_pred2_dim384_ema_param_lr0.0001
+    - pjepa_1000_pred2_dim512_ema_param_lr0.0001
+    lightning_module/params/model_hyperparams/pred_params/predictor_embed_dim:
+    - 256
+    - 384
+    - 512
     lightning_module/params/opt_cf/params/lr:
     - 0.0001
-    - 0.001
-    - 0.01
-    - 0.00001
-    infra/comment:
-    - pjepa_1000_lr0.0001
-    - pjepa_1000_lr0.001
-    - pjepa_1000_lr0.01
-    - pjepa_1000_lr0.00001
+    - 0.0001
+    - 0.0001

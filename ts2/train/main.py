@@ -111,6 +111,7 @@ def do_training(cf):
     # config loggers
     logger = [
         pl.loggers.TensorBoardLogger(save_dir=exp_root, name="tb"),
+        #pl.loggers.WandbLogger(log_model="all"),
         pl.loggers.CSVLogger(save_dir=exp_root, name="csv")
     ]
 
@@ -175,10 +176,12 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
         dm = PatchDataModule(config=cf)
 
     if not pred_fname:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        logging.info(f"using device {device}")
+
         pred_trainer = pl.Trainer(
-            accelerator="cuda" if torch.cuda.is_available() else "cpu",
+            accelerator=device,
             devices=1,
-            logger=False,
             default_root_dir=eval_root,
             inference_mode=True)  # deterministic=True)
 

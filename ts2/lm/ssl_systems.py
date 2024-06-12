@@ -468,6 +468,7 @@ class InterPatchJEPASystem(EvalBaseSystem):
 
         self.model = InterPatchJEPANetwork(**model_hyperparams)
 
+        #self.beta = torch.nn.parameter.Parameter(data=torch.tensor(ema_beta, dtype=float), requires_grad=True)
         self.beta = ema_beta
         self.opt_cf_ = opt_cf
         self.schd_cf_ = schd_cf
@@ -485,23 +486,15 @@ class InterPatchJEPASystem(EvalBaseSystem):
     def training_step(self, batch, _):
         target_hat, target_emb = self.model(batch)
 
-        target_hat_gather = self.all_gather(target_hat, sync_grads=True)
-        target_hat_gather = target_hat_gather.reshape(
-            -1, *target_hat_gather.shape[-2:])
-
-        target_emb_gather = self.all_gather(target_emb, sync_grads=True)
-        target_emb_gather = target_emb_gather.reshape(
-            -1, *target_emb_gather.shape[-2:])
-
-        loss = self.criterion(target_hat_gather, target_emb_gather)
+        loss = self.criterion(target_hat, target_emb)
         self.log("train/contrastive",
                  loss.detach().item(),
                  on_step=True,
                  on_epoch=True,
-                 batch_size=target_hat_gather.shape[0],
+                 batch_size=target_hat.shape[0],
                  rank_zero_only=True)
         self.train_loss.update(loss.detach().item(),
-                               weight=target_hat_gather.shape[0])
+                               weight=target_hat.shape[0])
 
         return loss
 
@@ -510,17 +503,10 @@ class InterPatchJEPASystem(EvalBaseSystem):
 
         target_hat, target_emb = self.model(batch)
 
-        target_hat_gather = self.all_gather(target_hat, sync_grads=False)
-        target_hat_gather = target_hat_gather.reshape(
-            -1, *target_hat_gather.shape[-2:])
 
-        target_emb_gather = self.all_gather(target_emb, sync_grads=False)
-        target_emb_gather = target_emb_gather.reshape(
-            -1, *target_emb_gather.shape[-2:])
-
-        loss = self.criterion(target_hat_gather,
-                              target_emb_gather).detach().item()
-        self.val_loss.update(loss, weight=target_hat_gather.shape[0])
+        loss = self.criterion(target_hat,
+                              target_emb).detach().item()
+        self.val_loss.update(loss, weight=target_hat.shape[0])
 
     def on_train_epoch_end(self):
         train_loss = self.train_loss.compute()
