@@ -168,6 +168,80 @@ class SimCLRSystem(ContrastiveBaseSystem):
         self.val_loss.update(loss, weight=bs)
 
 
+class ModifiedSimCLRSystem(ContrastiveBaseSystem):
+    """Lightning system for SimCLR experiment"""
+
+    def __init__(self, loss_params, **kwargs):
+        super().__init__(**kwargs)
+        if self.opt_cf_:
+            self.criterion = SupConLoss(**loss_params)
+
+    def training_step(self, batch, _):
+        bs = batch["context_image"][0].shape[
+            0] * torch.distributed.get_world_size()
+        context_pred = [
+            self.model(batch["context_image"][:, i, ...])["proj"]
+            for i in range(batch["context_image"].shape[1])
+        ]
+        target_im = einops.rearrange(batch["target_image"],
+                                     "b nc nt c h w -> b (nc nt) c h w")
+        target_pred = [
+            self.model(target_im[:, i, ...])["proj"]
+            for i in range(target_im.shape[1])
+        ]
+
+        pred = torch.cat(context_pred + target_pred, dim=1)
+
+        pred_gather = self.all_gather(pred, sync_grads=True)
+        pred_gather = pred_gather.reshape(-1, *pred_gather.shape[-2:])
+
+        loss = self.criterion(pred_gather)["loss"]
+
+        self.log("train/contrastive",
+                 loss.detach().item(),
+                 on_step=True,
+                 on_epoch=True,
+                 batch_size=bs,
+                 rank_zero_only=True)
+        self.train_loss.update(loss.detach().item(), weight=bs)
+
+        self.log("cpu/mem",
+                 psutil.virtual_memory().used,
+                 on_step=True,
+                 on_epoch=True,
+                 batch_size=1,
+                 rank_zero_only=True)
+        return loss
+
+    @torch.inference_mode()
+    def validation_step(self, batch, batch_idx):
+
+        bs = batch["context_image"][0].shape[
+            0] * torch.distributed.get_world_size()
+        #bs = batch[0].shape[0] * torch.distributed.get_world_size()
+        context_pred = [
+            #self.model(batch[:, i, ...])["proj"]
+            #for i in range(batch.shape[1])
+            self.model(batch["context_image"][:, i, ...])["proj"]
+            for i in range(batch["context_image"].shape[1])
+        ]
+        target_im = einops.rearrange(batch["target_image"],
+                                     "b nc nt c h w -> b (nc nt) c h w")
+        target_pred = [
+            #self.model(batch[:, i, ...])["proj"]
+            #for i in range(batch.shape[1])
+            self.model(target_im[:, i, ...])["proj"]
+            for i in range(target_im.shape[1])
+        ]
+
+        pred = torch.cat(context_pred + target_pred, dim=1)
+        pred_gather = self.all_gather(pred, sync_grads=False)
+        pred_gather = pred_gather.reshape(-1, *pred_gather.shape[-2:])
+
+        loss = self.criterion(pred_gather)["loss"].detach().item()
+        self.val_loss.update(loss, weight=bs)
+
+
 class SupConSystem(ContrastiveBaseSystem):
     """Lightning system for SupCon experiment"""
 
@@ -503,9 +577,7 @@ class InterPatchJEPASystem(EvalBaseSystem):
 
         target_hat, target_emb = self.model(batch)
 
-
-        loss = self.criterion(target_hat,
-                              target_emb).detach().item()
+        loss = self.criterion(target_hat, target_emb).detach().item()
         self.val_loss.update(loss, weight=target_hat.shape[0])
 
     def on_train_epoch_end(self):

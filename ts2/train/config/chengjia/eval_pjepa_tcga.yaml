@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/tcga_usup_dev/pjepa
+  exp_name: ts2/tcga_usup_dev/pjepa_easyviews2
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: standaloneeval_ep21
   log_gpu: True
@@ -11,8 +11,8 @@ data:
     which: CachedCSVParser
     params:
       cached_parser_file:
-        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/69ecabd1_patch40_train
-        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/69ecabd1_patch40_trainval/
+        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_train
+        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_trainval
   transform:
     test:
       which: HistologyTransform
@@ -98,12 +98,15 @@ tune:
     lightning_module/params/model_hyperparams/pred_params/depth:
     - 2
     - 2
-    - 2
+    - 1
+    - 1
     lightning_module/params/model_hyperparams/pred_params/predictor_embed_dim:
-    - 256
-    - 384
+    - 512
+    - 512
+    - 512
     - 512
     testing/ckpt_path:
-    - ad67b9cd_Jun11-13-51-53_sd1000_pjepa_1000_pred1_dim256_tuneTrue/models/ckpt-epoch27-step2184-loss0.00.ckpt
-    - d12623a1_Jun11-13-51-53_sd1000_pjepa_1000_pred1_dim384_tuneTrue/models/ckpt-epoch27-step2184-loss0.00.ckpt
-    - 0fb7bf55_Jun11-15-35-38_sd1000_pjepa_1000_pred1_dim512_tuneTrue/models/ckpt-epoch27-step2184-loss0.00.ckpt
+    - 1cb1fc74_Jun13-00-43-37_sd1000_pjepa_1000_pred2_dim512_lr0.001_tune3/models/ckpt-epoch29-step2340-loss0.00.ckpt
+    - 2a6ea356_Jun13-00-43-38_sd1000_pjepa_1000_pred2_dim512_lr0.0001_tune2/models/ckpt-epoch29-step2340-loss0.00.ckpt
+    - a56b44e4_Jun13-00-43-38_sd1000_pjepa_1000_pred1_dim512_lr0.001_tune1/models/ckpt-epoch29-step2340-loss0.00.ckpt
+    - cf2c77f1_Jun13-00-43-38_sd1000_pjepa_1000_pred1_dim512_lr0.0001_tune0/models/ckpt-epoch29-step2340-loss0.00.ckpt

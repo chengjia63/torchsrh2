@@ -12,8 +12,9 @@ from typing import Dict, Any
 from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
 #from opensrh.train.common import get_contrastive_dataloaders as get_opensrh_contrastive_dataloaders
 
-from ts2.lm.ssl_systems import (SimCLRSystem, SupConSystem, VICRegSystem,
-                                IJEPASystem, InterPatchJEPASystem)  #,
+from ts2.lm.ssl_systems import (SimCLRSystem, ModifiedSimCLRSystem,
+                                SupConSystem, VICRegSystem, IJEPASystem,
+                                InterPatchJEPASystem)  #,
 #SimSiamSystem, BYOLSystem)
 from ts2.data.histology_data_module import PatchDataModule
 from ts2.train.common import setup_checkpoints
@@ -25,6 +26,7 @@ from ts2.eval.eval_modules import do_eval
 lms = {
     "SupConSystem": SupConSystem,
     "SimCLRSystem": SimCLRSystem,
+    "ModifiedSimCLRSystem": ModifiedSimCLRSystem,
     #"SimSiamSystem": SimSiamSystem,
     #"BYOLSystem": BYOLSystem,
     "VICRegSystem": VICRegSystem,
@@ -179,11 +181,10 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
         device = "cuda" if torch.cuda.is_available() else "cpu"
         logging.info(f"using device {device}")
 
-        pred_trainer = pl.Trainer(
-            accelerator=device,
-            devices=1,
-            default_root_dir=eval_root,
-            inference_mode=True)  # deterministic=True)
+        pred_trainer = pl.Trainer(accelerator=device,
+                                  devices=1,
+                                  default_root_dir=eval_root,
+                                  inference_mode=True)  # deterministic=True)
 
         # inference
         pred_raw = pred_trainer.predict(con_exp, datamodule=dm)

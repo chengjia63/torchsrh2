@@ -158,7 +158,7 @@ class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
         coord = tuple(map(int, curr_inst["patch_name"].split("-")))
         return im, coord
 
-    def read_images(self, inst: Dict):
+    def read_images_hard(self, inst: Dict):
         """Read in a list of patches, different patches and transformations"""
 
         im_id = np.random.permutation(inst["patch_names"])
@@ -221,6 +221,100 @@ class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
                 patience += 1
 
             if num_target == self.num_target_samples_:
+                num_context += 1
+
+            #except:
+            #    logging.error(
+            #        "error reading context bad_file - {}".format(curr_path))
+
+        assert self.transform_ is not None
+
+        target_images = torch.stack([
+            torch.stack([self.transform_(j) for j in i]) for i in target_images
+        ])
+        context_images = torch.stack(
+            [self.transform_(i) for i in context_images])
+        imp_maker = np.vectorize(lambda x: "@".join([inst["name"], x]))
+        return {
+            "context_image": context_images,
+            "target_image": target_images,
+            "context_path": imp_maker(context_imps).tolist(),
+            "target_path": imp_maker(target_imps).tolist(),
+            "target_delta": torch.tensor(target_delta)
+        }
+
+    def read_images(self, inst: Dict):
+        """Read in a list of patches, different patches and transformations"""
+
+        im_id = np.random.permutation(inst["patch_names"])
+
+        im_shape = np.array(
+            self.tensor_shape_map[inst["name"]]["shape"][1:])[[-1, 0, 1]]
+        context_images = torch.zeros(
+            tuple(np.hstack([self.num_context_samples_, im_shape])))
+        target_images = torch.zeros(
+            tuple(
+                np.hstack([
+                    self.num_context_samples_, self.num_target_samples_,
+                    im_shape
+                ])))
+        context_imps = np.empty([self.num_context_samples_], dtype=object)
+        target_imps = np.empty(
+            [self.num_context_samples_, self.num_target_samples_],
+            dtype=object)
+        target_delta = np.empty(
+            [self.num_context_samples_, self.num_target_samples_, 2],
+            dtype=int)
+        num_context = 0
+        context_permute_idx = 0
+        away_round = lambda x: math.ceil(x) if x > 0 else math.floor(x)
+
+        while num_context < self.num_context_samples_:
+
+            # try:
+            curr_inst = inst["patches"][im_id[context_permute_idx %
+                                              len(im_id)]]
+            curr_path = self.make_im_path(
+                self.tensor_shape_map[curr_inst["slide_name"]]["path"])
+            #print(f"@@@ context {curr_path}")
+            # read context
+            im_ci, cxt_coord = self.process_read_wrap(curr_path, curr_inst,
+                                                      inst)
+            context_images[num_context, ...] = im_ci
+            context_imps[num_context] = curr_inst["patch_name"]
+            context_permute_idx += 1
+
+            candidates = np.array([[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0],
+                                   [-1, 1], [0, 1], [1, 1]])
+            #candidates = np.array([[-2, -2], [-1, -2], [0, -2], [1, -2],
+            #                       [2, -2], [-2, -1], [2, -1], [-2, 0], [2, 0],
+            #                       [-2, 1], [2, 1], [-2, 2], [-1, 2], [0, 2],
+            #                       [1, 2], [2, 2]])
+            new_coord = np.array(cxt_coord) + candidates
+            target_patch_name = [
+                f"{nc[0]:04d}-{nc[1]:04d}" for nc in new_coord
+            ]
+            target_patch_name = [
+                (tpn, delta)
+                for tpn, delta in zip(target_patch_name, candidates)
+                if tpn in inst["patches"]
+            ]
+
+            #print(f"@@@    target {target_patch_name}")
+
+            if len(target_patch_name) >= self.num_target_samples_:
+                chosen_idx = np.random.permutation(
+                    len(target_patch_name))[:self.num_target_samples_]
+                chosen = [target_patch_name[ci] for ci in chosen_idx]
+
+                target_images[num_context, ...] = torch.stack([
+                    self.process_read_wrap(curr_path, inst["patches"][c[0]],
+                                           inst)[0] for c in chosen
+                ])
+                target_imps[num_context, :] = np.stack([c[0] for c in chosen])
+                target_delta[num_context, :, :] = np.stack(
+                    [c[1] for c in chosen])
+
                 num_context += 1
 
             #except:
