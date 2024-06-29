@@ -1,19 +1,8 @@
-import os
 from os.path import join as opj
-import gzip
-import logging
-from datetime import datetime
 from functools import partial
-from typing import Dict, Any
-import collections
-import uuid
-
-from tqdm import tqdm
 from PIL import Image
-from omegaconf import OmegaConf
 
 import torch
-import torch.nn as nn
 import torchvision
 from torchvision import transforms
 import pytorch_lightning as pl
@@ -328,8 +317,8 @@ class HIPTEvalSystem(pl.LightningModule):
 
 class InDomainEvalSystem(pl.LightningModule):
 
-    def __init__(self):
-        super().__init__(ckpt_path)
+    def __init__(self, ckpt_path):
+        super().__init__()
         self.model = instantiate_backbone(which="resnet50", params={})
 
         state_dict = torch.load(ckpt_path, map_location="cpu")["state_dict"]
@@ -379,31 +368,31 @@ def main():
     make_model = lambda x: opj(cf["testing"]["model_root"], x)
 
     models = {
-        "uni":
-        partial(
-            UNIEvalSystem,
-            ckpt_path=make_model(
-                "uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin"
-            )),
-        "plip":
-        PLIPEvalSystem,
-        "conch":
-        partial(ConchEvalSystem,
-                ckpt_path=make_model("conch/pytorch_model.bin")),
-        "virchow":
-        partial(VirchowEvalSystem,
-                ckpt_path=make_model("virchow/pytorch_model.bin")),
-        "gigapath":
-        partial(GigapathEvalSystem,
-                ckpt_path=make_model("gigapath/pytorch_model.bin")),
-        "imresnet":
-        ImageNetResnetEvalSystem,
-        "dinov2":
-        DINOv2EvalSystem,
-        "clip":
-        CLIPEvalSystem,
-        "hipt":
-        partial(HIPTEvalSystem, make_model("hipt/vit256_small_dino.pth")),
+        #"uni":
+        #partial(
+        #    UNIEvalSystem,
+        #    ckpt_path=make_model(
+        #        "uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin"
+        #    )),
+        #"plip":
+        #PLIPEvalSystem,
+        #"conch":
+        #partial(ConchEvalSystem,
+        #        ckpt_path=make_model("conch/pytorch_model.bin")),
+        #"virchow":
+        #partial(VirchowEvalSystem,
+        #        ckpt_path=make_model("virchow/pytorch_model.bin")),
+        #"gigapath":
+        #partial(GigapathEvalSystem,
+        #        ckpt_path=make_model("gigapath/pytorch_model.bin")),
+        #"imresnet":
+        #ImageNetResnetEvalSystem,
+        #"dinov2":
+        #DINOv2EvalSystem,
+        #"clip":
+        #CLIPEvalSystem,
+        #"hipt":
+        #partial(HIPTEvalSystem, make_model("hipt/vit256_small_dino.pth")),
         "id_simclr":
         partial(
             InDomainEvalSystem,
@@ -423,10 +412,10 @@ def main():
         pred_trainer = pl.Trainer(accelerator="gpu",
                                   devices=1,
                                   default_root_dir=".",
-                                  inference_mode=True) # deterministic=True)
+                                  inference_mode=True)  # deterministic=True)
 
         pred_raw = pred_trainer.predict(model, datamodule=dm)
-        
+
         train_pred = process_predictions(pred_raw[0])
         val_pred = process_predictions(pred_raw[1])
 
