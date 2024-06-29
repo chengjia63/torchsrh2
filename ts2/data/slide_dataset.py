@@ -11,6 +11,7 @@ import einops
 import math
 from ts2.data.db_improc import MemmapReader
 from ts2.data.balanceable_dataset import BalanceableBaseDataset
+import random
 
 
 class HierarchicalBaseDataset(BalanceableBaseDataset, ABC):
@@ -47,6 +48,7 @@ class HierarchicalBaseDataset(BalanceableBaseDataset, ABC):
         Populate each attribute and walk through each patient to look for patches
         """
         super().__init__(**kwargs)
+
         self.data_root_ = data_root
         self.transform_ = transform
         self.target_transform_ = target_transform
@@ -85,51 +87,46 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
     def __init__(self, num_samples: int = 1, **kwargs):
 
         super().__init__(**kwargs)
+        #self.instances_ = tuple([(i["name"], i["label"],
+        #                          tuple([(p["patch_name"], p["patch_idx"])
+        #                                 for p in i["patches"]]))
+        #                         for i in self.instances_])
+
         self.num_samples_ = num_samples
 
-    def read_images(self, inst: List):
+    @torch.no_grad()
+    def read_images(self, inst: Dict):
         """Read in a list of patches, different patches and transformations"""
-        im_id = np.random.permutation(np.arange(len(inst["patches"])))
 
-        images = []
-        imps_take = []
-        idx = 0
+        #patches_list = inst["patches"]
+        im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
+        #mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
 
-        while len(images) < self.num_samples_:
-            curr_inst = inst["patches"][im_id[idx % len(im_id)]]
-            curr_path = self.make_im_path(
-                self.tensor_shape_map[curr_inst["slide_name"]]["path"])
+        images = self.process_read_im_(
+            self.make_im_path(self.tensor_shape_map[inst["name"]]["path"]),
+            tuple(self.tensor_shape_map[inst["name"]]["shape"]), im_id)
 
-            #try:
-            images.append(
-                self.process_read_im_(
-                    curr_path,
-                    tuple(self.tensor_shape_map[inst["name"]]["shape"]),
-                    curr_inst["patch_idx"]))
-            imps_take.append("@".join(
-                [curr_inst["slide_name"], curr_inst["patch_name"]]))
-            idx += 1
-            #except:
-            #    logging.error("bad_file - {}".format(curr_path))
+        im_id = None
 
         assert self.transform_ is not None
-        xformed_im = torch.stack([
+        images = torch.stack([
             self.transform_(im) for _ in range(self.num_transforms_)
             for im in images
         ])
-        return xformed_im, imps_take
+
+        return images
 
     def __getitem__(self, idx: int):
         """Retrieve a list of patches, from the wholeslide specified by idx"""
         idx = idx % len(self.instances_)
         instance = self.instances_[idx]
         target = self.class_to_idx_[instance["label"]]
-        im, imp = self.read_images(instance)
+        im = self.read_images(instance)
 
         if self.target_transform_ is not None:
             target = self.target_transform_(target)
-        #return im
-        return {"image": im, "label": target, "path": [imp]}
+
+        return {"image": im, "label": target}
 
 
 class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
@@ -160,7 +157,7 @@ class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
 
     def read_images_hard(self, inst: Dict):
         """Read in a list of patches, different patches and transformations"""
-
+        raise NotImplementedError()
         im_id = np.random.permutation(inst["patch_names"])
 
         im_shape = np.array(
@@ -246,6 +243,7 @@ class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
     def read_images(self, inst: Dict):
         """Read in a list of patches, different patches and transformations"""
 
+        raise NotImplementedError()
         im_id = np.random.permutation(inst["patch_names"])
 
         im_shape = np.array(
@@ -380,7 +378,7 @@ class HierarchicalDataset(HierarchicalBaseDataset):
         self.num_patch_samples_ = num_patch_samples
 
     def read_images_slide(self, inst: List):
-        raise NotImplementedError()
+        raise NotImplementedError()  # fix permutation
         """Read in a list of patches, different patches and transformations"""
         im_id = np.random.permutation(np.arange(len(inst)))
         images = []

@@ -12,7 +12,9 @@ import logging
 def instantiate_process_read(which: str, which_set: Optional[str] = "srh"):
     """Returns the proper process read function"""
     if which == "memmap":
-        return MemmapReader(which_set)
+        return MemmapReader(which_set=which_set)
+    elif which == "memmap_multi":
+        return MemmapMultiReader(which_set=which_set)
 
     return {
         "srh": process_read_srh,
@@ -42,6 +44,29 @@ class MemmapReader():
         return einops.rearrange(
             torch.from_numpy(im).to(torch.float32),
             "h w c -> c h w").contiguous()
+
+
+class MemmapMultiReader(MemmapReader):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def __call__(self, mm_path, tensor_shape, patch_idx):
+        """Read in two channel image
+
+        Returns:
+            A 2 channel torch Tensor in the shape 2 * H * W
+        """
+        fd = np.memmap(mm_path,
+                       dtype=self.dtype_,
+                       mode="r",
+                       shape=tensor_shape)
+        im = np.array(fd[patch_idx, ...])
+        fd._mmap.close()
+        del fd
+        return einops.rearrange(
+            torch.from_numpy(im).to(torch.float32),
+            "b h w c -> b c h w").contiguous()
 
 
 def process_read_srh(imp: str) -> torch.Tensor:

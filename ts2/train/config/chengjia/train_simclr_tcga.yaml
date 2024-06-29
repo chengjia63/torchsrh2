@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/he_neuro_vit/simclr30
+  exp_name: ts2/he_neuro_vit2/simclr_vitb
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -11,10 +11,10 @@ data:
     which: CachedCSVParser
     params:
       cached_parser_file:
-        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/he_neuro/92b8ad49_slide_all
-        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/he_neuro/92b8ad49_slide_toy
-        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/69ecabd1_patch40_train
-        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/69ecabd1_patch40_trainval
+        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/he_neuro/aa666ea1_slide_all
+        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/he_neuro/aa666ea1_slide_toy
+        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_train
+        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_trainval
   transform:
     train:
       which: HistologyTransform
@@ -31,11 +31,6 @@ data:
             params: {}
           - which: random_vert_flip
             params: {}
-          - which: random_autocontrast
-            params: {}
-          - which: random_sharpness
-            params:
-              sharpness_factor: 2
           - which: color_jitter
             params:
               brightness: 0.4
@@ -51,8 +46,6 @@ data:
           - which: random_resized_crop
             params:
               size: 224
-          - which: random_erasing
-            params: {}
           aug_prob: 0.3
     trainval: ${.train}
     test:
@@ -67,7 +60,7 @@ data:
           aug_prob: 1
   dataset:
       which: SingleLevelHierarchicalDataset
-      which_process_read: memmap
+      which_process_read: memmap_multi
       params:
         common:
           data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
@@ -92,10 +85,10 @@ data:
       common:
         pin_memory: False
         persistent_workers: True
-        prefetch_factor: 4
-        num_workers: 4
+        prefetch_factor: 12
+        num_workers: 7
       train:
-        batch_size: 512
+        batch_size: 128
         drop_last: True
         shuffle: True
       trainval:
@@ -114,15 +107,15 @@ lightning_module:
   params:
     model_hyperparams:
       backbone_cf:
-        which: vit_tiny
+        which: vit_base
         params:
           img_size: 224
           patch_size: 16
           global_pool: "token"
           class_token: True
       proj_params:
-        hidden_layers: [192]
-        n_out: 192
+        hidden_layers: [768]
+        n_out: 768
         activation: relu
         drop: 0
         bias: True
@@ -184,9 +177,7 @@ tune:
   params:
     lightning_module/params/opt_cf/params/lr:
     - 0.01
-    - 0.001
     - 0.0001
     infra/comment:
     - simclr_1000_lr0.01
-    - simclr_1000_lr0.001
     - simclr_1000_lr0.0001
