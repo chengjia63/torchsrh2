@@ -33,10 +33,10 @@
 # SBATCH --account=precisionhealth_owned1
 # SBATCH --account=tocho_owned1
 #------------------------------------------------------------------------------
-# SBATCH --nodelist=armis28003
+#SBATCH --nodelist=armis20108
 #------------------------------------------------------------------------------
-# SBATCH --time=1-00:00:00
-#SBATCH --time=01:00:00
+#SBATCH --time=1-00:00:00
+# SBATCH --time=01:00:00
 #------------------------------------------------------------------------------
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
@@ -48,5 +48,4 @@
 set -x
 set -e
 
-python toy.py -c=config/chengjia/evaltoy.yaml
-#python main.py -c=config/chengjia/eval_pjepa_tcga.yaml
+python main.py -c=config/chengjia/eval_pjepa_tcga.yaml

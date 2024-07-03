@@ -1,0 +1,53 @@
+infra:
+  out_root: /nfs/umms-tocho-mr/dropbox/exp/root_foundation_embs
+  tag: TODO
+  inf_idx: [0, 0] # TODO
+lightning_module: {}
+data:
+  infra:
+    data_root: /nfs/umms-tocho-mr/dropbox/data/root_histology_db/he.plip
+    slide_csv: /nfs/turbo/umms-tocho-ns/data/data_splits/he_neuro/all_he_slides.csv 
+  process_read:
+    which: memmap_multi
+    which_set: he
+  transform_params:
+    which_set: he
+    base_aug_params: {}
+    strong_aug_params:
+        aug_list: []
+        aug_prob: 0
+  inference_batch_size: 32
+tune:
+  diagonal_items: False
+  params:
+    lightning_module:
+    - which: UNIEvalSystem
+      params:
+        ckpt_path: /nfs/umms-tocho-mr/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin
+      tag: uni
+    #- which: ConchEvalSystem
+    #  params:
+    #    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/conch/pytorch_model.bin
+    #  tag: conch
+    #- which: VirchowEvalSystem
+    #  params:
+    #    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/virchow/pytorch_model.bin
+    #  tag: virchow
+    #- which: PLIPEvalSystem
+    #  params:
+    #    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/plip/
+    #  tag: plip
+    - which: GigapathEvalSystem
+      params:
+        ckpt_path: /nfs/umms-tocho-mr/dropbox/exp/models/gigapath/pytorch_model.bin
+      tag: gigapath
+    infra/inf_idx:
+    #- [0, 6711]
+    #- [0, 6711]
+    #- [0, 6711]
+    #- [0, 6711]
+    #- [0, 6711]
+    - [0, 1699]
+    - [1700, 3399]
+    - [3400, 5099]
+    - [5100, 6711]

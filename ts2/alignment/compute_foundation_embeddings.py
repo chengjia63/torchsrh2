@@ -27,31 +27,32 @@ from ts2.train.infra import (parse_args, read_process_cf, setup_infra_training,
 
 class PLIPEvalSystem(pl.LightningModule):
 
-    def __init__(self):
+    def __init__(self, ckpt_path, training_params=None):
         super().__init__()
-        self.processor = CLIPProcessor.from_pretrained("vinid/plip")
-        self.model = CLIPModel.from_pretrained("vinid/plip")
-
-    @torch.inference_mode()
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        raw_im = (batch["image"].squeeze() * 255).to(torch.uint8)
+        self.processor = CLIPProcessor.from_pretrained(ckpt_path,
+                                                       local_files_only=True)
+        self.model = CLIPModel.from_pretrained(ckpt_path,
+                                               local_files_only=True)
+    def forward(self, raw_im):
+        raw_im = (raw_im * 255).to(torch.uint8)
         proc_im = self.processor.image_processor(raw_im)
         proc_im = torch.stack(
             [torch.tensor(i) for i in proc_im["pixel_values"]])
+        return self.model.get_image_features(proc_im.to(raw_im.device))
 
-        out = self.model.get_image_features(proc_im.to(
-            self.model.device)).detach()
+    @torch.inference_mode()
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
 
         return {
             "path": batch["path"],
             "label": batch["label"],
-            "embeddings": out
+            "embeddings": self.forward(batch["image"].squeeze())
         }
 
 
 class UNIEvalSystem(pl.LightningModule):
 
-    def __init__(self, ckpt_path):
+    def __init__(self, ckpt_path, training_params=None):
         super().__init__()
         self.model = timm.create_model("vit_large_patch16_224",
                                        img_size=224,
@@ -65,54 +66,59 @@ class UNIEvalSystem(pl.LightningModule):
         self.model.eval()
         self.transform = transforms.Compose([
             transforms.Resize(224),
-            #transforms.ToTensor(),
             transforms.Normalize(mean=(0.485, 0.456, 0.406),
                                  std=(0.229, 0.224, 0.225)),
         ])
 
+    def forward(self, raw_im):
+        image = self.transform(raw_im)
+        return self.model(image)
+
     @torch.inference_mode()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        raw_im = (batch["image"].squeeze() * 255)
-        image = self.transform(raw_im)
-        out = self.model(image.to(batch["image"].device))
         return {
             "path": batch["path"],
             "label": batch["label"],
-            "embeddings": out
+            "embeddings": self.forward(batch["image"].squeeze())
         }
 
 
 class ConchEvalSystem(pl.LightningModule):
 
-    def __init__(self, ckpt_path):
+    def __init__(self, ckpt_path, training_params=None):
         super().__init__()
-        self.model, self.preprocess = create_conch_model(
-            "conch_ViT-B-16", ckpt_path)
+        self.model, _ = create_conch_model("conch_ViT-B-16", ckpt_path)
+
+        self.preprocess = transforms.Compose([
+            transforms.Resize(
+                size=448,
+                interpolation=transforms.functional.InterpolationMode.BICUBIC,
+                max_size=None,
+                antialias=True),
+            transforms.CenterCrop(size=(448, 448)),
+            transforms.Normalize(mean=(0.48145466, 0.4578275, 0.40821073),
+                                 std=(0.26862954, 0.26130258, 0.27577711))
+        ])
+
         self.model.eval()
+
+    def forward(self, raw_im):
+        return self.model.encode_image(self.preprocess(raw_im),
+                                       proj_contrast=False,
+                                       normalize=False)
 
     @torch.inference_mode()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        raw_im = (batch["image"].squeeze() * 255).to(torch.uint8)
-        raw_im = [
-            Image.fromarray(
-                einops.rearrange(i.detach().cpu().numpy(), "c h w -> h w c"))
-            for i in raw_im
-        ]
-        proc_im = torch.stack([self.preprocess(ri) for ri in raw_im])
-        out = self.model.encode_image(proc_im.to(batch["image"].device),
-                                      proj_contrast=False,
-                                      normalize=False)
-
         return {
             "path": batch["path"],
             "label": batch["label"],
-            "embeddings": out
+            "embeddings": self.forward(batch["image"].squeeze())
         }
 
 
 class VirchowEvalSystem(pl.LightningModule):
 
-    def __init__(self, ckpt_path):
+    def __init__(self, ckpt_path, training_params=None):
         super().__init__()
         self.model = timm.create_model("vit_huge_patch14_224",
                                        img_size=224,
@@ -124,41 +130,27 @@ class VirchowEvalSystem(pl.LightningModule):
                                        mlp_layer=SwiGLUPacked,
                                        act_layer=torch.nn.SiLU)
         self.model.load_state_dict(torch.load(ckpt_path))
-
         self.model = self.model.eval()
 
-        self.model.pretrained_cfg = {
-            "tag": "virchow_v1",
-            "custom_load": False,
-            "input_size": [3, 224, 224],
-            "fixed_input_size": False,
-            "interpolation": "bicubic",
-            "crop_pct": 1.0,
-            "crop_mode": "center",
-            "mean": [0.485, 0.456, 0.406],
-            "std": [0.229, 0.224, 0.225],
-            "num_classes": 0,
-            "pool_size": None,
-            "first_conv": "patch_embed.proj",
-            "classifier": "head",
-            "license": "CC-BY-NC-ND-4.0"
-        }
+        self.transforms = transforms.Compose([
+            transforms.Resize(
+                size=224,
+                interpolation=transforms.functional.InterpolationMode.BICUBIC,
+                max_size=None,
+                antialias=True),
+            transforms.CenterCrop(size=(224, 224)),
+            transforms.Normalize(mean=[0.4850, 0.4560, 0.4060],
+                                 std=[0.2290, 0.2240, 0.2250])
+        ])
 
-        self.transforms = create_transform(
-            **resolve_data_config(self.model.pretrained_cfg, model=self.model))
+    def forward(self, raw_im):
+        output = self.model(self.transforms(raw_im))
+
+        return output[:, 0]
 
     @torch.inference_mode()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        raw_im = (batch["image"].squeeze() * 255).to(torch.uint8)
-        raw_im = [
-            Image.fromarray(
-                einops.rearrange(i.detach().cpu().numpy(), "c h w -> h w c"))
-            for i in raw_im
-        ]
-        proc_im = torch.stack([self.transforms(ri) for ri in raw_im])
-        output = self.model(proc_im.to(batch["image"].device))
 
-        class_token = output[:, 0]
         #patch_tokens = output[:, 1:]
 
         #embedding = torch.cat([class_token, patch_tokens.mean(1)], dim=-1)
@@ -166,13 +158,13 @@ class VirchowEvalSystem(pl.LightningModule):
         return {
             "path": batch["path"],
             "label": batch["label"],
-            "embeddings": class_token  # embedding
+            "embeddings": self.forward(batch["image"].squeeze())  # embedding
         }
 
 
 class GigapathEvalSystem(pl.LightningModule):
 
-    def __init__(self, ckpt_path):
+    def __init__(self, ckpt_path, training_params=None):
         super().__init__()
 
         self.model = timm.create_model("vit_giant_patch14_dinov2",
@@ -199,15 +191,16 @@ class GigapathEvalSystem(pl.LightningModule):
                                  std=(0.229, 0.224, 0.225)),
         ])
 
+    def forward(self, raw_im):
+        return self.model(self.transform(raw_im))
+
     @torch.inference_mode()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        raw_im = (batch["image"].squeeze() * 255)
-        image = self.transform(raw_im)
-        out = self.model(image.to(batch["image"].device))
+
         return {
             "path": batch["path"],
             "label": batch["label"],
-            "embeddings": out
+            "embeddings": self.forward(batch["image"].squeeze())
         }
 
 
@@ -359,6 +352,22 @@ def process_predictions(predictions):
     return pred
 
 
+def get_foundation_model(which_model, params):
+    models = {
+        "UNIEvalSystem": UNIEvalSystem,
+        "PLIPEvalSystem": PLIPEvalSystem,
+        "ConchEvalSystem": ConchEvalSystem,
+        "VirchowEvalSystem": VirchowEvalSystem,
+        "GigapathEvalSystem": GigapathEvalSystem,
+        "ImageNetResnetEvalSystem": ImageNetResnetEvalSystem,
+        "DINOv2EvalSystem": DINOv2EvalSystem,
+        "CLIPEvalSystem": CLIPEvalSystem,
+        "HIPTEvalSystem": HIPTEvalSystem,
+        "InDomainEvalSystem": InDomainEvalSystem,
+    }
+    return models[which_model](**params)
+
+
 @torch.inference_mode()
 def main():
 
@@ -382,9 +391,9 @@ def main():
         #"virchow":
         #partial(VirchowEvalSystem,
         #        ckpt_path=make_model("virchow/pytorch_model.bin")),
-        #"gigapath":
-        #partial(GigapathEvalSystem,
-        #        ckpt_path=make_model("gigapath/pytorch_model.bin")),
+        "gigapath":
+        partial(GigapathEvalSystem,
+                ckpt_path=make_model("gigapath/pytorch_model.bin")),
         #"imresnet":
         #ImageNetResnetEvalSystem,
         #"dinov2":
@@ -393,18 +402,18 @@ def main():
         #CLIPEvalSystem,
         #"hipt":
         #partial(HIPTEvalSystem, make_model("hipt/vit256_small_dino.pth")),
-        "id_simclr":
-        partial(
-            InDomainEvalSystem,
-            ckpt_path=
-            "/nfs/turbo/umms-tocho/models/hidisc_tcga/435f56fa_simclr_1000.ckpt"
-        ),
-        "id_hidisc":
-        partial(
-            InDomainEvalSystem,
-            ckpt_path=
-            "/nfs/turbo/umms-tocho/models/hidisc_tcga/e591e086_hidisc.slide_1000.ckpt"
-        )
+        #"id_simclr":
+        #partial(
+        #    InDomainEvalSystem,
+        #    ckpt_path=
+        #    "/nfs/turbo/umms-tocho/models/hidisc_tcga/435f56fa_simclr_1000.ckpt"
+        #),
+        #"id_hidisc":
+        #partial(
+        #    InDomainEvalSystem,
+        #    ckpt_path=
+        #    "/nfs/turbo/umms-tocho/models/hidisc_tcga/e591e086_hidisc.slide_1000.ckpt"
+        #)
     }
 
     for which_model in models.keys():

@@ -12,7 +12,7 @@ from typing import Dict, Any
 from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
 #from opensrh.train.common import get_contrastive_dataloaders as get_opensrh_contrastive_dataloaders
 
-from ts2.lm.ssl_systems import (SimCLRSystem, ModifiedSimCLRSystem,
+from ts2.lm.ssl_systems import (SimCLRSystem, CommitteeDistillationSystem,
                                 SupConSystem, VICRegSystem, IJEPASystem,
                                 InterPatchJEPASystem)  #,
 #SimSiamSystem, BYOLSystem)
@@ -22,17 +22,23 @@ from ts2.train.infra import (parse_args, read_process_cf, setup_infra_training,
                              setup_infra_testing, get_rank)
 from ts2.eval.common import get_knn_logits, load_prediction
 from ts2.eval.eval_modules import do_eval
+from ts2.alignment.compute_foundation_embeddings import UNIEvalSystem, ConchEvalSystem, VirchowEvalSystem, GigapathEvalSystem, PLIPEvalSystem
 
 lms = {
     "SupConSystem": SupConSystem,
     "SimCLRSystem": SimCLRSystem,
-    "ModifiedSimCLRSystem": ModifiedSimCLRSystem,
     #"SimSiamSystem": SimSiamSystem,
     #"BYOLSystem": BYOLSystem,
     "VICRegSystem": VICRegSystem,
     "IJEPASystem": IJEPASystem,
     "HiDiscSystem": HiDiscSystem,
     "InterPatchJEPASystem": InterPatchJEPASystem,
+    "CommitteeDistillationNetwork": CommitteeDistillationSystem,
+    "UNIEvalSystem": UNIEvalSystem,
+    "ConchEvalSystem": ConchEvalSystem,
+    "VirchowEvalSystem": VirchowEvalSystem,
+    "GigapathEvalSystem": GigapathEvalSystem,
+    "PLIPEvalSystem": PLIPEvalSystem
 }
 
 
@@ -168,6 +174,12 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
             con_exp = instantiate_lightning_module(
                 **cf.testing.lightning_module,
                 training_params=None).load_state_dict(exist_statedict)
+    elif cf.lightning_module.which in {
+            "UNIEvalSystem", "ConchEvalSystem", "VirchowEvalSystem",
+            "GigapathEvalSystem", "PLIPEvalSystem"
+    }:
+        con_exp = instantiate_lightning_module(**cf.lightning_module,
+                                               training_params=None)
     else:
         ckpt_path = os.path.join(cf.infra.log_dir, cf.infra.exp_name,
                                  cf.testing.ckpt_path)

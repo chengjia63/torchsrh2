@@ -16,13 +16,13 @@ import torchmetrics
 
 from torchsrh.losses.supcon import SupConLoss
 from torchsrh.losses.vicreg import GeneralVICRegLoss
-from ts2.models.ssl import (MLP, ContrastiveLearningNetwork, VICRegNetwork)
+from ts2.models.ssl import (instantiate_backbone, MLP,
+                            ContrastiveLearningNetwork, VICRegNetwork)
 #SimSiamNetwork)  #, VICRegNetworkWithMask)
 from ts2.models.pjepa import InterPatchJEPANetwork
 from ts2.models.ijepa import IJEPANetwork, apply_masks, repeat_interleave_batch
 from ts2.optim.utils import get_optimizer_scheduler
-
-from memory_profiler import profile
+from ts2.alignment.compute_foundation_embeddings import get_foundation_model
 
 
 class EvalBaseSystem(pl.LightningModule, ABC):
@@ -115,7 +115,7 @@ class ContrastiveBaseSystem(EvalBaseSystem):
 class SimCLRSystem(ContrastiveBaseSystem):
     """Lightning system for SimCLR experiment"""
 
-    def __init__(self, loss_params, **kwargs):
+    def __init__(self, loss_params=None, **kwargs):
         super().__init__(**kwargs)
         if self.opt_cf_:
             self.criterion = SupConLoss(**loss_params)
@@ -168,78 +168,142 @@ class SimCLRSystem(ContrastiveBaseSystem):
         self.val_loss.update(loss, weight=bs)
 
 
-class ModifiedSimCLRSystem(ContrastiveBaseSystem):
+# TODO HERE TODO HERE TODO HERE TODO HERE TODO HERE TODO HERE
+class CommitteeDistillationNetwork(torch.nn.Module):
+    """A network consists of a backbone and projection head.
+    Forward pass returns the normalized embeddings after a projection layer.
+    """
+
+    def __init__(self, backbone_cf: Dict, proj_params: Dict, committee_cf):
+        super(CommitteeDistillationNetwork, self).__init__()
+        self.bb = instantiate_backbone(**backbone_cf)
+        self.predictors1 = MLP(n_in=self.bb.num_out, **proj_params[0])
+        self.predictors2 = MLP(n_in=self.bb.num_out, **proj_params[1])
+
+        self.num_out = self.bb.num_out
+
+        self.teachers1 = get_foundation_model(
+            which_model=committee_cf[0]["which"],
+            params=committee_cf[0]["params"])
+        self.teachers2 = get_foundation_model(
+            which_model=committee_cf[1]["which"],
+            params=committee_cf[1]["params"])
+
+    def forward(self, batch: Dict) -> torch.Tensor:
+        emb = [
+            self.bb(batch["image"][:, i, ...])
+            for i in range(batch["image"].shape[1])
+        ]
+        emb = torch.cat(emb, dim=0)
+
+        proj_out = []
+        teacher_out = []
+
+        for p, t in zip([self.predictors1, self.predictors2],
+                        [self.teachers1, self.teachers2]):
+            proj_out.append(p(emb))
+
+            with torch.no_grad():
+                teacher_emb_i = [
+                    t(batch["image"][:, i, ...])
+                    for i in range(batch["image"].shape[1])
+                ]
+                teacher_out.append(torch.cat(teacher_emb_i, dim=0))
+
+        #proj_out_norm = torch.nn.functional.normalize(proj_out, p=2.0, dim=1)
+
+        return proj_out, teacher_out
+
+
+class CommitteeDistillationSystem(EvalBaseSystem):
     """Lightning system for SimCLR experiment"""
 
-    def __init__(self, loss_params, **kwargs):
-        super().__init__(**kwargs)
-        if self.opt_cf_:
-            self.criterion = SupConLoss(**loss_params)
+    def __init__(self,
+                 model_hyperparams,
+                 loss_params: Optional[Dict] = None,
+                 opt_cf: Optional[Dict] = None,
+                 schd_cf: Optional[Dict] = None,
+                 training_params: Optional[Dict] = None):
+        super().__init__()
+
+        self.model = CommitteeDistillationNetwork(**model_hyperparams)
+
+        self.opt_cf_ = opt_cf
+        self.schd_cf_ = schd_cf
+        self.training_params_ = training_params
+
+        if self.training_params_:
+            self.criterion = torch.nn.SmoothL1Loss(**loss_params)
+        else:
+            self.criterion = None
+
+        self.train_loss = torchmetrics.MeanMetric()
+        self.val_loss = torchmetrics.MeanMetric()
 
     def training_step(self, batch, _):
-        bs = batch["context_image"][0].shape[
-            0] * torch.distributed.get_world_size()
-        context_pred = [
-            self.model(batch["context_image"][:, i, ...])["proj"]
-            for i in range(batch["context_image"].shape[1])
-        ]
-        target_im = einops.rearrange(batch["target_image"],
-                                     "b nc nt c h w -> b (nc nt) c h w")
-        target_pred = [
-            self.model(target_im[:, i, ...])["proj"]
-            for i in range(target_im.shape[1])
+        target_hats, target_embs = self.model(batch)
+
+        losses = [
+            self.criterion(th, te) for th, te in zip(target_hats, target_embs)
         ]
 
-        pred = torch.cat(context_pred + target_pred, dim=1)
+        for i, ell in enumerate(losses):
+            self.log(f"train/contrastive_{i}",
+                     ell.detach().item(),
+                     on_step=True,
+                     on_epoch=True,
+                     batch_size=target_hats[0].shape[0],
+                     rank_zero_only=True)
 
-        pred_gather = self.all_gather(pred, sync_grads=True)
-        pred_gather = pred_gather.reshape(-1, *pred_gather.shape[-2:])
-
-        loss = self.criterion(pred_gather)["loss"]
-
+        all_loss = torch.stack(losses).sum()
         self.log("train/contrastive",
-                 loss.detach().item(),
+                 all_loss.detach().item(),
                  on_step=True,
                  on_epoch=True,
-                 batch_size=bs,
+                 batch_size=target_hats[0].shape[0],
                  rank_zero_only=True)
-        self.train_loss.update(loss.detach().item(), weight=bs)
+        self.train_loss.update(all_loss.detach().item(),
+                               weight=target_hats[0].shape[0])
 
-        self.log("cpu/mem",
-                 psutil.virtual_memory().used,
-                 on_step=True,
-                 on_epoch=True,
-                 batch_size=1,
-                 rank_zero_only=True)
-        return loss
+        return all_loss
 
     @torch.inference_mode()
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, _):
+        target_hats, target_embs = self.model(batch)
+        all_loss = torch.stack([
+            self.criterion(th, te) for th, te in zip(target_hats, target_embs)
+        ]).sum()
 
-        bs = batch["context_image"][0].shape[
-            0] * torch.distributed.get_world_size()
-        #bs = batch[0].shape[0] * torch.distributed.get_world_size()
-        context_pred = [
-            #self.model(batch[:, i, ...])["proj"]
-            #for i in range(batch.shape[1])
-            self.model(batch["context_image"][:, i, ...])["proj"]
-            for i in range(batch["context_image"].shape[1])
-        ]
-        target_im = einops.rearrange(batch["target_image"],
-                                     "b nc nt c h w -> b (nc nt) c h w")
-        target_pred = [
-            #self.model(batch[:, i, ...])["proj"]
-            #for i in range(batch.shape[1])
-            self.model(target_im[:, i, ...])["proj"]
-            for i in range(target_im.shape[1])
-        ]
+        self.val_loss.update(all_loss, weight=target_hats[0].shape[0])
 
-        pred = torch.cat(context_pred + target_pred, dim=1)
-        pred_gather = self.all_gather(pred, sync_grads=False)
-        pred_gather = pred_gather.reshape(-1, *pred_gather.shape[-2:])
+    @torch.inference_mode()
+    def on_validation_epoch_end(self):
+        val_loss = self.val_loss.compute()
+        self.log("val/loss_manualepoch",
+                 val_loss,
+                 on_epoch=True,
+                 sync_dist=True,
+                 rank_zero_only=True)
+        logging.info(f"val/loss_manualepoch {val_loss}")
+        self.val_loss.reset()
 
-        loss = self.criterion(pred_gather)["loss"].detach().item()
-        self.val_loss.update(loss, weight=bs)
+    def configure_optimizers(self):
+        if not self.training_params_: return None  # Not training
+
+        opt, sch = get_optimizer_scheduler(self.model,
+                                           opt_cf=self.opt_cf_,
+                                           schd_cf=self.schd_cf_,
+                                           **self.training_params_)
+
+        if sch:
+            return [opt], {
+                "scheduler": sch,
+                "interval": "step",
+                "frequency": 1,
+                "name": "lr"
+            }
+        else:
+            return [opt]
 
 
 class SupConSystem(ContrastiveBaseSystem):

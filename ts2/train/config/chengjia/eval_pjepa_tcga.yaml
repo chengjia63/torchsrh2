@@ -1,7 +1,7 @@
 infra:
-  exp_name: ts2/tcga_usup_dev/pjepa_easyviews2
+  exp_name: ts2/he_neuro_vit2/simclr_vitb
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
-  comment: standaloneeval_ep21
+  comment: standaloneeval_ep1
   log_gpu: True
   seed: 1000
   float32_matmul_precision: medium
@@ -42,40 +42,79 @@ data:
         prefetch_factor: 8
         num_workers: 7
       test:
-        batch_size: 4096
+        batch_size: 256
         drop_last: False
         shuffle: False
+#lightning_module:
+#  which: CommitteeDistillationNetwork
+#  params:
+#    model_hyperparams:
+#      backbone_cf:
+#        which: resnet34
+#        params: {}
+#          #img_size: 224
+#          #patch_size: 16
+#          #global_pool: "token"
+#          #class_token: True
+#      proj_params:
+#      - hidden_layers: []
+#        n_out: 1024
+#        activation: relu
+#        drop: 0
+#        bias: True
+#      - hidden_layers: []
+#        n_out: 512
+#        activation: relu
+#        drop: 0
+#        bias: True
+#      committee_cf:
+#      - which: UNIEvalSystem
+#        params:
+#          ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin
+#      - which: ConchEvalSystem
+#        params:
+#          ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/conch/pytorch_model.bin
+#lightning_module:
+#  which: SimCLRSystem
+#  params:
+#    model_hyperparams:
+#      backbone_cf:
+#        which: vit_small
+#        params:
+#          img_size: 224
+#          patch_size: 16
+#          global_pool: "token"
+#          class_token: True
+#      proj_params:
+#        hidden_layers: [384]
+#        n_out: 384
+#        activation: relu
+#        drop: 0
+#        bias: True
+#lightning_module:
+#  which: UNIEvalSystem
+#  params:
+#    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin
+#lightning_module: 
+#  which: ConchEvalSystem
+#  params:
+#    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/conch/pytorch_model.bin
+#lightning_module:
+#  which: VirchowEvalSystem
+#  params:
+#    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/virchow/pytorch_model.bin
 lightning_module:
-  which: InterPatchJEPASystem
+  which: GigapathEvalSystem
   params:
-    model_hyperparams:
-      backbone_cf:
-        which: resnet34
-        params: {}
-        #  img_size: 224
-        #  patch_size: 16
-        #  global_pool: ""
-        #  class_token: False
-      pred_params:
-        predictor_embed_dim: 512
-        depth: 6
-        drop_path_rate: 0.0
-        init_std: 0.02
-        pos_emb_params:
-          prefix_len: 0
-          pos_emb_grad: True
-        block_params:
-          num_heads: 4
-          mlp_ratio: 4.0
-          qkv_bias: True
-          qk_scale: null
-          drop: 0.0
-          attn_drop: 0.0
+    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/gigapath/pytorch_model.bin
+#lightning_module:
+#  which: PLIPEvalSystem
+#  params:
+#    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/plip/
 
 testing:
   eval_mode: patch_knn
   save_train_pred: true
-  
   #eval_predictions
   knn:
     do_knn: True
@@ -95,18 +134,8 @@ testing:
 tune:
   diagonal_items: true
   params:
-    lightning_module/params/model_hyperparams/pred_params/depth:
-    - 2
-    - 2
-    - 1
-    - 1
-    lightning_module/params/model_hyperparams/pred_params/predictor_embed_dim:
-    - 512
-    - 512
-    - 512
-    - 512
     testing/ckpt_path:
-    - 1cb1fc74_Jun13-00-43-37_sd1000_pjepa_1000_pred2_dim512_lr0.001_tune3/models/ckpt-epoch29-step2340-loss0.00.ckpt
-    - 2a6ea356_Jun13-00-43-38_sd1000_pjepa_1000_pred2_dim512_lr0.0001_tune2/models/ckpt-epoch29-step2340-loss0.00.ckpt
-    - a56b44e4_Jun13-00-43-38_sd1000_pjepa_1000_pred1_dim512_lr0.001_tune1/models/ckpt-epoch29-step2340-loss0.00.ckpt
-    - cf2c77f1_Jun13-00-43-38_sd1000_pjepa_1000_pred1_dim512_lr0.0001_tune0/models/ckpt-epoch29-step2340-loss0.00.ckpt
+    - conch//
+    #- 3e07830c_Jul01-23-25-48_sd1000_simclr_1000_lr0.0001_tune2/models/ckpt-epoch1-step784-loss0.00.ckpt
+    #- 90d49867_Jul01-23-25-48_sd1000_simclr_1000_lr0.001_tune1/models/ckpt-epoch1-step784-loss0.00.ckpt
+    #- d5986618_Jul01-23-25-48_sd1000_simclr_1000_lr0.01_tune0/models/ckpt-epoch1-step784-loss0.00.ckpt
