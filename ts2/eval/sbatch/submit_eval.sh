@@ -5,9 +5,9 @@
 #SBATCH --mail-type=ALL
 #SBATCH --output=slurm_out/eval/%A_%a.out
 #------------------------------------------------------------------------------
-#SBATCH --partition=precisionhealth
-#SBATCH --cpus-per-task=5
-#SBATCH --mem-per-cpu=18750m
+# SBATCH --partition=precisionhealth
+# SBATCH --cpus-per-task=5
+# SBATCH --mem-per-cpu=18750m
 # --------
 # SBATCH --partition=gpu
 # SBATCH --mem-per-cpu=4500m
@@ -15,7 +15,7 @@
 # 
 # SBATCH --partition=gpu
 # SBATCH --mem-per-cpu=7500m
-# SBATCH --cpus-per-task=4
+# SBATCH --cpus-per-task=8
 # --------
 # SBATCH --partition=spgpu,gpu_mig40
 # SBATCH --cpus-per-task=4
@@ -25,14 +25,14 @@
 # SBATCH --cpus-per-task=8
 # SBATCH --mem-per-cpu=16000m
 # --------
-# SBATCH --partition=tocho
-# SBATCH --cpus-per-task=8
-# SBATCH --mem-per-cpu=7739m
+#SBATCH --partition=tocho
+#SBATCH --cpus-per-task=8
+#SBATCH --mem-per-cpu=7739m
 #------------------------------------------------------------------------------
 # SBATCH --account=tocho1
 # SBATCH --account=tocho0
-#SBATCH --account=precisionhealth_owned1
-# SBATCH --account=tocho_owned1
+# SBATCH --account=precisionhealth_owned1
+#SBATCH --account=tocho_owned1
 #------------------------------------------------------------------------------
 # SBATCH --nodelist=armis20108
 #------------------------------------------------------------------------------
@@ -43,10 +43,16 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #------------------------------------------------------------------------------
-#SBATCH --array=16-23
+#SBATCH --array=0-142
 #------------------------------------------------------------------------------
 
 set -x
 set -e
 
-python save_fm_embs.py  -c=config/save_emb.yaml 
+#python save_fm_embs.py  -c=config/save_emb.yaml 
+#python save_fm_embs_idx.py  -c=config/save_emb_idx.yaml 
+#python save_fm_embs_idx.py  -c=config/save_emb_uni_idx.yaml 
+#python save_fm_embs_idx.py  -c=config/save_emb_plip_idx.yaml
+#python save_fm_embs_idx.py  -c=config/save_emb_gigapath.yaml
+#python save_fm_embs_idx.py  -c=config/save_emb_conch.yaml
+python save_fm_embs_idx.py  -c=config/save_emb_virchow.yaml 

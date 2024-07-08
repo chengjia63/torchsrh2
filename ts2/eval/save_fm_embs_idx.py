@@ -29,6 +29,7 @@ class FoundationEmbeddingSaver():
     def __init__(self):
 
         self.cf = read_process_cf(parse_args())
+        self.cf.tune = {}
         logging.info(self.cf)
 
         self.model = instantiate_lightning_module(
@@ -42,17 +43,14 @@ class FoundationEmbeddingSaver():
         self.xform = HistologyTransform(**self.cf.data.transform_params)
 
     def __call__(self):
-        for i in tqdm(range(self.cf.infra.inf_idx[0], self.cf.infra.inf_idx[1])):
-            logging.info(
-                f"{i} in {{{self.cf.infra.inf_idx[0]}..{self.cf.infra.inf_idx[1]}}}"
-            )
-            try:
-                self.save_one_slide(ser=self.slides.iloc[i])
-            except:
-                logging.error(
-                    f"@@@ FAILED {self.cf.lightning_module.tag} - {i}"
-                )
-                
+        for i in tqdm(self.cf.infra.inf_idx):
+            logging.info(f"idx = {i}")
+            #try:
+            self.save_one_slide(ser=self.slides.iloc[i])
+            #except:
+            #    logging.error(
+            #        f"@@@ FAILED {self.cf.lightning_module.tag} - {i}"
+            #    )
 
     @torch.inference_mode()
     def save_one_slide(self, ser: pd.Series):
@@ -64,17 +62,43 @@ class FoundationEmbeddingSaver():
                            ser["patient"], f"{ser['patient']}_meta.json")
 
         with open(pt_meta_path) as fd:
-            pt_meta = json.load(fd)["slides"][ser["mosaic"]]
+            pt_meta = json.load(fd)["slides"]
+
+        if ser["mosaic"] in pt_meta:
+            pt_meta = pt_meta[ser["mosaic"]]
+        else:
+            logging.error(f"@@@ FAILED")
+            logging.error(f"      meta path {pt_meta_path}")
+            logging.error(
+                f"      slide {ser['mosaic']} not in {pt_meta.keys()}")
+            logging.error(f"      mmap path {mmap_path}")
+            return
+
+        if "predictions" not in pt_meta:
+            logging.error(f"@@@ FAILED")
+            logging.error(f"      meta path {pt_meta_path}")
+            logging.error(
+                f"      predictions not in meta keys {pt_meta.keys()}")
+            logging.error(f"      mmap path {mmap_path}")
+            return
 
         tensor_shape = tuple(
             pt_meta["predictions"]["226232a4"]["tensor_shape"])
+
+        if len(tensor_shape) == 0:
+            logging.error(f"@@@ FAILED")
+            logging.error(f"      meta path {pt_meta_path}")
+            logging.error(f"      slide {ser['mosaic']} has no tensor shape")
+            logging.error(f"      mmap path {mmap_path}")
+            return
+
         slide_tensor = self.xform(
             self.prf(mmap_path, tensor_shape, np.arange(tensor_shape[0])))
 
         slide_emb = torch.cat([
-            self.model.forward(i.cuda()) for i in 
-                slide_tensor.split(self.cf.data.inference_batch_size)
-        ]).detach().cpu().numpy()
+            self.model.forward(i.cuda()).detach().cpu()
+            for i in slide_tensor.split(self.cf.data.inference_batch_size)
+        ]).numpy()
 
         out_dir = opj(self.cf.infra.out_root, ser["patient"], ser['mosaic'])
         out_name = f"{ser['patient']}-{ser['mosaic']}-embs-{self.cf.lightning_module.tag}.dat"
@@ -91,8 +115,8 @@ class FoundationEmbeddingSaver():
 
 def main():
 
-    logging_format_str = "[%(levelname)-s|%(asctime)s|%(name)s|" + \
-        "%(filename)s:%(lineno)d|%(funcName)s] %(message)s"
+    logging_format_str = ("[%(levelname)-s|%(asctime)s|%(name)s|" +
+                          "%(filename)s:%(lineno)d|%(funcName)s] %(message)s")
     logging.basicConfig(level=logging.INFO,
                         format=logging_format_str,
                         datefmt="%H:%M:%S",
@@ -100,24 +124,6 @@ def main():
                         force=True)
 
     FoundationEmbeddingSaver()()
-
-    #de/chengjia/torchsrh2/ts2/eval $ ls /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip/cptac/cptac_c3l_00016/21/patches/
-    #cptac_c3l_00016-21-patches.dat
-
-    #pred_trainer = pl.Trainer(accelerator="gpu",
-    #                          devices=1,
-    #                          default_root_dir=".",
-    #                          inference_mode=True)  # deterministic=True)
-    #
-    #pred_raw = pred_trainer.predict(model, datamodule=dm)
-    #
-    #train_pred = process_predictions(pred_raw[0])
-    #val_pred = process_predictions(pred_raw[1])
-    #
-    #torch.save({
-    #    "train": train_pred,
-    #    "val": val_pred
-    #}, f"{which_model}_feature.pt")
 
 
 if __name__ == "__main__":
