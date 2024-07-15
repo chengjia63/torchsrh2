@@ -1,7 +1,7 @@
 infra:
-  exp_name: ts2/he_neuro_vit2/simclr_vitb
+  exp_name: ts2/committeedistil
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
-  comment: standaloneeval_ep1
+  comment: standaloneeval_with_pred
   log_gpu: True
   seed: 1000
   float32_matmul_precision: medium
@@ -45,35 +45,20 @@ data:
         batch_size: 256
         drop_last: False
         shuffle: False
-#lightning_module:
-#  which: CommitteeDistillationNetwork
-#  params:
-#    model_hyperparams:
-#      backbone_cf:
-#        which: resnet34
-#        params: {}
-#          #img_size: 224
-#          #patch_size: 16
-#          #global_pool: "token"
-#          #class_token: True
-#      proj_params:
-#      - hidden_layers: []
-#        n_out: 1024
-#        activation: relu
-#        drop: 0
-#        bias: True
-#      - hidden_layers: []
-#        n_out: 512
-#        activation: relu
-#        drop: 0
-#        bias: True
-#      committee_cf:
-#      - which: UNIEvalSystem
-#        params:
-#          ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin
-#      - which: ConchEvalSystem
-#        params:
-#          ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/conch/pytorch_model.bin
+lightning_module:
+  which: CommitteeDistillationNetwork
+  params:
+    strict: False
+    model_hyperparams:
+      backbone_cf:
+        which: resnet34
+        params: {}
+          #img_size: 224
+          #patch_size: 16
+          #global_pool: "token"
+          #class_token: True
+      proj_params:
+      - n_out: 1024 
 #lightning_module:
 #  which: SimCLRSystem
 #  params:
@@ -103,10 +88,10 @@ data:
 #  which: VirchowEvalSystem
 #  params:
 #    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/virchow/pytorch_model.bin
-lightning_module:
-  which: GigapathEvalSystem
-  params:
-    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/gigapath/pytorch_model.bin
+#lightning_module:
+#  which: GigapathEvalSystem
+#  params:
+#    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/gigapath/pytorch_model.bin
 #lightning_module:
 #  which: PLIPEvalSystem
 #  params:
@@ -135,7 +120,13 @@ tune:
   diagonal_items: true
   params:
     testing/ckpt_path:
-    - conch//
-    #- 3e07830c_Jul01-23-25-48_sd1000_simclr_1000_lr0.0001_tune2/models/ckpt-epoch1-step784-loss0.00.ckpt
-    #- 90d49867_Jul01-23-25-48_sd1000_simclr_1000_lr0.001_tune1/models/ckpt-epoch1-step784-loss0.00.ckpt
-    #- d5986618_Jul01-23-25-48_sd1000_simclr_1000_lr0.01_tune0/models/ckpt-epoch1-step784-loss0.00.ckpt
+    - 02d5c891_Jul11-13-46-32_sd1000_lr0.00001_2xform_uni_bs64_tune4/models/ckpt-epoch1-step6274-loss0.00.ckpt
+    - 1641886a_Jul11-13-46-32_sd1000_lr0.01_2xform_uni_bs64_tune1/models/ckpt-epoch1-step6274-loss0.00.ckpt
+    - 5608977a_Jul11-13-46-32_sd1000_lr0.001_2xform_uni_bs64_tune2/models/ckpt-epoch1-step6274-loss0.00.ckpt
+    - 6d368a4f_Jul11-13-46-32_sd1000_lr0.0001_2xform_uni_bs64_tune3/models/ckpt-epoch1-step6274-loss0.00.ckpt
+    - 7b33551e_Jul11-13-45-28_sd1000_lr0.1_2xform_uni_bs64_tune0/models/ckpt-epoch1-step6274-loss0.00.ckpt
+    - b7c7138f_Jul11-13-23-10_sd1000_lr0.001_2xform_uni_bs64_tune2/models/ckpt-epoch1-step6274-loss0.00.ckpt
+    - e13f1a97_Jul11-13-23-10_sd1000_lr0.0001_2xform_uni_bs64_tune3/models/ckpt-epoch1-step6274-loss0.00.ckpt
+    - eb29e2ef_Jul11-13-23-10_sd1000_lr0.1_2xform_uni_bs64_tune0/models/ckpt-epoch1-step6274-loss0.00.ckpt
+    - eda759bb_Jul11-13-23-10_sd1000_lr0.00001_2xform_uni_bs64_tune4/models/ckpt-epoch1-step6274-loss0.00.ckpt
+    - efa7eac5_Jul11-13-23-10_sd1000_lr0.01_2xform_uni_bs64_tune1/models/ckpt-epoch1-step6274-loss0.00.ckpt

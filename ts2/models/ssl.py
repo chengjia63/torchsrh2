@@ -26,8 +26,8 @@ class MLP(nn.Module):
 
     def __init__(self,
                  n_in: int,
-                 hidden_layers: List[int],
                  n_out,
+                 hidden_layers: List[int] = [],
                  activation: str = "relu",
                  drop: float = 0.0,
                  bias: bool = True) -> None:

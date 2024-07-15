@@ -129,6 +129,59 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
         return {"image": im, "label": target}
 
 
+class SLHDatasetWithFMEmbeddings(SingleLevelHierarchicalDataset):
+
+    def __init__(self, fm_root: str, fm_tags: List[str], **kwargs):
+
+        super().__init__(**kwargs)
+        self.fm_root_ = fm_root
+        self.fm_tags_ = fm_tags
+
+    def make_fm_path(self, x, tag):
+        return opj(
+            self.fm_root_,
+            *x.split("/")[1:3],
+            x.split("/")[4].removesuffix("-patches.dat") + f"-embs-{tag}.dat")
+
+    @torch.no_grad()
+    def read_images(self, inst: Dict):
+        """Read in a list of patches, different patches and transformations"""
+
+        im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
+
+        rel_inst_path = self.tensor_shape_map[inst["name"]]["path"]
+        fm_paths = [self.make_fm_path(rel_inst_path, t) for t in self.fm_tags_]
+
+        tensor_shape = tuple(self.tensor_shape_map[inst["name"]]["shape"])
+        ims, embs = self.process_read_im_(
+            [self.make_im_path(rel_inst_path), fm_paths],
+            [tensor_shape, (tensor_shape[0], -1)], im_id)
+
+        im_id = None
+        assert self.transform_ is not None
+
+        images = torch.stack([
+            self.transform_(im) for _ in range(self.num_transforms_)
+            for im in ims
+        ])
+
+        embs = [em.repeat((self.num_transforms_, 1)) for em in embs]
+
+        return images, embs
+
+    def __getitem__(self, idx: int):
+        """Retrieve a list of patches, from the wholeslide specified by idx"""
+        idx = idx % len(self.instances_)
+        instance = self.instances_[idx]
+        target = self.class_to_idx_[instance["label"]]
+        im, emb = self.read_images(instance)
+
+        if self.target_transform_ is not None:
+            target = self.target_transform_(target)
+
+        return {"image": im, "label": target, "fm_embs": emb}
+
+
 class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
 
     def __init__(self,

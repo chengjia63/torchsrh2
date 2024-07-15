@@ -174,45 +174,45 @@ class CommitteeDistillationNetwork(torch.nn.Module):
     Forward pass returns the normalized embeddings after a projection layer.
     """
 
-    def __init__(self, backbone_cf: Dict, proj_params: Dict, committee_cf):
+    def __init__(self, backbone_cf: Dict, proj_params: Dict):
         super(CommitteeDistillationNetwork, self).__init__()
         self.bb = instantiate_backbone(**backbone_cf)
-        self.predictors1 = MLP(n_in=self.bb.num_out, **proj_params[0])
-        self.predictors2 = MLP(n_in=self.bb.num_out, **proj_params[1])
 
-        self.num_out = self.bb.num_out
+        if proj_params:
+            self.predictors = torch.nn.ModuleList(
+                [MLP(n_in=self.bb.num_out, **projp) for projp in proj_params])
 
-        self.teachers1 = get_foundation_model(
-            which_model=committee_cf[0]["which"],
-            params=committee_cf[0]["params"])
-        self.teachers2 = get_foundation_model(
-            which_model=committee_cf[1]["which"],
-            params=committee_cf[1]["params"])
+            #self.tgt_pred = MLP(n_in=1024, n_out=512)
+            #self.uni_teacher = get_foundation_model(
+            #    which_model="UNIEvalSystem",
+            #    params={
+            #        "ckpt_path":
+            #        "/nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin"
+            #    })
+            #self.uni_teacher.eval()
+        self.num_out = None
 
     def forward(self, batch: Dict) -> torch.Tensor:
         emb = [
-            self.bb(batch["image"][:, i, ...])
-            for i in range(batch["image"].shape[1])
+            self.bb(batch["image"][i, ...])
+            for i in range(batch["image"].shape[0])
         ]
         emb = torch.cat(emb, dim=0)
+        pred = [p(emb) for p in self.predictors]
 
-        proj_out = []
-        teacher_out = []
+        with torch.no_grad():
+            #target1 = [
+            #    torch.cat([self.uni_teacher(i) for i in batch["image"]])
+            #]
+            #import pdb; pdb.set_trace()
+            target = [
+                #F.normalize(fm_emb.view(-1, fm_emb.shape[-1]), p=2.0, dim=1)
+                fm_emb.view(-1, fm_emb.shape[-1])
+                for fm_emb in batch["fm_embs"]
+            ]
+            #import pdb; pdb.set_trace()
+        return pred, target
 
-        for p, t in zip([self.predictors1, self.predictors2],
-                        [self.teachers1, self.teachers2]):
-            proj_out.append(p(emb))
-
-            with torch.no_grad():
-                teacher_emb_i = [
-                    t(batch["image"][:, i, ...])
-                    for i in range(batch["image"].shape[1])
-                ]
-                teacher_out.append(torch.cat(teacher_emb_i, dim=0))
-
-        #proj_out_norm = torch.nn.functional.normalize(proj_out, p=2.0, dim=1)
-
-        return proj_out, teacher_out
 
 
 class CommitteeDistillationSystem(EvalBaseSystem):
@@ -234,47 +234,65 @@ class CommitteeDistillationSystem(EvalBaseSystem):
 
         if self.training_params_:
             self.criterion = torch.nn.SmoothL1Loss(**loss_params)
+            #self.criterion = torch.nn.L1Loss(**loss_params)
         else:
             self.criterion = None
 
         self.train_loss = torchmetrics.MeanMetric()
         self.val_loss = torchmetrics.MeanMetric()
+    
+    def forward(self, data):
+        return torch.cat([self.model(x)["emb"] for x in data["image"]], dim=1)
+
+    @torch.inference_mode()
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        assert batch["image"].shape[1] == 1
+
+        emb = self.model.bb(batch["image"][:, 0, ...])
+        results = {
+            "path": batch["path"],
+            "label": batch["label"],
+            "embeddings": emb
+        }
+
+        return results
+
+    def test_step(self, batch, batch_idx, dataloader_idx):
+        raise NotImplementedError()
 
     def training_step(self, batch, _):
-        target_hats, target_embs = self.model(batch)
+        pred, target = self.model(batch)
 
-        losses = [
-            self.criterion(th, te) for th, te in zip(target_hats, target_embs)
-        ]
+        losses = [self.criterion(th, te) for th, te in zip(pred, target)]
 
         for i, ell in enumerate(losses):
             self.log(f"train/contrastive_{i}",
                      ell.detach().item(),
                      on_step=True,
                      on_epoch=True,
-                     batch_size=target_hats[0].shape[0],
+                     batch_size=pred[0].shape[0],
                      rank_zero_only=True)
 
-        all_loss = torch.stack(losses).sum()
+        all_loss = torch.stack(losses).mean()
         self.log("train/contrastive",
                  all_loss.detach().item(),
                  on_step=True,
                  on_epoch=True,
-                 batch_size=target_hats[0].shape[0],
+                 batch_size=pred[0].shape[0],
                  rank_zero_only=True)
         self.train_loss.update(all_loss.detach().item(),
-                               weight=target_hats[0].shape[0])
+                               weight=pred[0].shape[0])
 
         return all_loss
 
     @torch.inference_mode()
     def validation_step(self, batch, _):
-        target_hats, target_embs = self.model(batch)
-        all_loss = torch.stack([
-            self.criterion(th, te) for th, te in zip(target_hats, target_embs)
-        ]).sum()
+        pred, target = self.model(batch)
 
-        self.val_loss.update(all_loss, weight=target_hats[0].shape[0])
+        all_loss = torch.stack(
+            [self.criterion(th, te) for th, te in zip(pred, target)]).mean()
+
+        self.val_loss.update(all_loss, weight=pred[0].shape[0])
 
     @torch.inference_mode()
     def on_validation_epoch_end(self):

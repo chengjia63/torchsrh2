@@ -40,7 +40,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #------------------------------------------------------------------------------
-#SBATCH --array=0-2
+#SBATCH --array=0-14
 #------------------------------------------------------------------------------
 
 set -x
@@ -50,3 +50,4 @@ set -e
 #srun python main.py -c=config/chengjia/train_modsimclr_tcga.yaml
 #srun python main.py -c=config/chengjia/train_simclr_tcga.yaml
 srun python main.py -c=config/chengjia/train_committee.yaml
+#srun python main.py -c=config/chengjia/train_committee_rn34.yaml

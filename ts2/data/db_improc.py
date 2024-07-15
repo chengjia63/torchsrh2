@@ -15,6 +15,8 @@ def instantiate_process_read(which: str, which_set: Optional[str] = "srh"):
         return MemmapReader(which_set=which_set)
     elif which == "memmap_multi":
         return MemmapMultiReader(which_set=which_set)
+    elif which == "memmap_multi_fm":
+        return MemmapMultiReaderWithFoundation(which_set=which_set)
 
     return {
         "srh": process_read_srh,
@@ -67,6 +69,39 @@ class MemmapMultiReader(MemmapReader):
         return einops.rearrange(
             torch.from_numpy(im).to(torch.float32),
             "b h w c -> b c h w").contiguous()
+
+
+class MemmapMultiReaderWithFoundation(MemmapMultiReader):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def get_emb(self, mm_path, tensor_shape, patch_idx):
+        """Read in two channel image
+
+        Returns:
+            A 2 channel torch Tensor in the shape 2 * H * W
+        """
+        fd = np.memmap(mm_path, dtype="float32",
+                       mode="r").reshape(tensor_shape)
+        im = np.array(fd[patch_idx, ...])
+        fd._mmap.close()
+        del fd
+        return torch.from_numpy(im).to(torch.float32).contiguous()
+
+    def __call__(self, mm_path, tensor_shape, patch_idx):
+        """Read in two channel image
+
+        Returns:
+            A 2 channel torch Tensor in the shape 2 * H * W
+        """
+        im = super().__call__(mm_path=mm_path[0],
+                              tensor_shape=tensor_shape[0],
+                              patch_idx=patch_idx)
+        embs = [
+            self.get_emb(i, tensor_shape[1], patch_idx) for i in mm_path[1]
+        ]
+        return im, embs
 
 
 def process_read_srh(imp: str) -> torch.Tensor:

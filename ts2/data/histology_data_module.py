@@ -14,6 +14,7 @@ from torchsrh.train.common import get_num_worker
 from ts2.data.meta_parser import PatchCSVParser, CachedCSVParser
 from ts2.data.patch_dataset import PatchDataset
 from ts2.data.slide_dataset import (SingleLevelHierarchicalDataset,
+                                    SLHDatasetWithFMEmbeddings,
                                     HierarchicalDataset, InterPatchJEPADataset)
 from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
@@ -90,7 +91,8 @@ class PatchDataModule(pl.LightningDataModule):
         datasets = {
             "PatchDataset": PatchDataset,
             "SingleLevelHierarchicalDataset": SingleLevelHierarchicalDataset,
-            "InterPatchJEPADataset": InterPatchJEPADataset
+            "InterPatchJEPADataset": InterPatchJEPADataset,
+            "SLHDatasetWithFMEmbeddings": SLHDatasetWithFMEmbeddings
         }
         transforms = {"HistologyTransform": HistologyTransform}
         if stage == "fit":
@@ -154,6 +156,7 @@ class PatchDataModule(pl.LightningDataModule):
         
         Reference: https://pytorch.org/docs/stable/notes/randomness.html
         """
+
         def seed_worker(_):
             np.random.seed(seed)
             random.seed(seed)

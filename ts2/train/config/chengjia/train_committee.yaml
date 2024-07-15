@@ -1,7 +1,7 @@
 infra:
-  exp_name: ts2/he_neuro_vit2/simclr_vitb
+  exp_name: ts2/committeedistil/debug_vitb
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
-  comment: dev
+  comment: dev_
   log_gpu: True
   seed: 1000
   float32_matmul_precision: medium
@@ -59,12 +59,14 @@ data:
               size: 224
           aug_prob: 1
   dataset:
-      which: SingleLevelHierarchicalDataset
-      which_process_read: memmap_multi
+      which: SLHDatasetWithFMEmbeddings
+      which_process_read: memmap_multi_fm
       params:
         common:
           data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
-          num_transforms: 2
+          fm_root: /nfs/mm-isilon/brainscans/dropbox/exp/root_foundation_embs
+          fm_tags: TODO #[uni, gigapath, conch, plip, virchow]
+          num_transforms: 1
           num_samples: 1
           balance_instance_class: False
         train:
@@ -83,12 +85,12 @@ data:
   loader:
     params:
       common:
-        pin_memory: False
+        pin_memory: True
         persistent_workers: True
-        prefetch_factor: 4
+        prefetch_factor: 8
         num_workers: 7
       train:
-        batch_size: 512
+        batch_size: 64
         drop_last: True
         shuffle: True
       trainval:
@@ -107,30 +109,13 @@ lightning_module:
   params:
     model_hyperparams:
       backbone_cf:
-        which: resnet34
-        params: {}
-          #img_size: 224
-          #patch_size: 16
-          #global_pool: "token"
-          #class_token: True
-      proj_params:
-      - hidden_layers: []
-        n_out: 1024
-        activation: relu
-        drop: 0
-        bias: True
-      - hidden_layers: []
-        n_out: 512
-        activation: relu
-        drop: 0
-        bias: True
-      committee_cf:
-      - which: UNIEvalSystem
+        which: vit_base #resnet34
         params:
-          ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin
-      - which: ConchEvalSystem
-        params:
-          ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/conch/pytorch_model.bin
+          img_size: 224
+          patch_size: 16
+          global_pool: "token"
+          class_token: True
+      proj_params: TODO
     loss_params: {}
     opt_cf:
       which: adamw
@@ -157,7 +142,7 @@ lightning_module:
 training:
   resume_checkpoint: null
   trainer_params:
-    max_epochs: 10
+    max_epochs: 40
     gradient_clip_val: 0.5
     enable_progress_bar: True
     precision: 'bf16-mixed'
@@ -187,11 +172,91 @@ testing:
 tune:
   diagonal_items: true
   params:
+    data/dataset/params/common/fm_tags:
+    - [uni, gigapath, conch, plip, virchow]
+    - [uni, conch]
+    - [uni, gigapath, virchow]
+    - [conch, plip]
+    - [uni]
+    - [uni, gigapath, conch, plip, virchow]
+    - [uni, conch]
+    - [uni, gigapath, virchow]
+    - [conch, plip]
+    - [uni]
+    - [uni, gigapath, conch, plip, virchow]
+    - [uni, conch]
+    - [uni, gigapath, virchow]
+    - [conch, plip]
+    - [uni]
+    lightning_module/params/model_hyperparams/proj_params:
+    - - n_out: 1024
+      - n_out: 1536
+      - n_out: 512
+      - n_out: 512
+      - n_out: 1280
+    - - n_out: 1024
+      - n_out: 512
+    - - n_out: 1024
+      - n_out: 1536
+      - n_out: 1280
+    - - n_out: 512
+      - n_out: 512
+    - - n_out: 1024
+    - - n_out: 1024
+      - n_out: 1536
+      - n_out: 512
+      - n_out: 512
+      - n_out: 1280
+    - - n_out: 1024
+      - n_out: 512
+    - - n_out: 1024
+      - n_out: 1536
+      - n_out: 1280
+    - - n_out: 512
+      - n_out: 512
+    - - n_out: 1024
+    - - n_out: 1024
+      - n_out: 1536
+      - n_out: 512
+      - n_out: 512
+      - n_out: 1280
+    - - n_out: 1024
+      - n_out: 512
+    - - n_out: 1024
+      - n_out: 1536
+      - n_out: 1280
+    - - n_out: 512
+      - n_out: 512
+    - - n_out: 1024
     lightning_module/params/opt_cf/params/lr:
     - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.01
+    - 0.001
+    - 0.001
+    - 0.001
+    - 0.001
     - 0.001
     - 0.0001
+    - 0.0001
+    - 0.0001
+    - 0.0001
+    - 0.0001
     infra/comment:
-    - simclr_1000_lr0.01
-    - simclr_1000_lr0.001
-    - simclr_1000_lr0.0001
+    - lr0.01_nonorm_all5
+    - lr0.01_nonorm_mahmoodspecial
+    - lr0.01_nonorm_lvm
+    - lr0.01_nonorm_vlm
+    - lr0.01_nonorm_uni
+    - lr0.001_nonorm_all5
+    - lr0.001_nonorm_mahmoodspecial
+    - lr0.001_nonorm_lvm
+    - lr0.001_nonorm_vlm
+    - lr0.001_nonorm_uni
+    - lr0.0001_nonorm_all5
+    - lr0.0001_nonorm_mahmoodspecial
+    - lr0.0001_nonorm_lvm
+    - lr0.0001_nonorm_vlm
+    - lr0.0001_nonorm_uni
