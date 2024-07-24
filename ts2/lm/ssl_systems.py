@@ -23,6 +23,7 @@ from ts2.models.pjepa import InterPatchJEPANetwork
 from ts2.models.ijepa import IJEPANetwork, apply_masks, repeat_interleave_batch
 from ts2.optim.utils import get_optimizer_scheduler
 from ts2.alignment.compute_foundation_embeddings import get_foundation_model
+from ts2.models.crd import CRDLoss
 
 
 class EvalBaseSystem(pl.LightningModule, ABC):
@@ -174,8 +175,10 @@ class CommitteeDistillationNetwork(torch.nn.Module):
     Forward pass returns the normalized embeddings after a projection layer.
     """
 
-    def __init__(self, backbone_cf: Dict, student_proj_params: Dict=None,
-                 pred_params: Dict=None):
+    def __init__(self,
+                 backbone_cf: Dict,
+                 student_proj_params: Dict = None,
+                 pred_params: Dict = None):
         super(CommitteeDistillationNetwork, self).__init__()
         self.bb = instantiate_backbone(**backbone_cf)
 
@@ -314,6 +317,64 @@ class CommitteeDistillationSystem(EvalBaseSystem):
             }
         else:
             return [opt]
+
+
+class CRDDistillationSystem(CommitteeDistillationSystem):
+
+    def __init__(self, model_hyperparams, loss_params, **kwargs):
+        super().__init__(model_hyperparams=model_hyperparams,
+                         loss_params=loss_params,
+                         **kwargs)
+
+        if self.training_params_:
+            self.criterion = torch.nn.ModuleList([
+                SupConLoss(**loss_params)
+                for _ in range(len(model_hyperparams.pred_params))
+            ])
+
+            #torch.nn.SmoothL1Loss(**loss_params)
+            #self.criterion = torch.nn.L1Loss(**loss_params)
+        else:
+            self.criterion = None
+
+    def training_step(self, batch, _):
+        pred, target = self.model(batch)
+
+        losses = [
+            crit(torch.stack([th, te], dim=1))["loss"]
+            for crit, th, te in zip(self.criterion, pred, target)
+        ]
+
+        for i, ell in enumerate(losses):
+            self.log(f"train/contrastive_{i}",
+                     ell.detach().item(),
+                     on_step=True,
+                     on_epoch=True,
+                     batch_size=pred[0].shape[0],
+                     rank_zero_only=True)
+
+        all_loss = torch.stack(losses).mean()
+        self.log("train/contrastive",
+                 all_loss.detach().item(),
+                 on_step=True,
+                 on_epoch=True,
+                 batch_size=pred[0].shape[0],
+                 rank_zero_only=True)
+        self.train_loss.update(all_loss.detach().item(),
+                               weight=pred[0].shape[0])
+
+        return all_loss
+
+    @torch.inference_mode()
+    def validation_step(self, batch, _):
+        pred, target = self.model(batch)
+
+        all_loss = torch.stack([
+            crit(torch.stack([th, te], dim=1))["loss"]
+            for crit, th, te in zip(self.criterion, pred, target)
+        ]).mean()
+
+        self.val_loss.update(all_loss, weight=pred[0].shape[0])
 
 
 class SupConSystem(ContrastiveBaseSystem):

@@ -12,7 +12,7 @@ from typing import Dict, Any
 from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
 #from opensrh.train.common import get_contrastive_dataloaders as get_opensrh_contrastive_dataloaders
 
-from ts2.lm.ssl_systems import (SimCLRSystem, CommitteeDistillationSystem,
+from ts2.lm.ssl_systems import (SimCLRSystem, CommitteeDistillationSystem, CRDDistillationSystem,
                                 SupConSystem, VICRegSystem, IJEPASystem,
                                 InterPatchJEPASystem)  #,
 #SimSiamSystem, BYOLSystem)
@@ -34,6 +34,7 @@ lms = {
     "HiDiscSystem": HiDiscSystem,
     "InterPatchJEPASystem": InterPatchJEPASystem,
     "CommitteeDistillationNetwork": CommitteeDistillationSystem,
+    "CRDDistillationSystem": CRDDistillationSystem,
     "UNIEvalSystem": UNIEvalSystem,
     "ConchEvalSystem": ConchEvalSystem,
     "VirchowEvalSystem": VirchowEvalSystem,
