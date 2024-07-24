@@ -16,10 +16,10 @@ data:
         primary_label_idx: 0
       train:
         #df: /nfs/turbo/umms-tocho/data/data_splits/he_neuro/tcga_dbta_he_slides.csv
-        df: /nfs/turbo/umms-tocho/data/data_splits/he_glioma/trainval_v2/glioma_tcga_train.csv
+        df: /nfs/turbo/umms-tocho/data/data_splits/dbta28/dbta28_trainval.csv
       trainval:
         #df: /nfs/turbo/umms-tocho/data/data_splits/he_neuro/tcga_dbta_toy_he_slides.csv
-        df: /nfs/turbo/umms-tocho/data/data_splits/he_glioma/trainval_v2/glioma_val.csv
+        df: /nfs/turbo/umms-tocho/data/data_splits/dbta28/dbta28_test.csv
   transform: null
   dataset: null
   loader: null

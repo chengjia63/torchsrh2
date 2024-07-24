@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/committeedistil/debug_vitb
+  exp_name: ts2/committeedistil/debug_projnorm_vitl_long
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev_
   log_gpu: True
@@ -27,6 +27,10 @@ data:
           - which: resize_always_apply
             params:
               size: 224
+          #- which: normalize_always_apply
+          #  params:
+          #    mean: [0.485, 0.456, 0.406]
+          #    std: [0.229, 0.224, 0.225]
           - which: random_horiz_flip
             params: {}
           - which: random_vert_flip
@@ -66,7 +70,7 @@ data:
           data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
           fm_root: /nfs/mm-isilon/brainscans/dropbox/exp/root_foundation_embs
           fm_tags: TODO #[uni, gigapath, conch, plip, virchow]
-          num_transforms: 1
+          num_transforms: 2
           num_samples: 1
           balance_instance_class: False
         train:
@@ -90,7 +94,7 @@ data:
         prefetch_factor: 8
         num_workers: 7
       train:
-        batch_size: 64
+        batch_size: 56
         drop_last: True
         shuffle: True
       trainval:
@@ -109,13 +113,17 @@ lightning_module:
   params:
     model_hyperparams:
       backbone_cf:
-        which: vit_base #resnet34
+        which: vit_large #resnet34
         params:
           img_size: 224
           patch_size: 16
           global_pool: "token"
           class_token: True
-      proj_params: TODO
+          init_values: 1.0e-6
+      pred_params: TODO
+      student_proj_params:
+        hidden_layers: [1024, 1024]
+        n_out: 1024
     loss_params: {}
     opt_cf:
       which: adamw
@@ -141,6 +149,9 @@ lightning_module:
         num_cycles: 0.5
 training:
   resume_checkpoint: null
+  load_backbone:
+    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin
+    remove_prefix: null
   trainer_params:
     max_epochs: 40
     gradient_clip_val: 0.5
@@ -175,88 +186,109 @@ tune:
     data/dataset/params/common/fm_tags:
     - [uni, gigapath, conch, plip, virchow]
     - [uni, conch]
-    - [uni, gigapath, virchow]
-    - [conch, plip]
     - [uni]
+    - [uni, gigapath]
     - [uni, gigapath, conch, plip, virchow]
     - [uni, conch]
-    - [uni, gigapath, virchow]
-    - [conch, plip]
     - [uni]
-    - [uni, gigapath, conch, plip, virchow]
-    - [uni, conch]
-    - [uni, gigapath, virchow]
-    - [conch, plip]
-    - [uni]
-    lightning_module/params/model_hyperparams/proj_params:
-    - - n_out: 1024
-      - n_out: 1536
-      - n_out: 512
-      - n_out: 512
-      - n_out: 1280
-    - - n_out: 1024
-      - n_out: 512
-    - - n_out: 1024
-      - n_out: 1536
-      - n_out: 1280
-    - - n_out: 512
-      - n_out: 512
-    - - n_out: 1024
-    - - n_out: 1024
-      - n_out: 1536
-      - n_out: 512
-      - n_out: 512
-      - n_out: 1280
-    - - n_out: 1024
-      - n_out: 512
-    - - n_out: 1024
-      - n_out: 1536
-      - n_out: 1280
-    - - n_out: 512
-      - n_out: 512
-    - - n_out: 1024
-    - - n_out: 1024
-      - n_out: 1536
-      - n_out: 512
-      - n_out: 512
-      - n_out: 1280
-    - - n_out: 1024
-      - n_out: 512
-    - - n_out: 1024
-      - n_out: 1536
-      - n_out: 1280
-    - - n_out: 512
-      - n_out: 512
-    - - n_out: 1024
+    - [uni, gigapath]
+    #lightning_module/params/model_hyperparams/teacher_proj_params:
+    #- - n_in: 1024
+    #    hidden_layers: [1024, 1024]
+    #    n_out: 1024
+    #  - n_in: 1536
+    #    hidden_layers: [1536, 1536]
+    #    n_out: 1536
+    #  - n_in: 512
+    #    hidden_layers: [512, 512]
+    #    n_out: 512
+    #  - n_in: 512
+    #    hidden_layers: [512, 512]
+    #    n_out: 512
+    #  - n_in: 1280
+    #    hidden_layers: [1280, 1280]
+    #    n_out: 1280
+    #- - n_in: 1024
+    #    hidden_layers: [1024, 1024]
+    #    n_out: 1024
+    #  - n_in: 512
+    #    hidden_layers: [512, 512]
+    #    n_out: 512
+    #- - n_in: 1024
+    #    hidden_layers: [1024, 1024]
+    #    n_out: 1024
+    #  - n_in: 1536
+    #    hidden_layers: [1536, 1536]
+    #    n_out: 1536
+    #  - n_in: 1280
+    #    hidden_layers: [1280, 1280]
+    #    n_out: 1280
+    #- - n_in: 512
+    #    hidden_layers: [512, 512]
+    #    n_out: 512
+    #  - n_in: 512
+    #    hidden_layers: [512, 512]
+    #    n_out: 512
+    #- - n_in: 1024
+    #    hidden_layers: [1024, 1024]
+    #    n_out: 1024
+    lightning_module/params/model_hyperparams/pred_params:
+    - - n_in: 1024
+        n_out: 1024
+      - n_in: 1024
+        n_out: 1536
+      - n_in: 1024
+        n_out: 512
+      - n_in: 1024
+        n_out: 512
+      - n_in: 1024
+        n_out: 1280
+    - - n_in: 1024
+        n_out: 1024
+      - n_in: 1024
+        n_out: 512
+    - - n_in: 1024
+        n_out: 1024
+    - - n_in: 1024
+        n_out: 1024    
+      - n_in: 1024
+        n_out: 1536
+    - - n_in: 1024
+        n_out: 1024
+      - n_in: 1024
+        n_out: 1536
+      - n_in: 1024
+        n_out: 512
+      - n_in: 1024
+        n_out: 512
+      - n_in: 1024
+        n_out: 1280
+    - - n_in: 1024
+        n_out: 1024
+      - n_in: 1024
+        n_out: 512
+    - - n_in: 1024
+        n_out: 1024
+    - - n_in: 1024
+        n_out: 1024    
+      - n_in: 1024
+        n_out: 1536
     lightning_module/params/opt_cf/params/lr:
-    - 0.01
-    - 0.01
-    - 0.01
-    - 0.01
-    - 0.01
     - 0.001
     - 0.001
     - 0.001
     - 0.001
-    - 0.001
-    - 0.0001
     - 0.0001
     - 0.0001
     - 0.0001
     - 0.0001
     infra/comment:
-    - lr0.01_nonorm_all5
-    - lr0.01_nonorm_mahmoodspecial
-    - lr0.01_nonorm_lvm
-    - lr0.01_nonorm_vlm
-    - lr0.01_nonorm_uni
-    - lr0.001_nonorm_all5
-    - lr0.001_nonorm_mahmoodspecial
-    - lr0.001_nonorm_lvm
-    - lr0.001_nonorm_vlm
-    - lr0.001_nonorm_uni
-    - lr0.0001_nonorm_all5
-    - lr0.0001_nonorm_mahmoodspecial
-    - lr0.0001_nonorm_lvm
-    - lr0.0001_nonorm_vlm
-    - lr0.0001_nonorm_uni
+    - lr0.001_all5
+    - lr0.001_mahmoodspecial
+    - lr0.001_uni
+    - lr0.001_goodvm
+    - lr0.0001_all5
+    - lr0.0001_mahmoodspecial
+    - lr0.0001_uni
+    - lr0.0001_goodvm
+

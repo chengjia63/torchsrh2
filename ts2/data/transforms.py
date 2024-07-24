@@ -110,6 +110,7 @@ class StrongTransform(torch.nn.Module):
             "inpaint_rows": partial(rand_apply_p, which=InpaintRows),
             "resize_always_apply": Resize,
             "resize": Resize,
+            "normalize_always_apply": Normalize,
             "random_horiz_flip": partial(RandomHorizontalFlip, p=aug_prob),
             "random_vert_flip": partial(RandomVerticalFlip, p=aug_prob),
             "gaussian_noise": partial(rand_apply_p, which=GaussianNoise),

@@ -1,9 +1,9 @@
 #!/bin/bash
 
 #------------------------------------------------------------------------------
-#SBATCH --job-name=eval_
+#SBATCH --job-name=eval
 #SBATCH --mail-type=ALL
-#SBATCH --output=slurm_out/eval/%A_%a.out
+#SBATCH --output=slurm_out/%A_%a.out
 #------------------------------------------------------------------------------
 # SBATCH --partition=precisionhealth
 # SBATCH --cpus-per-task=5
@@ -42,10 +42,11 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #------------------------------------------------------------------------------
-#SBATCH --array=0-9
+#SBATCH --array=0-17
 #------------------------------------------------------------------------------
 
+echo @@@ EVALUATION @@@
 set -x
 set -e
 
-python main.py -c=config/chengjia/eval_pjepa_tcga.yaml
+python main.py -c=config/chengjia/eval.yaml

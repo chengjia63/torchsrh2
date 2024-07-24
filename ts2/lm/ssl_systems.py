@@ -174,22 +174,22 @@ class CommitteeDistillationNetwork(torch.nn.Module):
     Forward pass returns the normalized embeddings after a projection layer.
     """
 
-    def __init__(self, backbone_cf: Dict, proj_params: Dict):
+    def __init__(self, backbone_cf: Dict, student_proj_params: Dict=None,
+                 pred_params: Dict=None):
         super(CommitteeDistillationNetwork, self).__init__()
         self.bb = instantiate_backbone(**backbone_cf)
 
-        if proj_params:
-            self.predictors = torch.nn.ModuleList(
-                [MLP(n_in=self.bb.num_out, **projp) for projp in proj_params])
+        if student_proj_params:
+            self.student_projector = MLP(n_in=self.bb.num_out,
+                                         **student_proj_params)
 
-            #self.tgt_pred = MLP(n_in=1024, n_out=512)
-            #self.uni_teacher = get_foundation_model(
-            #    which_model="UNIEvalSystem",
-            #    params={
-            #        "ckpt_path":
-            #        "/nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin"
-            #    })
-            #self.uni_teacher.eval()
+        #self.teacher_projectors = torch.nn.ModuleList(
+        #    [MLP(**projp) for projp in teacher_proj_params])
+
+        if pred_params:
+            self.predictors = torch.nn.ModuleList(
+                [MLP(**projp) for projp in pred_params])
+
         self.num_out = None
 
     def forward(self, batch: Dict) -> torch.Tensor:
@@ -197,22 +197,14 @@ class CommitteeDistillationNetwork(torch.nn.Module):
             self.bb(batch["image"][i, ...])
             for i in range(batch["image"].shape[0])
         ]
-        emb = torch.cat(emb, dim=0)
-        pred = [p(emb) for p in self.predictors]
-
+        emb = self.student_projector(torch.cat(emb, dim=0))
+        pred = [F.normalize(pd(emb), p=2.0, dim=1) for pd in self.predictors]
         with torch.no_grad():
-            #target1 = [
-            #    torch.cat([self.uni_teacher(i) for i in batch["image"]])
-            #]
-            #import pdb; pdb.set_trace()
             target = [
-                #F.normalize(fm_emb.view(-1, fm_emb.shape[-1]), p=2.0, dim=1)
-                fm_emb.view(-1, fm_emb.shape[-1])
+                F.normalize(fm_emb.view(-1, fm_emb.shape[-1]), p=2.0, dim=1)
                 for fm_emb in batch["fm_embs"]
             ]
-            #import pdb; pdb.set_trace()
         return pred, target
-
 
 
 class CommitteeDistillationSystem(EvalBaseSystem):
@@ -240,7 +232,7 @@ class CommitteeDistillationSystem(EvalBaseSystem):
 
         self.train_loss = torchmetrics.MeanMetric()
         self.val_loss = torchmetrics.MeanMetric()
-    
+
     def forward(self, data):
         return torch.cat([self.model(x)["emb"] for x in data["image"]], dim=1)
 

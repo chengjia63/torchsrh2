@@ -1,0 +1,151 @@
+infra:
+  exp_name: ts2/committeedistil/debug_projnorm_vitl_long  #ts2/committeedistil/debug_projnorm_vitb_long
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
+  comment: standaloneeval_37
+  log_gpu: True
+  seed: 1000
+  float32_matmul_precision: medium
+data:
+  set: he
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+        #test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_train
+        #test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_trainval
+        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/dbta28/6f7f1ad5_patch_trainval
+        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/dbta28/6f7f1ad5_patch_test
+  transform:
+    test:
+      which: HistologyTransform
+      params:
+        base_aug_params: {}
+        strong_aug_params:
+          aug_list:
+          - which: resize_always_apply
+            params:
+              size: 224
+          aug_prob: 0
+  test_dataset:
+      which: PatchDataset
+      which_process_read: memmap
+      params:
+          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
+          num_transforms: 1
+          balance_instance_class: False
+      negative_class_index: 1
+      classes_reorder: [0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
+      camera_ready_classes: ["astro_idhmut", "atypical_meningioma", "chondrosarcoma", "chordoma", "circum_glioma", "cpp", "craniopharyngioma", "embryonal", "ependymoma", "germ_cell", "germinoma", "glioblastoma", "glioneuronal", "hemangioma", "histiocytic", "lymphoma", "medulloblastoma", "meningioma", "metastasis", "neuroblastoma", "normal", "oligo_idhmut_codel", "peds_glioma", "pineal", "pituitary_adenoma", "sarcoma", "schwannoma"]
+      #classes_reorder: [2,0,1]
+      #camera_ready_classes: [Astro, GBM, Oligo]
+  loader:
+    params:
+      common:
+        pin_memory: False
+        persistent_workers: False
+        prefetch_factor: 8
+        num_workers: 7
+      test:
+        batch_size: 256
+        drop_last: False
+        shuffle: False
+lightning_module:
+  which: CommitteeDistillationNetwork
+  params:
+    strict: False
+    model_hyperparams:
+      backbone_cf:
+        which: vit_large #resnet34
+        params:
+          img_size: 224
+          patch_size: 16
+          global_pool: "token"
+          class_token: True
+      pred_params: null
+      student_proj_params: null
+#lightning_module:
+#  which: SimCLRSystem
+#  params:
+#    model_hyperparams:
+#      backbone_cf:
+#        which: vit_small
+#        params:
+#          img_size: 224
+#          patch_size: 16
+#          global_pool: "token"
+#          class_token: True
+#      proj_params:
+#        hidden_layers: [384]
+#        n_out: 384
+#        activation: relu
+#        drop: 0
+#        bias: True
+
+testing:
+  eval_mode: patch_knn
+  save_train_pred: true
+  #eval_predictions
+  knn:
+    do_knn: True
+    knn_params:
+      batch_size: 1536
+      k: 20
+      t: 0.07
+  tsne:
+    interactive: False
+    num_patches: [8192]
+    which_set: [val]
+    embed_images: true
+    class_params:
+      perplexity: 50
+      learning_rate: auto
+      init : pca
+tune:
+  diagonal_items: true
+  params:
+    testing/ckpt_path:
+    - 08e68012_Jul19-11-43-49_sd1000_lr0.0001_lvm_tune14/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - 2a7ffbfd_Jul19-11-43-21_sd1000_lr0.001_all5_tune6/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - 2ad1a706_Jul19-11-43-21_sd1000_lr0.01_all5_tune0/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - 34897c37_Jul19-11-43-49_sd1000_lr0.001_goodvm_tune11/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - 49f34a5f_Jul19-11-43-49_sd1000_lr0.001_mahmoodspecial_tune7/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - 656c11d1_Jul19-11-43-49_sd1000_lr0.0001_all5_tune12/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - 6e3ac956_Jul19-11-43-21_sd1000_lr0.01_lvm_tune2/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - 6e610c03_Jul19-11-43-21_sd1000_lr0.01_mahmoodspecial_tune1/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - 95cd94a3_Jul19-11-43-21_sd1000_lr0.01_goodvm_tune5/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - 9fd5f42a_Jul19-11-43-49_sd1000_lr0.001_vlm_tune9/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - a4574ca4_Jul19-11-43-49_sd1000_lr0.0001_vlm_tune15/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - c26d12ab_Jul19-11-43-49_sd1000_lr0.001_uni_tune10/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - c936de1a_Jul19-11-43-49_sd1000_lr0.0001_mahmoodspecial_tune13/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - d74ccbbe_Jul19-11-43-49_sd1000_lr0.0001_uni_tune16/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - d984e09c_Jul19-11-43-21_sd1000_lr0.01_uni_tune4/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - f282a1e4_Jul19-11-43-49_sd1000_lr0.001_lvm_tune8/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - f2afc63f_Jul19-11-43-21_sd1000_lr0.01_vlm_tune3/models/ckpt-epoch39-step125480-loss0.00.ckpt
+    - ff6d2a8f_Jul19-11-43-49_sd1000_lr0.0001_goodvm_tune17/models/ckpt-epoch39-step125480-loss0.00.ckpt
+
+
+#tune:
+#  diagonal_items: true
+#  params:
+#    infra/comment:
+#    - uni
+#    - conch
+#    - virchow
+#    - gigapath
+#    - plip
+#    lightning_module:
+#    - which: UNIEvalSystem
+#      params:
+#        ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin
+#    - which: ConchEvalSystem
+#      params:
+#        ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/conch/pytorch_model.bin
+#    - which: VirchowEvalSystem
+#      params:
+#        ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/virchow/pytorch_model.bin
+#    - which: GigapathEvalSystem
+#      params:
+#        ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/gigapath/pytorch_model.bin
+#    - which: PLIPEvalSystem
+#      params:
+#        ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/plip/

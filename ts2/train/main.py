@@ -92,7 +92,8 @@ def do_training(cf):
 
     # setup data, possibly train_
     dm = PatchDataModule(config=cf)
-    training_params = get_num_it_per_train_ep(dm.train_dset_len_, cf)
+    dm.setup(stage="fit")
+    training_params = get_num_it_per_train_ep(len(dm.train_dataset_), cf)
     training_params.update(
         {"num_ep_total": cf["training"]["trainer_params"]["max_epochs"]})
     logging.info(f"actual num_it_per_ep {training_params}")
@@ -100,21 +101,30 @@ def do_training(cf):
     con_exp = instantiate_lightning_module(**cf["lightning_module"],
                                            training_params=training_params)
 
-    #if "load_backbone" in cf["training"]:
-    #    # load lightning checkpint
-    #    ckpt_dict = torch.load(cf["training"]["load_backbone"],
-    #                           map_location="cpu")
-    #    state_dict = {
-    #        k.removeprefix("model.bb."): ckpt_dict["state_dict"][k]
-    #        for k in ckpt_dict["state_dict"] if "model.bb" in k
-    #    }
-    #    con_exp.model.bb.load_state_dict(state_dict)
-    #    logging.info("Loaded backbone")
-    #elif cf["training"].get("resume_checkpoint", None):
-    #    raise NotImplementedError()
-    #    logging.info("Loaded full lightning checkpoint")
-    #else:
-    #    logging.info("Training from scratch")
+    if ("load_backbone" in cf.training) and (cf.training.load_backbone
+                                             is not None):
+        # load lightning checkpint
+        ckpt_dict = torch.load(cf.training.load_backbone.ckpt_path,
+                               map_location="cpu")
+
+        if (cf.training.load_backbone.remove_prefix is not None):
+            state_dict = {
+                k.removeprefix(cf.training.remove_prefix):
+                ckpt_dict["state_dict"][k]
+                for k in ckpt_dict["state_dict"]
+                if cf.training.remove_prefix in k  #model.bb.
+            }
+        else:
+            state_dict = ckpt_dict
+
+        con_exp.model.bb.load_state_dict(state_dict)
+        logging.info(f"Loaded backbone {cf.training.load_backbone.ckpt_path}")
+
+    elif cf["training"].get("resume_checkpoint", None):
+        raise NotImplementedError()
+        logging.info("Loaded full lightning checkpoint")
+    else:
+        logging.info("Training from scratch")
 
     # config loggers
     logger = [
