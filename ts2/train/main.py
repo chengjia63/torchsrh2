@@ -12,10 +12,12 @@ from typing import Dict, Any
 from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
 #from opensrh.train.common import get_contrastive_dataloaders as get_opensrh_contrastive_dataloaders
 
-from ts2.lm.ssl_systems import (SimCLRSystem, CommitteeDistillationSystem, CRDDistillationSystem,
-                                SupConSystem, VICRegSystem, IJEPASystem,
-                                InterPatchJEPASystem)  #,
+from ts2.lm.ssl_systems import (SimCLRSystem, SupConSystem, VICRegSystem,
+                                IJEPASystem, InterPatchJEPASystem)
 #SimSiamSystem, BYOLSystem)
+
+from ts2.lm.distillation_systems import (CommitteeDistillationSystem,
+                                         CRDDistillationSystem)
 from ts2.data.histology_data_module import PatchDataModule
 from ts2.train.common import setup_checkpoints
 from ts2.train.infra import (parse_args, read_process_cf, setup_infra_training,

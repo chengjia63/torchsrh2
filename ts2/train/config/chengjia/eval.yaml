@@ -1,5 +1,6 @@
 infra:
-  exp_name: ts2/committeedistil/debug_projnorm_vitl_long  #ts2/committeedistil/debug_projnorm_vitb_long
+  exp_name: ts2/committeedistil/debug_projnorm_vits_long_crd_expv2 #ts2/committeedistil/debug_projnorm_vitb_long_crd_fixbug #ts2/committeedistil/debug_projnorm_vitl_long  #ts2/committeedistil/debug_projnorm_vitb_long
+  #exp_name: ts2/committeedistil/debug/vits
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: standaloneeval_37
   log_gpu: True
@@ -55,12 +56,13 @@ lightning_module:
     strict: False
     model_hyperparams:
       backbone_cf:
-        which: vit_large #resnet34
+        which: vit_small #resnet34
         params:
           img_size: 224
           patch_size: 16
           global_pool: "token"
           class_token: True
+          init_values: 1.0e-6
       pred_params: null
       student_proj_params: null
 #lightning_module:
@@ -104,25 +106,10 @@ tune:
   diagonal_items: true
   params:
     testing/ckpt_path:
-    - 08e68012_Jul19-11-43-49_sd1000_lr0.0001_lvm_tune14/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - 2a7ffbfd_Jul19-11-43-21_sd1000_lr0.001_all5_tune6/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - 2ad1a706_Jul19-11-43-21_sd1000_lr0.01_all5_tune0/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - 34897c37_Jul19-11-43-49_sd1000_lr0.001_goodvm_tune11/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - 49f34a5f_Jul19-11-43-49_sd1000_lr0.001_mahmoodspecial_tune7/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - 656c11d1_Jul19-11-43-49_sd1000_lr0.0001_all5_tune12/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - 6e3ac956_Jul19-11-43-21_sd1000_lr0.01_lvm_tune2/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - 6e610c03_Jul19-11-43-21_sd1000_lr0.01_mahmoodspecial_tune1/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - 95cd94a3_Jul19-11-43-21_sd1000_lr0.01_goodvm_tune5/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - 9fd5f42a_Jul19-11-43-49_sd1000_lr0.001_vlm_tune9/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - a4574ca4_Jul19-11-43-49_sd1000_lr0.0001_vlm_tune15/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - c26d12ab_Jul19-11-43-49_sd1000_lr0.001_uni_tune10/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - c936de1a_Jul19-11-43-49_sd1000_lr0.0001_mahmoodspecial_tune13/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - d74ccbbe_Jul19-11-43-49_sd1000_lr0.0001_uni_tune16/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - d984e09c_Jul19-11-43-21_sd1000_lr0.01_uni_tune4/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - f282a1e4_Jul19-11-43-49_sd1000_lr0.001_lvm_tune8/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - f2afc63f_Jul19-11-43-21_sd1000_lr0.01_vlm_tune3/models/ckpt-epoch39-step125480-loss0.00.ckpt
-    - ff6d2a8f_Jul19-11-43-49_sd1000_lr0.0001_goodvm_tune17/models/ckpt-epoch39-step125480-loss0.00.ckpt
-
+    - 06a7dc26_Jul26-19-36-50_sd1000_lr0.01_uni_tune0/models/ckpt-epoch39-step15680-loss0.00.ckpt
+    - 2b57ae43_Jul26-20-12-02_sd1000_lr0.00001_uni_tune3/models/ckpt-epoch39-step15680-loss0.00.ckpt
+    - af546f1d_Jul26-19-36-48_sd1000_lr0.0001_uni_tune2/models/ckpt-epoch39-step15680-loss0.00.ckpt
+    - ee9666af_Jul26-19-36-46_sd1000_lr0.001_uni_tune1/models/ckpt-epoch39-step15680-loss0.00.ckpt
 
 #tune:
 #  diagonal_items: true

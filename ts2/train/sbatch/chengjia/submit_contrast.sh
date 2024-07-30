@@ -37,10 +37,10 @@
 # SBATCH --time=16:00:00
 #------------------------------------------------------------------------------
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:1
-#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
 #------------------------------------------------------------------------------
-#SBATCH --array=0-2
+#SBATCH --array=0-3
 #------------------------------------------------------------------------------
 
 set -x
@@ -50,5 +50,5 @@ set -e
 #srun python main.py -c=config/chengjia/train_modsimclr_tcga.yaml
 #srun python main.py -c=config/chengjia/train_simclr_tcga.yaml
 #srun python main.py -c=config/chengjia/train_committee.yaml
-#python main.py -c=config/chengjia/train_committe_crd.yaml
-srun python main.py -c=config/chengjia/train_supcon_dbta28.yaml 
+srun python main.py -c=config/chengjia/train_committe_crd.yaml
+#srun python main.py -c=config/chengjia/train_supcon_dbta28.yaml 
