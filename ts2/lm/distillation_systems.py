@@ -14,14 +14,14 @@ import einops
 import pytorch_lightning as pl
 import torchmetrics
 
-from torchsrh.losses.supcon import SupConLoss
+from ts2.losses.supcon import SupConLossExpTemp
 from torchsrh.losses.vicreg import GeneralVICRegLoss
 from ts2.models.ssl import (instantiate_backbone, MLP,
                             ContrastiveLearningNetwork, VICRegNetwork)
 #SimSiamNetwork)  #, VICRegNetworkWithMask)
 from ts2.models.pjepa import InterPatchJEPANetwork
 from ts2.models.ijepa import IJEPANetwork, apply_masks, repeat_interleave_batch
-from ts2.optim.utils import get_optimizer_scheduler
+from ts2.optim.utils import get_optimizer_scheduler, get_optimizer_scheduler_ez
 from ts2.lm.ssl_systems import EvalBaseSystem
 
 
@@ -241,6 +241,7 @@ class CRDDistillationSystem(CommitteeDistillationBaseSystem):
 
     def __init__(self,
                  model_hyperparams,
+                 temp_lr:float=None,
                  loss_params: Optional[Dict] = None,
                  opt_cf: Optional[Dict] = None,
                  schd_cf: Optional[Dict] = None,
@@ -253,9 +254,14 @@ class CRDDistillationSystem(CommitteeDistillationBaseSystem):
         self.model = CRDNetwork(**model_hyperparams)
         if self.training_params_:
             self.criterion = torch.nn.ModuleList([
-                SupConLoss(**loss_params)
+                SupConLossExpTemp(**loss_params)
                 for _ in range(len(model_hyperparams.pred_params))
             ])
+
+            if temp_lr:
+                self.temp_lr=temp_lr
+            else:
+                self.temp_lr=opt_cf.params.lr
         else:
             self.criterion = None
 
@@ -283,6 +289,10 @@ class CRDDistillationSystem(CommitteeDistillationBaseSystem):
                      on_epoch=True,
                      batch_size=pred[0].shape[0],
                      rank_zero_only=True)
+            self.log(f"train/tau_{i}",
+                     self.criterion[i].temperature.detach().item(),
+                     on_step=True,
+                     rank_zero_only=True)
 
         all_loss = torch.stack(losses).mean()
         self.log("train/contrastive",
@@ -295,6 +305,12 @@ class CRDDistillationSystem(CommitteeDistillationBaseSystem):
                                weight=pred[0].shape[0])
 
         return all_loss
+
+    #def on_train_batch_end(self, outputs, batch, batch_idx):
+    #    with torch.no_grad():
+    #        for crit in self.criterion:
+    #            crit.temperature.clamp_(min=1.0e-6)
+    #            print(crit.temperature)
 
     @torch.inference_mode()
     def validation_step(self, batch, _):
@@ -313,3 +329,27 @@ class CRDDistillationSystem(CommitteeDistillationBaseSystem):
         ]).mean()
 
         self.val_loss.update(all_loss, weight=pred[0].shape[0])
+
+    def configure_optimizers(self):
+        if not self.training_params_: return None  # Not training
+
+        opt, sch = get_optimizer_scheduler_ez(
+            [{
+                "params": self.model.parameters()
+            }, {
+                "params": self.criterion.parameters(),
+                "lr": self.temp_lr
+            }],
+            opt_cf=self.opt_cf_,
+            schd_cf=self.schd_cf_,
+            **self.training_params_)
+
+        if sch:
+            return [opt], {
+                "scheduler": sch,
+                "interval": "step",
+                "frequency": 1,
+                "name": "lr"
+            }
+        else:
+            return [opt]

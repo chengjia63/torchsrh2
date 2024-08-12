@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/committeedistil/debug_projnorm_vitl_long_noum
+  exp_name: ts2/committeedistil/debug_projnorm_vits_max_crd_expv2
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev_
   log_gpu: True
@@ -11,8 +11,8 @@ data:
     which: CachedCSVParser
     params:
       cached_parser_file:
-        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/noum/ab067818_slide_train
-        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/noum/ab067818_slide_trainval
+        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/he_neuro/aa666ea1_slide_all
+        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/he_neuro/aa666ea1_slide_toy
         test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_train
         test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_trainval
   transform:
@@ -94,7 +94,7 @@ data:
         prefetch_factor: 8
         num_workers: 7
       train:
-        batch_size: 56
+        batch_size: 160
         drop_last: True
         shuffle: True
       trainval:
@@ -109,11 +109,11 @@ data:
       num_samples: 8
       replacement: False
 lightning_module:
-  which: CommitteeDistillationNetwork
+  which: CRDDistillationSystem
   params:
     model_hyperparams:
       backbone_cf:
-        which: vit_large #resnet34
+        which: vit_base #resnet34
         params:
           img_size: 224
           patch_size: 16
@@ -121,9 +121,9 @@ lightning_module:
           class_token: True
           init_values: 1.0e-6
       pred_params: TODO
-      student_proj_params:
-        hidden_layers: [1024, 1024]
-        n_out: 1024
+      student_proj_params: null
+      #  hidden_layers: [768, 768]
+      #  n_out: 768
     loss_params: {}
     opt_cf:
       which: adamw
@@ -149,18 +149,18 @@ lightning_module:
         num_cycles: 0.5
 training:
   resume_checkpoint: null
-  load_backbone:
-    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin
-    remove_prefix: null
+  #load_backbone:
+  #  ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin
+  #  remove_prefix: null
   trainer_params:
-    max_epochs: 40
+    max_epochs: 80
     gradient_clip_val: 0.5
     enable_progress_bar: True
     precision: 'bf16-mixed'
     deterministic: False
   trainval:
     freq:
-      interval: 2
+      interval: 4
       unit: "epoch"
 testing:
   eval_mode: patch_knn
@@ -184,111 +184,66 @@ tune:
   diagonal_items: true
   params:
     data/dataset/params/common/fm_tags:
-    - [uni, gigapath, conch, plip, virchow]
-    - [uni, conch]
     - [uni]
-    - [uni, gigapath]
-    - [uni, gigapath, conch, plip, virchow]
-    - [uni, conch]
     - [uni]
-    - [uni, gigapath]
-    #lightning_module/params/model_hyperparams/teacher_proj_params:
-    #- - n_in: 1024
-    #    hidden_layers: [1024, 1024]
-    #    n_out: 1024
-    #  - n_in: 1536
-    #    hidden_layers: [1536, 1536]
-    #    n_out: 1536
-    #  - n_in: 512
-    #    hidden_layers: [512, 512]
-    #    n_out: 512
-    #  - n_in: 512
-    #    hidden_layers: [512, 512]
-    #    n_out: 512
-    #  - n_in: 1280
-    #    hidden_layers: [1280, 1280]
-    #    n_out: 1280
-    #- - n_in: 1024
-    #    hidden_layers: [1024, 1024]
-    #    n_out: 1024
-    #  - n_in: 512
-    #    hidden_layers: [512, 512]
-    #    n_out: 512
-    #- - n_in: 1024
-    #    hidden_layers: [1024, 1024]
-    #    n_out: 1024
-    #  - n_in: 1536
-    #    hidden_layers: [1536, 1536]
-    #    n_out: 1536
-    #  - n_in: 1280
-    #    hidden_layers: [1280, 1280]
-    #    n_out: 1280
-    #- - n_in: 512
-    #    hidden_layers: [512, 512]
-    #    n_out: 512
-    #  - n_in: 512
-    #    hidden_layers: [512, 512]
-    #    n_out: 512
-    #- - n_in: 1024
-    #    hidden_layers: [1024, 1024]
-    #    n_out: 1024
+    - [uni]
+    - [uni]
     lightning_module/params/model_hyperparams/pred_params:
+    - - n_in: 768
+        hidden_layers: [768, 768]
+        n_out: 128
+    - - n_in: 768
+        hidden_layers: [768, 768]
+        n_out: 128
+    - - n_in: 768
+        hidden_layers: [768, 768]
+        n_out: 128
+    - - n_in: 768
+        hidden_layers: [768, 768]
+        n_out: 128
+    lightning_module/params/model_hyperparams/teacher_proj_params:
     - - n_in: 1024
-        n_out: 1024
-      - n_in: 1024
-        n_out: 1536
-      - n_in: 1024
-        n_out: 512
-      - n_in: 1024
-        n_out: 512
-      - n_in: 1024
-        n_out: 1280
+        hidden_layers: [1024, 1024]
+        n_out: 128
     - - n_in: 1024
-        n_out: 1024
-      - n_in: 1024
-        n_out: 512
+        hidden_layers: [1024, 1024]
+        n_out: 128
     - - n_in: 1024
-        n_out: 1024
+        hidden_layers: [1024, 1024]
+        n_out: 128
     - - n_in: 1024
-        n_out: 1024    
-      - n_in: 1024
-        n_out: 1536
-    - - n_in: 1024
-        n_out: 1024
-      - n_in: 1024
-        n_out: 1536
-      - n_in: 1024
-        n_out: 512
-      - n_in: 1024
-        n_out: 512
-      - n_in: 1024
-        n_out: 1280
-    - - n_in: 1024
-        n_out: 1024
-      - n_in: 1024
-        n_out: 512
-    - - n_in: 1024
-        n_out: 1024
-    - - n_in: 1024
-        n_out: 1024    
-      - n_in: 1024
-        n_out: 1536
+        hidden_layers: [1024, 1024]
+        n_out: 128
     lightning_module/params/opt_cf/params/lr:
-    - 0.001
-    - 0.001
-    - 0.001
-    - 0.001
     - 0.0001
     - 0.0001
     - 0.0001
     - 0.0001
     infra/comment:
-    - lr0.001_all5
-    - lr0.001_mahmoodspecial
-    - lr0.001_uni
-    - lr0.001_goodvm
-    - lr0.0001_all5
-    - lr0.0001_mahmoodspecial
     - lr0.0001_uni
-    - lr0.0001_goodvm
-
+    - lr0.0001_uni
+    - lr0.0001_uni
+    - lr0.0001_uni
+    lightning_module/params/loss_params:
+    - temperature: 4
+      temp_grad: True
+    - temperature: 5
+      temp_grad: True
+    - temperature: 4
+      temp_grad: False
+    - temperature: 2.65926003693
+      temp_grad: True
+    - temperature: 2.65926003693
+      temp_grad: True
+    - temperature: 2.65926003693
+      temp_grad: True
+    - temperature: 2.65926003693
+      temp_grad: False
+    lightning_module/params/temp_lr:
+    - 0.0001
+    - 0.0001
+    - 0
+    - 0.01
+    - 0.001
+    - 0.0001
+    - 0

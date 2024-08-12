@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/committeedistil/debug_projnorm_vits_long_crd_expv2 #ts2/committeedistil/debug_projnorm_vitb_long_crd_fixbug #ts2/committeedistil/debug_projnorm_vitl_long  #ts2/committeedistil/debug_projnorm_vitb_long
+  exp_name: ts2/committeedistil/debug_projnorm_vitl_long_noum # ts2/committeedistil/debug_projnorm_vits_long_crd_expv2 #ts2/committeedistil/debug_projnorm_vitb_long_crd_fixbug #ts2/committeedistil/debug_projnorm_vitl_long  #ts2/committeedistil/debug_projnorm_vitb_long
   #exp_name: ts2/committeedistil/debug/vits
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: standaloneeval_37
@@ -56,7 +56,7 @@ lightning_module:
     strict: False
     model_hyperparams:
       backbone_cf:
-        which: vit_small #resnet34
+        which: vit_large #resnet34
         params:
           img_size: 224
           patch_size: 16
@@ -106,10 +106,14 @@ tune:
   diagonal_items: true
   params:
     testing/ckpt_path:
-    - 06a7dc26_Jul26-19-36-50_sd1000_lr0.01_uni_tune0/models/ckpt-epoch39-step15680-loss0.00.ckpt
-    - 2b57ae43_Jul26-20-12-02_sd1000_lr0.00001_uni_tune3/models/ckpt-epoch39-step15680-loss0.00.ckpt
-    - af546f1d_Jul26-19-36-48_sd1000_lr0.0001_uni_tune2/models/ckpt-epoch39-step15680-loss0.00.ckpt
-    - ee9666af_Jul26-19-36-46_sd1000_lr0.001_uni_tune1/models/ckpt-epoch39-step15680-loss0.00.ckpt
+    - 26bc53b7_Aug04-16-16-14_sd1000_lr0.001_uni_tune2/models/ckpt-epoch39-step57240-loss0.00.ckpt
+    - 3d8dbd86_Aug04-16-16-14_sd1000_lr0.001_mahmoodspecial_tune1/models/ckpt-epoch39-step57240-loss0.00.ckpt
+    - 7921bbb2_Aug04-16-16-14_sd1000_lr0.0001_uni_tune6/models/ckpt-epoch39-step57240-loss0.00.ckpt
+    - 817a7220_Aug04-16-16-19_sd1000_lr0.001_all5_tune0/models/ckpt-epoch39-step57240-loss0.00.ckpt
+    - 8f22d45a_Aug04-16-16-14_sd1000_lr0.0001_goodvm_tune7/models/ckpt-epoch39-step57240-loss0.00.ckpt
+    - abc1e6ef_Aug04-16-16-19_sd1000_lr0.001_goodvm_tune3/models/ckpt-epoch39-step57240-loss0.00.ckpt
+    - e7055dce_Aug04-16-16-14_sd1000_lr0.0001_all5_tune4/models/ckpt-epoch39-step57240-loss0.00.ckpt
+    - ecab89cd_Aug04-16-16-14_sd1000_lr0.0001_mahmoodspecial_tune5/models/ckpt-epoch39-step57240-loss0.00.ckpt
 
 #tune:
 #  diagonal_items: true
