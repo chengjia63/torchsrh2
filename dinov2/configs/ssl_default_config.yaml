@@ -60,10 +60,10 @@ ibot:
   head_hidden_dim: 2048
 train:
   batch_size_per_gpu: 64
-  dataset_path: ImageNet:split=TRAIN
-  output_dir: .
+  #dataset_path: ImageNet:split=TRAIN # torchsrh handle outside
+  output_dir: null # torchsrh insert
   saveckp_freq: 20
-  seed: 0
+  seed: ${...infra.seed} # torchsrh2 + omegaconf handle outside
   num_workers: 10
   OFFICIAL_EPOCH_LENGTH: 1250
   cache_dataset: true

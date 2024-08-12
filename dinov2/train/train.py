@@ -17,49 +17,57 @@ from dinov2.data import collate_data_and_cast, DataAugmentationDINO, MaskingGene
 import dinov2.distributed as distributed
 from dinov2.fsdp import FSDPCheckpointer
 from dinov2.logging import MetricLogger
-from dinov2.utils.config import setup
+#from dinov2.utils.config import setup
 from dinov2.utils.utils import CosineScheduler
 
 from dinov2.train.ssl_meta_arch import SSLMetaArch
 
-
 torch.backends.cuda.matmul.allow_tf32 = True  # PyTorch 1.12 sets this to False by default
 logger = logging.getLogger("dinov2")
 
-
-def get_args_parser(add_help: bool = True):
-    parser = argparse.ArgumentParser("DINOv2 training", add_help=add_help)
-    parser.add_argument("--config-file", default="", metavar="FILE", help="path to config file")
-    parser.add_argument(
-        "--no-resume",
-        action="store_true",
-        help="Whether to not attempt to resume from the checkpoint directory. ",
-    )
-    parser.add_argument("--eval-only", action="store_true", help="perform evaluation only")
-    parser.add_argument("--eval", type=str, default="", help="Eval type to perform")
-    parser.add_argument(
-        "opts",
-        help="""
-Modify config options at the end of the command. For Yacs configs, use
-space-separated "PATH.KEY VALUE" pairs.
-For python-based LazyConfig, use "path.key=value".
-        """.strip(),
-        default=None,
-        nargs=argparse.REMAINDER,
-    )
-    parser.add_argument(
-        "--output-dir",
-        "--output_dir",
-        default="",
-        type=str,
-        help="Output directory to save logs and checkpoints",
-    )
-
-    return parser
+#def get_args_parser(add_help: bool = True):
+#    parser = argparse.ArgumentParser("DINOv2 training", add_help=add_help)
+#    parser.add_argument("--config-file",
+#                        default="",
+#                        metavar="FILE",
+#                        help="path to config file")
+#    parser.add_argument(
+#        "--no-resume",
+#        action="store_true",
+#        help="Whether to not attempt to resume from the checkpoint directory. ",
+#    )
+#    parser.add_argument("--eval-only",
+#                        action="store_true",
+#                        help="perform evaluation only")
+#    parser.add_argument("--eval",
+#                        type=str,
+#                        default="",
+#                        help="Eval type to perform")
+#    parser.add_argument(
+#        "opts",
+#        help="""
+#Modify config options at the end of the command. For Yacs configs, use
+#space-separated "PATH.KEY VALUE" pairs.
+#For python-based LazyConfig, use "path.key=value".
+#        """.strip(),
+#        default=None,
+#        nargs=argparse.REMAINDER,
+#    )
+#    parser.add_argument(
+#        "--output-dir",
+#        "--output_dir",
+#        default="",
+#        type=str,
+#        help="Output directory to save logs and checkpoints",
+#    )
+#
+#    return parser
 
 
 def build_optimizer(cfg, params_groups):
-    return torch.optim.AdamW(params_groups, betas=(cfg.optim.adamw_beta1, cfg.optim.adamw_beta2))
+    return torch.optim.AdamW(params_groups,
+                             betas=(cfg.optim.adamw_beta1,
+                                    cfg.optim.adamw_beta2))
 
 
 def build_schedulers(cfg):
@@ -84,8 +92,10 @@ def build_schedulers(cfg):
     teacher_temp = dict(
         base_value=cfg.teacher["teacher_temp"],
         final_value=cfg.teacher["teacher_temp"],
-        total_iters=cfg.teacher["warmup_teacher_temp_epochs"] * OFFICIAL_EPOCH_LENGTH,
-        warmup_iters=cfg.teacher["warmup_teacher_temp_epochs"] * OFFICIAL_EPOCH_LENGTH,
+        total_iters=cfg.teacher["warmup_teacher_temp_epochs"] *
+        OFFICIAL_EPOCH_LENGTH,
+        warmup_iters=cfg.teacher["warmup_teacher_temp_epochs"] *
+        OFFICIAL_EPOCH_LENGTH,
         start_warmup_value=cfg.teacher["warmup_teacher_temp"],
     )
 
@@ -95,9 +105,8 @@ def build_schedulers(cfg):
     teacher_temp_schedule = CosineScheduler(**teacher_temp)
     last_layer_lr_schedule = CosineScheduler(**lr)
 
-    last_layer_lr_schedule.schedule[
-        : cfg.optim["freeze_last_layer_epochs"] * OFFICIAL_EPOCH_LENGTH
-    ] = 0  # mimicking the original schedules
+    last_layer_lr_schedule.schedule[:cfg.optim["freeze_last_layer_epochs"] *
+                                    OFFICIAL_EPOCH_LENGTH] = 0  # mimicking the original schedules
 
     logger.info("Schedulers ready.")
 
@@ -116,7 +125,8 @@ def apply_optim_scheduler(optimizer, lr, wd, last_layer_lr):
         lr_multiplier = param_group["lr_multiplier"]
         wd_multiplier = param_group["wd_multiplier"]
         param_group["weight_decay"] = wd * wd_multiplier
-        param_group["lr"] = (last_layer_lr if is_last_layer else lr) * lr_multiplier
+        param_group["lr"] = (last_layer_lr
+                             if is_last_layer else lr) * lr_multiplier
 
 
 def do_test(cfg, model, iteration):
@@ -131,7 +141,7 @@ def do_test(cfg, model, iteration):
         torch.save({"teacher": new_state_dict}, teacher_ckp_path)
 
 
-def do_train(cfg, model, resume=False):
+def do_train(cfg, model, dataset, collate_fn, resume=False):
     model.train()
     inputs_dtype = torch.half
     fp16_scaler = model.fp16_scaler  # for mixed precision training
@@ -148,9 +158,13 @@ def do_train(cfg, model, resume=False):
     ) = build_schedulers(cfg)
 
     # checkpointer
-    checkpointer = FSDPCheckpointer(model, cfg.train.output_dir, optimizer=optimizer, save_to_disk=True)
+    checkpointer = FSDPCheckpointer(model,
+                                    cfg.train.output_dir,
+                                    optimizer=optimizer,
+                                    save_to_disk=True)
 
-    start_iter = checkpointer.resume_or_load(cfg.MODEL.WEIGHTS, resume=resume).get("iteration", -1) + 1
+    start_iter = checkpointer.resume_or_load(
+        cfg.MODEL.WEIGHTS, resume=resume).get("iteration", -1) + 1
 
     OFFICIAL_EPOCH_LENGTH = cfg.train.OFFICIAL_EPOCH_LENGTH
     max_iter = cfg.optim.epochs * OFFICIAL_EPOCH_LENGTH
@@ -162,40 +176,8 @@ def do_train(cfg, model, resume=False):
         max_to_keep=3,
     )
 
-    # setup data preprocessing
+    # setup data preprocessing - Moved outside
 
-    img_size = cfg.crops.global_crops_size
-    patch_size = cfg.student.patch_size
-    n_tokens = (img_size // patch_size) ** 2
-    mask_generator = MaskingGenerator(
-        input_size=(img_size // patch_size, img_size // patch_size),
-        max_num_patches=0.5 * img_size // patch_size * img_size // patch_size,
-    )
-
-    data_transform = DataAugmentationDINO(
-        cfg.crops.global_crops_scale,
-        cfg.crops.local_crops_scale,
-        cfg.crops.local_crops_number,
-        global_crops_size=cfg.crops.global_crops_size,
-        local_crops_size=cfg.crops.local_crops_size,
-    )
-
-    collate_fn = partial(
-        collate_data_and_cast,
-        mask_ratio_tuple=cfg.ibot.mask_ratio_min_max,
-        mask_probability=cfg.ibot.mask_sample_probability,
-        n_tokens=n_tokens,
-        mask_generator=mask_generator,
-        dtype=inputs_dtype,
-    )
-
-    # setup data loader
-
-    dataset = make_dataset(
-        dataset_str=cfg.train.dataset_path,
-        transform=data_transform,
-        target_transform=lambda _: (),
-    )
     # sampler_type = SamplerType.INFINITE
     sampler_type = SamplerType.SHARDED_INFINITE
     data_loader = make_data_loader(
@@ -205,7 +187,8 @@ def do_train(cfg, model, resume=False):
         shuffle=True,
         seed=start_iter,  # TODO: Fix this -- cfg.train.seed
         sampler_type=sampler_type,
-        sampler_advance=0,  # TODO(qas): fix this -- start_iter * cfg.train.batch_size_per_gpu,
+        sampler_advance=
+        0,  # TODO(qas): fix this -- start_iter * cfg.train.batch_size_per_gpu,
         drop_last=True,
         collate_fn=collate_fn,
     )
@@ -220,11 +203,11 @@ def do_train(cfg, model, resume=False):
     header = "Training"
 
     for data in metric_logger.log_every(
-        data_loader,
-        10,
-        header,
-        max_iter,
-        start_iter,
+            data_loader,
+            10,
+            header,
+            max_iter,
+            start_iter,
     ):
         current_batch_size = data["collated_global_crops"].shape[0] / 2
         if iteration > max_iter:
@@ -268,7 +251,10 @@ def do_train(cfg, model, resume=False):
         if distributed.get_global_size() > 1:
             for v in loss_dict.values():
                 torch.distributed.all_reduce(v)
-        loss_dict_reduced = {k: v.item() / distributed.get_global_size() for k, v in loss_dict.items()}
+        loss_dict_reduced = {
+            k: v.item() / distributed.get_global_size()
+            for k, v in loss_dict.items()
+        }
 
         if math.isnan(sum(loss_dict_reduced.values())):
             logger.info("NaN detected")
@@ -284,7 +270,8 @@ def do_train(cfg, model, resume=False):
 
         # checkpointing and testing
 
-        if cfg.evaluation.eval_period_iterations > 0 and (iteration + 1) % cfg.evaluation.eval_period_iterations == 0:
+        if cfg.evaluation.eval_period_iterations > 0 and (
+                iteration + 1) % cfg.evaluation.eval_period_iterations == 0:
             do_test(cfg, model, f"training_{iteration}")
             torch.cuda.synchronize()
         periodic_checkpointer.step(iteration)
@@ -294,25 +281,23 @@ def do_train(cfg, model, resume=False):
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
-def main(args):
-    cfg = setup(args)
-
-    model = SSLMetaArch(cfg).to(torch.device("cuda"))
-    model.prepare_for_distributed_training()
-
-    logger.info("Model:\n{}".format(model))
-    if args.eval_only:
-        iteration = (
-            FSDPCheckpointer(model, save_dir=cfg.train.output_dir)
-            .resume_or_load(cfg.MODEL.WEIGHTS, resume=not args.no_resume)
-            .get("iteration", -1)
-            + 1
-        )
-        return do_test(cfg, model, f"manual_{iteration}")
-
-    do_train(cfg, model, resume=not args.no_resume)
-
-
-if __name__ == "__main__":
-    args = get_args_parser(add_help=True).parse_args()
-    main(args)
+#def main(args):
+#    cfg = setup(args)
+#
+#    model = SSLMetaArch(cfg).to(torch.device("cuda"))
+#    model.prepare_for_distributed_training()
+#
+#    logger.info("Model:\n{}".format(model))
+#    if args.eval_only:
+#        iteration = (FSDPCheckpointer(
+#            model, save_dir=cfg.train.output_dir).resume_or_load(
+#                cfg.MODEL.WEIGHTS, resume=not args.no_resume).get(
+#                    "iteration", -1) + 1)
+#        return do_test(cfg, model, f"manual_{iteration}")
+#
+#    do_train(cfg, model, resume=not args.no_resume)
+#
+#
+#if __name__ == "__main__":
+#    args = get_args_parser(add_help=True).parse_args()
+#    main(args)
