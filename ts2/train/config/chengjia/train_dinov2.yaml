@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/he_neuro_vit2/simclr_vitb
+  exp_name: ts2/he_neuro_dinov2
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -13,53 +13,32 @@ data:
       cached_parser_file:
         train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/he_neuro/aa666ea1_slide_all
         trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/he_neuro/aa666ea1_slide_toy
-        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_train
-        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_trainval
+        #test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_train
+        #test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_trainval
   transform:
     train:
       which: HistologyTransform
       params:
-        base_aug_params: {}
-          #laser_noise_config: null
-          #base_aug: three_channels
+        base_aug_params:
+          do_normalize: False
         strong_aug_params:
           aug_list:
-          - which: resize_always_apply
-            params:
-              size: 224
-          - which: random_horiz_flip
-            params: {}
-          - which: random_vert_flip
-            params: {}
-          - which: color_jitter
-            params:
-              brightness: 0.4
-              contrast: 0.4
-              saturation: 0.4
-              hue: 0.2
-          - which: gaussian_blur
-            params:
-              kernel_size: 29
-              sigma: 1
-          - which: gaussian_noise
-            params: {}
-          - which: random_resized_crop
-            params:
-              size: 224
-          aug_prob: 0.3
-    trainval: ${.train}
-    test:
-      which: HistologyTransform
-      params:
-        base_aug_params: {}
-        strong_aug_params:
-          aug_list:
-          - which: resize_always_apply
-            params:
-              size: 224
+          - which: dinov2_always_apply
+            params: ${........dinov2_fair_config.crops}
           aug_prob: 1
+    trainval: ${.train}
+    #test:
+    #  which: HistologyTransform
+    #  params:
+    #    base_aug_params: {}
+    #    strong_aug_params:
+    #      aug_list:
+    #      - which: resize_always_apply
+    #        params:
+    #          size: 224
+    #      aug_prob: 1
   dataset:
-      which: SingleLevelHierarchicalDataset
+      which: SingleLevelHierarchicalDatasetDINOV2
       which_process_read: memmap_multi
       params:
         common:
@@ -70,47 +49,67 @@ data:
         train:
           num_instance_self_replicate: 30
         trainval: {}
-  test_dataset:
-      which: PatchDataset
-      which_process_read: memmap
-      params:
-          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
-          num_transforms: 1
-          balance_instance_class: False
-      negative_class_index: 1
-      classes_reorder: [2,0,1]
-      camera_ready_classes: [Astro, GBM, Oligo]
-  loader:
-    params:
-      common:
-        pin_memory: False
-        persistent_workers: True
-        prefetch_factor: 12
-        num_workers: 7
-      train:
-        batch_size: 256
-        drop_last: True
-        shuffle: True
-      trainval:
-        batch_size: 8
-        drop_last: False
-        shuffle: False
-      test:
-        batch_size: 64
-        drop_last: False
-        shuffle: False
-    trainval_sampler:
-      num_samples: 8
-      replacement: False
+  #test_dataset:
+  #    which: PatchDataset
+  #    which_process_read: memmap
+  #    params:
+  #        data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
+  #        num_transforms: 1
+  #        balance_instance_class: False
+  #    negative_class_index: 1
+  #    classes_reorder: [2,0,1]
+  #    camera_ready_classes: [Astro, GBM, Oligo]
+  #loader:
+  #  params:
+  #    common:
+  #      pin_memory: False
+  #      persistent_workers: True
+  #      prefetch_factor: 12
+  #      num_workers: 7
+  #    train:
+  #      batch_size: 256
+  #      drop_last: True
+  #      shuffle: True
+  #    trainval:
+  #      batch_size: 8
+  #      drop_last: False
+  #      shuffle: False
+  #    test:
+  #      batch_size: 64
+  #      drop_last: False
+  #      shuffle: False
+  #  trainval_sampler:
+  #    num_samples: 8
+  #    replacement: False
 dinov2_fair_config:
+  dino:
+    head_n_prototypes: 131072
+    head_bottleneck_dim: 384
+  ibot:
+    separate_head: true
+    head_n_prototypes: 131072
   train:
-    dataset_path: ImageNet:split=TRAIN
-    batch_size_per_gpu: 64
+    batch_size_per_gpu: 32
+    centering: sinkhorn_knopp
   student:
+    arch: vit_large
+    patch_size: 14
+    drop_path_rate: 0.4
+    ffn_layer: swiglufused
     block_chunks: 4
+  teacher:
+    momentum_teacher: 0.994
+  optim:
+    epochs: 500
+    weight_decay_end: 0.2
+    base_lr: 2.0e-04  # learning rate for a batch size of 1024
+    warmup_epochs: 16
+    layerwise_decay: 1.0
+  crops:
+    local_crops_size: 98
 tune:
   diagonal_items: true
   params:
-    infra/comment:
-    - simclr_1000_lr0.001
-    - simclr_1000_lr0.0001
+    dinov2_fair_config/optim/base_lr:
+    - 2.0e-3
+    - 1.0e-3

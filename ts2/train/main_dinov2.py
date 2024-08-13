@@ -21,6 +21,8 @@ import dinov2.distributed as distributed
 from dinov2.utils import utils as dinov2_utils
 from dinov2.utils.config import apply_scaling_rules_to_cfg
 
+from torch.utils.tensorboard import SummaryWriter
+
 
 def default_setup(seed):
     distributed.enable(overwrite=True)
@@ -46,53 +48,27 @@ def fair_setup(cf, exp_root, model_dir):
     return cf
 
 
+from ts2.data.histology_data_module import PatchDataModule
+
+
 def main():
     cf = read_process_cf(parse_args())
     exp_root, model_dir = setup_infra_training(cf)
     cf = fair_setup(cf, exp_root, model_dir)
-    import pdb
-    pdb.set_trace()
-    # dset stuff
-    #img_size = cfg.crops.global_crops_size
-    #patch_size = cfg.student.patch_size
-    #n_tokens = (img_size // patch_size)**2
-    #mask_generator = MaskingGenerator(
-    #    input_size=(img_size // patch_size, img_size // patch_size),
-    #    max_num_patches=0.5 * img_size // patch_size * img_size // patch_size,
-    #)
-    #
-    #data_transform = DataAugmentationDINO(
-    #    cfg.crops.global_crops_scale,
-    #    cfg.crops.local_crops_scale,
-    #    cfg.crops.local_crops_number,
-    #    global_crops_size=cfg.crops.global_crops_size,
-    #    local_crops_size=cfg.crops.local_crops_size,
-    #)
-    #
-    #collate_fn = partial(
-    #    collate_data_and_cast,
-    #    mask_ratio_tuple=cfg.ibot.mask_ratio_min_max,
-    #    mask_probability=cfg.ibot.mask_sample_probability,
-    #    n_tokens=n_tokens,
-    #    mask_generator=mask_generator,
-    #    dtype=inputs_dtype,
-    #)
 
-    # setup data loader
+    dm = PatchDataModule(config=cf)
+    dm.setup(stage="fit")
 
-    #dataset = make_dataset(
-    #    dataset_str=cfg.train.dataset_path,
-    #    transform=data_transform,
-    #    target_transform=lambda _: (),
-    #)
-    ## ========================
+    tb_writer = SummaryWriter(log_dir=os.path.join(exp_root, "tb"))
 
     logging.info("Doing training")
     model = SSLMetaArch(cf.dinov2_fair_config).to(torch.device("cuda"))
     model.prepare_for_distributed_training()
 
-    do_train(cf.dinov2_fair_config, model, dataset=None,
-             collate_fn=None)  #, resume=not cf.no_resume)
+    do_train(cf.dinov2_fair_config,
+             model,
+             dataset=dm.train_dataset_,
+             tb_writer=tb_writer)  #, resume=not cf.no_resume)
 
     #if ("testing" in cf) and (get_rank() == 0 or get_rank() is None):
     #    logging.info("Doing testing on rank 0")

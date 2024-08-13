@@ -12,8 +12,8 @@ from functools import partial
 from fvcore.common.checkpoint import PeriodicCheckpointer
 import torch
 
-from dinov2.data import SamplerType, make_data_loader, make_dataset
-from dinov2.data import collate_data_and_cast, DataAugmentationDINO, MaskingGenerator
+from dinov2.data import SamplerType, make_data_loader
+from dinov2.data import collate_data_and_cast, MaskingGenerator
 import dinov2.distributed as distributed
 from dinov2.fsdp import FSDPCheckpointer
 from dinov2.logging import MetricLogger
@@ -141,7 +141,7 @@ def do_test(cfg, model, iteration):
         torch.save({"teacher": new_state_dict}, teacher_ckp_path)
 
 
-def do_train(cfg, model, dataset, collate_fn, resume=False):
+def do_train(cfg, model, dataset, tb_writer, resume=False):
     model.train()
     inputs_dtype = torch.half
     fp16_scaler = model.fp16_scaler  # for mixed precision training
@@ -177,6 +177,22 @@ def do_train(cfg, model, dataset, collate_fn, resume=False):
     )
 
     # setup data preprocessing - Moved outside
+    img_size = cfg.crops.global_crops_size
+    patch_size = cfg.student.patch_size
+    n_tokens = (img_size // patch_size)**2
+    mask_generator = MaskingGenerator(
+        input_size=(img_size // patch_size, img_size // patch_size),
+        max_num_patches=0.5 * img_size // patch_size * img_size // patch_size,
+    )
+
+    collate_fn = partial(
+        collate_data_and_cast,
+        mask_ratio_tuple=cfg.ibot.mask_ratio_min_max,
+        mask_probability=cfg.ibot.mask_sample_probability,
+        n_tokens=n_tokens,
+        mask_generator=mask_generator,
+        dtype=inputs_dtype,
+    )
 
     # sampler_type = SamplerType.INFINITE
     sampler_type = SamplerType.SHARDED_INFINITE
@@ -214,7 +230,6 @@ def do_train(cfg, model, dataset, collate_fn, resume=False):
             return
 
         # apply schedules
-
         lr = lr_schedule[iteration]
         wd = wd_schedule[iteration]
         mom = momentum_schedule[iteration]
@@ -268,8 +283,20 @@ def do_train(cfg, model, dataset, collate_fn, resume=False):
         metric_logger.update(current_batch_size=current_batch_size)
         metric_logger.update(total_loss=losses_reduced, **loss_dict_reduced)
 
-        # checkpointing and testing
+        if distributed.is_main_process():
+            tb_log_items = {
+                "lr": lr,
+                "wd": wd,
+                "mom": mom,
+                "last_layer_lr": last_layer_lr,
+                "current_batch_size": current_batch_size,
+                "total_loss": losses_reduced
+            }
+            tb_log_items.update(loss_dict_reduced)
+            for k in tb_log_items:
+                tb_writer.add_scalar(k, tb_log_items[k], iteration)
 
+        # checkpointing and testing
         if cfg.evaluation.eval_period_iterations > 0 and (
                 iteration + 1) % cfg.evaluation.eval_period_iterations == 0:
             do_test(cfg, model, f"training_{iteration}")

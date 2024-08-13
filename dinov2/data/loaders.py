@@ -13,7 +13,6 @@ from torch.utils.data import Sampler
 from .datasets import ImageNet, ImageNet22k
 from .samplers import EpochSampler, InfiniteSampler, ShardedInfiniteSampler
 
-
 logger = logging.getLogger("dinov2")
 
 
@@ -29,7 +28,9 @@ def _make_bool_str(b: bool) -> str:
     return "yes" if b else "no"
 
 
-def _make_sample_transform(image_transform: Optional[Callable] = None, target_transform: Optional[Callable] = None):
+def _make_sample_transform(image_transform: Optional[Callable] = None,
+                           target_transform: Optional[Callable] = None):
+
     def transform(sample):
         image, target = sample
         if image_transform is not None:
@@ -64,37 +65,37 @@ def _parse_dataset_str(dataset_str: str):
     return class_, kwargs
 
 
-def make_dataset(
-    *,
-    dataset_str: str,
-    transform: Optional[Callable] = None,
-    target_transform: Optional[Callable] = None,
-):
-    """
-    Creates a dataset with the specified parameters.
-
-    Args:
-        dataset_str: A dataset string description (e.g. ImageNet:split=TRAIN).
-        transform: A transform to apply to images.
-        target_transform: A transform to apply to targets.
-
-    Returns:
-        The created dataset.
-    """
-    logger.info(f'using dataset: "{dataset_str}"')
-
-    class_, kwargs = _parse_dataset_str(dataset_str)
-    dataset = class_(transform=transform, target_transform=target_transform, **kwargs)
-
-    logger.info(f"# of dataset samples: {len(dataset):,d}")
-
-    # Aggregated datasets do not expose (yet) these attributes, so add them.
-    if not hasattr(dataset, "transform"):
-        setattr(dataset, "transform", transform)
-    if not hasattr(dataset, "target_transform"):
-        setattr(dataset, "target_transform", target_transform)
-
-    return dataset
+#def make_dataset(
+#    *,
+#    dataset_str: str,
+#    transform: Optional[Callable] = None,
+#    target_transform: Optional[Callable] = None,
+#):
+#    """
+#    Creates a dataset with the specified parameters.
+#
+#    Args:
+#        dataset_str: A dataset string description (e.g. ImageNet:split=TRAIN).
+#        transform: A transform to apply to images.
+#        target_transform: A transform to apply to targets.
+#
+#    Returns:
+#        The created dataset.
+#    """
+#    logger.info(f'using dataset: "{dataset_str}"')
+#
+#    class_, kwargs = _parse_dataset_str(dataset_str)
+#    dataset = class_(transform=transform, target_transform=target_transform, **kwargs)
+#
+#    logger.info(f"# of dataset samples: {len(dataset):,d}")
+#
+#    # Aggregated datasets do not expose (yet) these attributes, so add them.
+#    if not hasattr(dataset, "transform"):
+#        setattr(dataset, "transform", transform)
+#    if not hasattr(dataset, "target_transform"):
+#        setattr(dataset, "target_transform", target_transform)
+#
+#    return dataset
 
 
 def _make_sampler(
@@ -118,7 +119,8 @@ def _make_sampler(
             seed=seed,
             advance=advance,
         )
-    elif type in (SamplerType.SHARDED_INFINITE, SamplerType.SHARDED_INFINITE_NEW):
+    elif type in (SamplerType.SHARDED_INFINITE,
+                  SamplerType.SHARDED_INFINITE_NEW):
         logger.info("sampler: sharded infinite")
         if size > 0:
             raise ValueError("sampler size > 0 is invalid")

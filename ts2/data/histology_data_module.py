@@ -15,7 +15,8 @@ from ts2.data.meta_parser import PatchCSVParser, CachedCSVParser
 from ts2.data.patch_dataset import PatchDataset
 from ts2.data.slide_dataset import (SingleLevelHierarchicalDataset,
                                     SLHDatasetWithFMEmbeddings,
-                                    HierarchicalDataset, InterPatchJEPADataset)
+                                    HierarchicalDataset, InterPatchJEPADataset,
+                                    SingleLevelHierarchicalDatasetDINOV2)
 from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
 from ts2.data.collate_func import MBMaskCollator
@@ -81,7 +82,7 @@ class PatchDataModule(pl.LightningDataModule):
             self.test_dset_config_ = config.data.test_dataset
             self.test_get_train_ = config.testing.get("knn",
                                                       {}).get("do_knn", False)
-        self.loader_config_ = config.data.loader
+        self.loader_config_ = config.data.get("loader")
         self.seed_ = config.infra.seed
 
         self.train_dataset_, self.trainval_dataset_ = None, None
@@ -89,10 +90,16 @@ class PatchDataModule(pl.LightningDataModule):
 
     def setup(self, stage: str):
         datasets = {
-            "PatchDataset": PatchDataset,
-            "SingleLevelHierarchicalDataset": SingleLevelHierarchicalDataset,
-            "InterPatchJEPADataset": InterPatchJEPADataset,
-            "SLHDatasetWithFMEmbeddings": SLHDatasetWithFMEmbeddings
+            "PatchDataset":
+            PatchDataset,
+            "SingleLevelHierarchicalDataset":
+            SingleLevelHierarchicalDataset,
+            "InterPatchJEPADataset":
+            InterPatchJEPADataset,
+            "SLHDatasetWithFMEmbeddings":
+            SLHDatasetWithFMEmbeddings,
+            "SingleLevelHierarchicalDatasetDINOV2":
+            SingleLevelHierarchicalDatasetDINOV2
         }
         transforms = {"HistologyTransform": HistologyTransform}
         if stage == "fit":
@@ -153,7 +160,7 @@ class PatchDataModule(pl.LightningDataModule):
     @staticmethod
     def get_seed_worker_and_generator(seed=torch.initial_seed() % 2**32):
         """For deterministic training.
-        
+
         Reference: https://pytorch.org/docs/stable/notes/randomness.html
         """
 

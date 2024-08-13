@@ -129,6 +129,42 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
         return {"image": im, "label": target}
 
 
+class SingleLevelHierarchicalDatasetDINOV2(SingleLevelHierarchicalDataset):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    @torch.no_grad()
+    def read_images(self, inst: Dict):
+        """Read in a list of patches, different patches and transformations"""
+
+        #patches_list = inst["patches"]
+        im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
+        #mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
+
+        images = self.process_read_im_(
+            self.make_im_path(self.tensor_shape_map[inst["name"]]["path"]),
+            tuple(self.tensor_shape_map[inst["name"]]["shape"]), im_id)
+
+        im_id = None
+        assert self.transform_ is not None
+        images = self.transform_(images.squeeze())
+
+        return images
+
+    def __getitem__(self, idx: int):
+        """Retrieve a list of patches, from the wholeslide specified by idx"""
+        idx = idx % len(self.instances_)
+        instance = self.instances_[idx]
+        target = self.class_to_idx_[instance["label"]]
+        im = self.read_images(instance)
+
+        if self.target_transform_ is not None:
+            target = self.target_transform_(target)
+
+        return im, target
+
+
 class SLHDatasetWithFMEmbeddings(SingleLevelHierarchicalDataset):
 
     def __init__(self, fm_root: str, fm_tags: List[str], **kwargs):

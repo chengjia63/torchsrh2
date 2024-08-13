@@ -22,6 +22,8 @@ from torchvision.transforms import functional as F
 
 from torch import Tensor
 
+from dinov2.data.augmentations import DataAugmentationDINO
+
 
 class HistologyTransform(torch.nn.Module):
     """Transformation module for histology data training"""
@@ -87,12 +89,14 @@ class VisionBaseTransform(torch.nn.Module):
 class NoBaseTransform(torch.nn.Module):
     """No base transformation used."""
 
-    def __init__(self):  # pylint: disable=missing-function-docstring
+    def __init__(self, do_normalize=True):  # pylint: disable=missing-function-docstring
         super().__init__()
-        u8_min = (0, 0, 0)
-        u8_max = (255, 255, 255)  # 2^8
-
-        self.model = Normalize(mean=u8_min, std=u8_max)
+        if do_normalize:
+            u8_min = (0, 0, 0)
+            u8_max = (255, 255, 255)  # 2^8
+            self.model = Normalize(mean=u8_min, std=u8_max)
+        else:
+            self.model = lambda x: x.to(torch.uint8)
 
     def forward(self, x: torch.Tensor):  # pylint: disable=missing-function-docstring
         return self.model(x)
@@ -109,6 +113,7 @@ class StrongTransform(torch.nn.Module):
             "inpaint_rows_always_apply": InpaintRows,
             "inpaint_rows": partial(rand_apply_p, which=InpaintRows),
             "resize_always_apply": Resize,
+            "dinov2_always_apply": DataAugmentationDINO,
             "resize": Resize,
             "normalize_always_apply": Normalize,
             "random_horiz_flip": partial(RandomHorizontalFlip, p=aug_prob),
