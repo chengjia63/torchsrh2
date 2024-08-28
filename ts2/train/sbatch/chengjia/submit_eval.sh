@@ -42,7 +42,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #------------------------------------------------------------------------------
-#SBATCH --array=0-7
+#SBATCH --array=0-1
 #------------------------------------------------------------------------------
 
 echo @@@ EVALUATION @@@
@@ -50,3 +50,5 @@ set -x
 set -e
 
 python main.py -c=config/chengjia/eval.yaml
+python main.py -c=config/chengjia/eval_glioma.yaml
+python main.py -c=config/chengjia/eval_umbtb.yaml

@@ -9,6 +9,7 @@ import pytorch_lightning as pl
 from omegaconf import OmegaConf
 from typing import Dict, Any
 import json
+import collections
 
 from ts2.train.common import setup_checkpoints
 from ts2.train.infra import (parse_args, read_process_cf, setup_infra_training,
@@ -51,6 +52,25 @@ def fair_setup(cf, exp_root, model_dir):
 from ts2.data.histology_data_module import PatchDataModule
 
 
+@torch.no_grad()
+def load_uni_one_bbone(backbone, ckpt):
+    backbone.cls_token.copy_(ckpt["cls_token"])
+    backbone.pos_embed.copy_(ckpt["pos_embed"])
+    backbone.patch_embed.load_state_dict(
+        collections.OrderedDict([(k.removeprefix("patch_embed."), ckpt[k])
+                                 for k in ckpt.keys()
+                                 if k.startswith("patch_embed.")]))
+    backbone.norm.load_state_dict(
+        collections.OrderedDict([(k.removeprefix("norm."), ckpt[k])
+                                 for k in ckpt.keys()
+                                 if k.startswith("norm.")]))
+    for b in backbone.blocks:
+        expected_keys = b.state_dict().keys()
+        b.load_state_dict(
+            collections.OrderedDict([(k, ckpt[f"blocks.{k}"])
+                                     for k in expected_keys]))
+
+
 def main():
     cf = read_process_cf(parse_args())
     exp_root, model_dir = setup_infra_training(cf)
@@ -62,13 +82,22 @@ def main():
     tb_writer = SummaryWriter(log_dir=os.path.join(exp_root, "tb"))
 
     logging.info("Doing training")
-    model = SSLMetaArch(cf.dinov2_fair_config).to(torch.device("cuda"))
+
+    model = SSLMetaArch(cf.dinov2_fair_config)
+
+    if cf.ts_wrap_config.get("load_uni_ckpt", {}).get("do", False):
+        uni_ckpt = torch.load(cf.ts_wrap_config.load_uni_ckpt.ckpt_path,
+                              map_location="cpu")
+        load_uni_one_bbone(model.teacher.backbone, uni_ckpt)
+        load_uni_one_bbone(model.student.backbone, uni_ckpt)
+    model = model.to(torch.device("cuda"))
     model.prepare_for_distributed_training()
 
     do_train(cf.dinov2_fair_config,
              model,
              dataset=dm.train_dataset_,
-             tb_writer=tb_writer)  #, resume=not cf.no_resume)
+             tb_writer=tb_writer,
+             resume=not cf["ts_wrap_config"].get("no_resume", True))
 
     #if ("testing" in cf) and (get_rank() == 0 or get_rank() is None):
     #    logging.info("Doing testing on rank 0")

@@ -13,6 +13,8 @@ data:
       cached_parser_file:
         train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/he_neuro/05a18e32_slide_train
         trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/he_neuro/05a18e32_slide_toy
+        #test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_train
+        #test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_trainval
   transform:
     train:
       which: HistologyTransform
@@ -25,6 +27,16 @@ data:
             params: ${........dinov2_fair_config.crops}
           aug_prob: 1
     trainval: ${.train}
+    #test:
+    #  which: HistologyTransform
+    #  params:
+    #    base_aug_params: {}
+    #    strong_aug_params:
+    #      aug_list:
+    #      - which: resize_always_apply
+    #        params:
+    #          size: 224
+    #      aug_prob: 1
   dataset:
       which: SingleLevelHierarchicalDatasetDINOV2
       which_process_read: memmap_multi
@@ -37,9 +49,43 @@ data:
         train:
           num_instance_self_replicate: 30
         trainval: {}
+  #test_dataset:
+  #    which: PatchDataset
+  #    which_process_read: memmap
+  #    params:
+  #        data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
+  #        num_transforms: 1
+  #        balance_instance_class: False
+  #    negative_class_index: 1
+  #    classes_reorder: [2,0,1]
+  #    camera_ready_classes: [Astro, GBM, Oligo]
+  #loader:
+  #  params:
+  #    common:
+  #      pin_memory: False
+  #      persistent_workers: True
+  #      prefetch_factor: 12
+  #      num_workers: 7
+  #    train:
+  #      batch_size: 256
+  #      drop_last: True
+  #      shuffle: True
+  #    trainval:
+  #      batch_size: 8
+  #      drop_last: False
+  #      shuffle: False
+  #    test:
+  #      batch_size: 64
+  #      drop_last: False
+  #      shuffle: False
+  #  trainval_sampler:
+  #    num_samples: 8
+  #    replacement: False
 ts_wrap_config:
-  no_resume: True
+  no_resume: False
 dinov2_fair_config:
+  MODEL:
+    WEIGHTS: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2/77081532_Aug14-09-40-43_sd1000_dev_tune0/models/model_0026249.rank_0.pth
   dino:
     head_n_prototypes: 131072
     head_bottleneck_dim: 384
@@ -69,5 +115,4 @@ tune:
   diagonal_items: true
   params:
     dinov2_fair_config/optim/base_lr:
-    - 4.0e-3
-    - 1.0e-3
+    - 0.002

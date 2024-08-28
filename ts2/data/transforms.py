@@ -17,12 +17,13 @@ from torchvision.transforms import (
     RandomHorizontalFlip, RandomVerticalFlip, ColorJitter, GaussianBlur,
     RandomErasing, RandomAutocontrast, RandomSolarize, RandomAdjustSharpness,
     Grayscale, RandomResizedCrop, RandomGrayscale)
-from torchvision.transforms import RandomEqualize, RandomPosterize
+from torchvision.transforms import RandomEqualize, RandomPosterize, ConvertImageDtype
 from torchvision.transforms import functional as F
 
 from torch import Tensor
 
 from dinov2.data.augmentations import DataAugmentationDINO
+from dinov2.data.transforms import (make_normalize_transform)
 
 
 class HistologyTransform(torch.nn.Module):
@@ -102,6 +103,19 @@ class NoBaseTransform(torch.nn.Module):
         return self.model(x)
 
 
+class Dinov2Normalization(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.normalize = Compose([
+            ConvertImageDtype(dtype=float),
+            make_normalize_transform(),
+        ])
+
+    def forward(self, x: torch.Tensor):
+        return self.normalize(x).to(torch.float)
+
+
 class StrongTransform(torch.nn.Module):
     """Strong transformations for all image data."""
 
@@ -116,11 +130,11 @@ class StrongTransform(torch.nn.Module):
             "dinov2_always_apply": DataAugmentationDINO,
             "resize": Resize,
             "normalize_always_apply": Normalize,
+            "dinov2_normalize_always_apply": Dinov2Normalization,
             "random_horiz_flip": partial(RandomHorizontalFlip, p=aug_prob),
             "random_vert_flip": partial(RandomVerticalFlip, p=aug_prob),
             "gaussian_noise": partial(rand_apply_p, which=GaussianNoise),
             "color_jitter": partial(rand_apply_p, which=ColorJitter),
-            #partial(rand_apply, which=ColorJitter, p=0.8),
             "random_autocontrast": partial(RandomAutocontrast, p=aug_prob),
             "random_solarize": partial(RandomSolarize, p=aug_prob),
             "random_sharpness": partial(RandomAdjustSharpness, p=aug_prob),
@@ -134,8 +148,6 @@ class StrongTransform(torch.nn.Module):
             "fft_low_pass_filter": partial(rand_apply_p, FFTLowPassFilter),
             "fft_high_pass_filter": partial(rand_apply_p, FFTHighPassFilter),
             "fft_band_pass_filter": partial(rand_apply_p, FFTBandPassFilter),
-            #"posterize": partial(RandomPosterize, p=rand_prob), TODO
-            #"equalize": partial(RandomEqualize, p=rand_prob) TODO
         }
 
         self.transforms_ = Compose(

@@ -59,6 +59,7 @@ class EvalBaseModule(ABC):
             self.cf_["data"]["test_dataset"]["camera_ready_classes"])[
                 cf["data"]["test_dataset"]["classes_reorder"]]
         self.classes_ = {}
+        logging.info(f"{self.nc_} class eval")
 
     def proc_pred_one_set__(self, pred):
         if not pred: return None
@@ -212,6 +213,7 @@ class EvalBaseModule(ABC):
         else:
             acc = Accuracy(task="multiclass",
                            num_classes=self.nc_,
+                           top_k=1,
                            average="micro")
             t2 = Accuracy(task="multiclass",
                           num_classes=self.nc_,
@@ -223,6 +225,7 @@ class EvalBaseModule(ABC):
                           average="micro")
             mca = Accuracy(task="multiclass",
                            num_classes=self.nc_,
+                           top_k=1,
                            average="macro")
             auroc = AUROC(task="multiclass",
                           num_classes=self.nc_,
@@ -232,15 +235,19 @@ class EvalBaseModule(ABC):
                                      average="macro")
             spec = Specificity(task="multiclass",
                                num_classes=self.nc_,
+                               top_k=1,
                                average="micro")
             sen = Recall(task="multiclass",
                          num_classes=self.nc_,
+                         top_k=1,
                          average="micro")
             f1_macro = F1Score(task="multiclass",
                                num_classes=self.nc_,
+                               top_k=1,
                                average="macro")
             f1_micro = F1Score(task="multiclass",
                                num_classes=self.nc_,
+                               top_k=1,
                                average="micro")
 
             acc_val = acc(logits, label)

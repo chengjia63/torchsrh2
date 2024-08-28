@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/he_neuro_dinov2
+  exp_name: ts2/he_neuro_dinov2_uniinit
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -39,35 +39,20 @@ data:
         trainval: {}
 ts_wrap_config:
   no_resume: True
+  load_uni_ckpt:
+    do: True
+    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin
 dinov2_fair_config:
-  dino:
-    head_n_prototypes: 131072
-    head_bottleneck_dim: 384
-  ibot:
-    separate_head: true
-    head_n_prototypes: 131072
   train:
-    batch_size_per_gpu: 32
-    centering: sinkhorn_knopp
+    batch_size_per_gpu: 64
   student:
-    arch: vit_large
-    patch_size: 14
-    drop_path_rate: 0.4
-    ffn_layer: swiglufused
     block_chunks: 4
-  teacher:
-    momentum_teacher: 0.994
   optim:
     epochs: 500
-    weight_decay_end: 0.2
-    base_lr: 2.0e-04  # learning rate for a batch size of 1024
+    base_lr: 0.004  # learning rate for a batch size of 1024
     warmup_epochs: 80
-    layerwise_decay: 1.0
-  crops:
-    local_crops_size: 98
 tune:
   diagonal_items: true
   params:
     dinov2_fair_config/optim/base_lr:
-    - 4.0e-3
-    - 1.0e-3
+    - 0.0004

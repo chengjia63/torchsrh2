@@ -137,10 +137,34 @@ def setup_infra_testing(cf: OmegaConf,
         for d in [pred_dir, results_dir]:
             os.makedirs(d)
         pred_fname = None
-    else:
+    else:  #standalone eval
 
-        (eval_root, config_dir, pred_dir, code_dir, results_dir,
-         pred_fname) = setup_testing_output_dirs(cf, eval_instance_name)
+        if cf["lightning_module"]["which"] == "Dinov2EvalSystem":
+            eval_root = opj(
+                os.path.dirname(
+                    cf["lightning_module"]["params"]["pretrained_weights"]),
+                eval_instance_name)
+
+            pred_dir = os.path.join(eval_root, 'predictions')
+            config_dir = os.path.join(eval_root, 'config')
+            code_dir = os.path.join(eval_root, 'code')
+            artifact_dir = os.path.join(eval_root, 'artifacts')
+            results_dir = os.path.join(eval_root, 'results')
+            for dir_name in [
+                    pred_dir, config_dir, code_dir, artifact_dir, results_dir
+            ]:
+                if not os.path.exists(dir_name):
+                    os.makedirs(dir_name)
+
+            if cf.testing.get("eval_predictions", None):
+                raise ValueError(
+                    "DINOv2 standalone eval does not support previously presaved embeddings - yet"
+                )
+
+            pred_fname = None
+        else:
+            (eval_root, config_dir, pred_dir, code_dir, results_dir,
+             pred_fname) = setup_testing_output_dirs(cf, eval_instance_name)
 
         # logging
         config_loggers(eval_root)

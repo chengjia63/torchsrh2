@@ -11,8 +11,8 @@ data:
     which: CachedCSVParser
     params:
       cached_parser_file:
-        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/dbta28/6f7f1ad5_patch_trainval
-        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/dbta28/6f7f1ad5_patch_test
+        test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_train
+        test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/tcga_glioma/3438b0a3_patch40_trainval
   #transform:
   #  test:
   #    which: HistologyTransform
@@ -46,8 +46,8 @@ data:
           num_transforms: 1
           balance_instance_class: False
       negative_class_index: 1
-      classes_reorder: [0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
-      camera_ready_classes: ["astro_idhmut", "atypical_meningioma", "chondrosarcoma", "chordoma", "circum_glioma", "cpp", "craniopharyngioma", "embryonal", "ependymoma", "germ_cell", "germinoma", "glioblastoma", "glioneuronal", "hemangioma", "histiocytic", "lymphoma", "medulloblastoma", "meningioma", "metastasis", "neuroblastoma", "normal", "oligo_idhmut_codel", "peds_glioma", "pineal", "pituitary_adenoma", "sarcoma", "schwannoma"]
+      classes_reorder: [2,0,1]
+      camera_ready_classes: [Astro, GBM, Oligo]
   loader:
     params:
       common:
@@ -151,6 +151,19 @@ testing:
       perplexity: 50
       learning_rate: auto
       init : pca
+#tune:
+#  diagonal_items: true
+#  params:
+#    testing/ckpt_path:
+#    - 26bc53b7_Aug04-16-16-14_sd1000_lr0.001_uni_tune2/models/ckpt-epoch39-step57240-loss0.00.ckpt
+#    - 3d8dbd86_Aug04-16-16-14_sd1000_lr0.001_mahmoodspecial_tune1/models/ckpt-epoch39-step57240-loss0.00.ckpt
+#    - 7921bbb2_Aug04-16-16-14_sd1000_lr0.0001_uni_tune6/models/ckpt-epoch39-step57240-loss0.00.ckpt
+#    - 817a7220_Aug04-16-16-19_sd1000_lr0.001_all5_tune0/models/ckpt-epoch39-step57240-loss0.00.ckpt
+#    - 8f22d45a_Aug04-16-16-14_sd1000_lr0.0001_goodvm_tune7/models/ckpt-epoch39-step57240-loss0.00.ckpt
+#    - abc1e6ef_Aug04-16-16-19_sd1000_lr0.001_goodvm_tune3/models/ckpt-epoch39-step57240-loss0.00.ckpt
+#    - e7055dce_Aug04-16-16-14_sd1000_lr0.0001_all5_tune4/models/ckpt-epoch39-step57240-loss0.00.ckpt
+#    - ecab89cd_Aug04-16-16-14_sd1000_lr0.0001_mahmoodspecial_tune5/models/ckpt-epoch39-step57240-loss0.00.ckpt
+
 tune:
   diagonal_items: true
   params:
@@ -158,14 +171,6 @@ tune:
     - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/997de344_Aug20-01-14-10_sd1000_dev_tune1/models/eval/training_312499/teacher_checkpoint.pth
     - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/997de344_Aug20-01-14-10_sd1000_dev_tune1/models/eval/training_324999/teacher_checkpoint.pth
 
-#tune:
-#  diagonal_items: true
-#  params:
-#    lightning_module/params/pretrained_weights:
-#    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/6e4fa842_Aug19-17-13-01_sd1000_dev_tune0/models/eval/training_12499/teacher_checkpoint.pth
-#    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/6e4fa842_Aug19-17-13-01_sd1000_dev_tune0/models/eval/training_24999/teacher_checkpoint.pth
-#    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/997de344_Aug20-01-14-10_sd1000_dev_tune1/models/eval/training_12499/teacher_checkpoint.pth
-#
 #tune:
 #  diagonal_items: true
 #  params:

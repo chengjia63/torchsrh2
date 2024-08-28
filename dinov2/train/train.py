@@ -21,6 +21,7 @@ from dinov2.logging import MetricLogger
 from dinov2.utils.utils import CosineScheduler
 
 from dinov2.train.ssl_meta_arch import SSLMetaArch
+from dinov2.fsdp import rankstr
 
 torch.backends.cuda.matmul.allow_tf32 = True  # PyTorch 1.12 sets this to False by default
 logger = logging.getLogger("dinov2")
@@ -164,7 +165,11 @@ def do_train(cfg, model, dataset, tb_writer, resume=False):
                                     save_to_disk=True)
 
     start_iter = checkpointer.resume_or_load(
-        cfg.MODEL.WEIGHTS, resume=resume).get("iteration", -1) + 1
+        cfg.MODEL.WEIGHTS.replace("rank_0", rankstr()),  # input: model_xxxxxx.rank_0.pth
+        resume=resume).get("iteration", -1) + 1
+
+    #start_iter = checkpointer.resume_or_load(
+    #    cfg.MODEL.WEIGHTS, resume=resume).get("iteration", -1) + 1
 
     OFFICIAL_EPOCH_LENGTH = cfg.train.OFFICIAL_EPOCH_LENGTH
     max_iter = cfg.optim.epochs * OFFICIAL_EPOCH_LENGTH

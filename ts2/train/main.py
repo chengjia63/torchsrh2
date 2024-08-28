@@ -14,6 +14,7 @@ from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
 
 from ts2.lm.ssl_systems import (SimCLRSystem, SupConSystem, VICRegSystem,
                                 IJEPASystem, InterPatchJEPASystem)
+from ts2.lm.dinov2_eval_system import Dinov2EvalSystem
 #SimSiamSystem, BYOLSystem)
 
 from ts2.lm.distillation_systems import (CommitteeDistillationSystem,
@@ -41,7 +42,8 @@ lms = {
     "ConchEvalSystem": ConchEvalSystem,
     "VirchowEvalSystem": VirchowEvalSystem,
     "GigapathEvalSystem": GigapathEvalSystem,
-    "PLIPEvalSystem": PLIPEvalSystem
+    "PLIPEvalSystem": PLIPEvalSystem,
+    "Dinov2EvalSystem": Dinov2EvalSystem
 }
 
 
@@ -193,6 +195,9 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
     }:
         con_exp = instantiate_lightning_module(**cf.lightning_module,
                                                training_params=None)
+    elif cf.lightning_module.which == "Dinov2EvalSystem":
+        con_exp = Dinov2EvalSystem(**cf.lightning_module.params)
+
     else:
         ckpt_path = os.path.join(cf.infra.log_dir, cf.infra.exp_name,
                                  cf.testing.ckpt_path)
