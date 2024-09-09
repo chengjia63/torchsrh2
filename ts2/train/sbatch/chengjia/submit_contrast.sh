@@ -30,7 +30,7 @@
 # SBATCH --account=precisionhealth_owned1
 #SBATCH --account=tocho_owned1
 #------------------------------------------------------------------------------
-#SBATCH --nodelist=armis26001
+# SBATCH --nodelist=armis26001
 #------------------------------------------------------------------------------
 #SBATCH --time=14-00:00:00
 # SBATCH --time=27:00:00
@@ -40,7 +40,7 @@
 #SBATCH --gres=gpu:2
 #SBATCH --ntasks-per-node=2
 #------------------------------------------------------------------------------
-#SBATCH --array=0-3
+#SBATCH --array=0-1
 #------------------------------------------------------------------------------
 
 set -x
@@ -51,8 +51,8 @@ set -e
 #srun python main.py -c=config/chengjia/train_simclr_tcga.yaml
 #srun python main.py -c=config/chengjia/train_committee.yaml
 #srun python main.py -c=config/chengjia/train_committe_crd.yaml
-#srun python main.py -c=config/chengjia/train_supcon_dbta28.yaml
-srun python main.py -c=config/chengjia/train_supcon_umbtb.yaml 
+srun python main.py -c=config/chengjia/train_supcon_dbta28.yaml
+#srun python main.py -c=config/chengjia/train_supcon_umbtb.yaml 
 #srun python main_dinov2.py -c=config/chengjia/train_dinov2.yaml
 #srun python main_dinov2.py -c=config/chengjia/train_dinov2_tryresume.yaml
 #srun python main_dinov2.py -c=config/chengjia/finetune_dinov2.yaml

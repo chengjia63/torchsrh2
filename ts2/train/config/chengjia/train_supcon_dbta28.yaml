@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/dbta27_supcon/vitb
+  exp_name: ts2/dbta27_supcon/vitl_uniinit_short
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -11,8 +11,8 @@ data:
     which: CachedCSVParser
     params:
       cached_parser_file:
-        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/dbta28/58b80554_slide_trainval
-        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/dbta28/58b80554_slide_test
+        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/dbta28/32d9d4d1_slide_trainval
+        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/dbta28/32d9d4d1_slide_test
         test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/dbta28/6f7f1ad5_patch_trainval
         test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/dbta28/6f7f1ad5_patch_test
   transform:
@@ -88,11 +88,11 @@ data:
         prefetch_factor: 12
         num_workers: 7
       train:
-        batch_size: 128
+        batch_size: 64
         drop_last: True
         shuffle: True
       trainval:
-        batch_size: 8
+        batch_size: 64
         drop_last: False
         shuffle: False
       test:
@@ -100,22 +100,23 @@ data:
         drop_last: False
         shuffle: False
     trainval_sampler:
-      num_samples: 8
+      num_samples: 64
       replacement: False
 lightning_module:
   which: SupConSystem
   params:
     model_hyperparams:
       backbone_cf:
-        which: vit_base
+        which: vit_large
         params:
           img_size: 224
           patch_size: 16
           global_pool: "token"
           class_token: True
+          init_values: 1.0e-6
       proj_params:
-        hidden_layers: [748]
-        n_out: 768
+        hidden_layers: [1024, 1024]
+        n_out: 1024
         activation: relu
         drop: 0
         bias: True
@@ -144,15 +145,18 @@ lightning_module:
         num_cycles: 0.5
 training:
   resume_checkpoint: null
+  load_backbone:
+    ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin
+    remove_prefix: null
   trainer_params:
-    max_epochs: 40
+    max_epochs: 10
     gradient_clip_val: 0.5
     enable_progress_bar: True
     precision: 'bf16-mixed'
     deterministic: False
   trainval:
     freq:
-      interval: 2
+      interval: 1
       unit: "epoch"
 testing:
   eval_mode: patch_knn
@@ -176,10 +180,8 @@ tune:
   diagonal_items: true
   params:
     lightning_module/params/opt_cf/params/lr:
+    - 0.001
     - 0.0001
-    - 0.00001
-    - 0.000001
     infra/comment:
+    - simclr_1000_lr0.001
     - simclr_1000_lr0.0001
-    - simclr_1000_lr0.00001
-    - simclr_1000_lr0.000001

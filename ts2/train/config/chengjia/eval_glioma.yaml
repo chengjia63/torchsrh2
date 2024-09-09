@@ -168,8 +168,13 @@ tune:
   diagonal_items: true
   params:
     lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/997de344_Aug20-01-14-10_sd1000_dev_tune1/models/eval/training_312499/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/997de344_Aug20-01-14-10_sd1000_dev_tune1/models/eval/training_324999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/c2aa6c21_Sep03-22-57-07_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/c2aa6c21_Sep03-22-57-07_sd1000_dev_tune0/models/eval/training_137499/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/c2aa6c21_Sep03-22-57-07_sd1000_dev_tune0/models/eval/training_149999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/c2aa6c21_Sep03-22-57-07_sd1000_dev_tune0/models/eval/training_162499/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/c2aa6c21_Sep03-22-57-07_sd1000_dev_tune0/models/eval/training_174999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/c2aa6c21_Sep03-22-57-07_sd1000_dev_tune0/models/eval/training_187499/teacher_checkpoint.pth
+
 
 #tune:
 #  diagonal_items: true

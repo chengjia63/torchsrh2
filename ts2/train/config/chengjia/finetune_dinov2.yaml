@@ -50,9 +50,9 @@ dinov2_fair_config:
   optim:
     epochs: 500
     base_lr: 0.004  # learning rate for a batch size of 1024
-    warmup_epochs: 80
+    warmup_epochs: 10
 tune:
   diagonal_items: true
   params:
     dinov2_fair_config/optim/base_lr:
-    - 0.0004
+    - 0.0001

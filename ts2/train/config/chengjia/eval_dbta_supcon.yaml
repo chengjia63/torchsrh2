@@ -1,5 +1,5 @@
 infra:
-  exp_name: TODO #ts2/committeedistil/debug_projnorm_vitl_long_noum # ts2/committeedistil/debug_projnorm_vits_long_crd_expv2 #ts2/committeedistil/debug_projnorm_vitb_long_crd_fixbug #ts2/committeedistil/debug_projnorm_vitl_long  #ts2/committeedistil/debug_projnorm_vitb_long
+  exp_name: ts2/dbta27_supcon/vitl_uniinit_short
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: standaloneeval_37
   log_gpu: True
@@ -13,31 +13,31 @@ data:
       cached_parser_file:
         test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/dbta28/6f7f1ad5_patch_trainval
         test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/dbta28/6f7f1ad5_patch_test
-  #transform:
-  #  test:
-  #    which: HistologyTransform
-  #    params:
-  #      base_aug_params: {}
-  #      strong_aug_params:
-  #        aug_list:
-  #        - which: resize_always_apply
-  #          params:
-  #            size: 224
-  #        aug_prob: 1
   transform:
     test:
       which: HistologyTransform
       params:
-        base_aug_params:
-          do_normalize: False
+        base_aug_params: {}
         strong_aug_params:
           aug_list:
-          - which: dinov2_normalize_always_apply
-            params: {}
           - which: resize_always_apply
             params:
               size: 224
           aug_prob: 1
+  #transform:
+  #  test:
+  #    which: HistologyTransform
+  #    params:
+  #      base_aug_params:
+  #        do_normalize: False
+  #      strong_aug_params:
+  #        aug_list:
+  #        - which: dinov2_normalize_always_apply
+  #          params: {}
+  #        - which: resize_always_apply
+  #          params:
+  #            size: 224
+  #        aug_prob: 1
   test_dataset:
       which: PatchDataset
       which_process_read: memmap
@@ -59,26 +59,26 @@ data:
         batch_size: 256
         drop_last: False
         shuffle: False
-lightning_module:
-  which: Dinov2EvalSystem
-  params:
-    model_hyperparams:
-        arch: vit_large
-        img_size: 224
-        patch_size: 16
-        global_pool: "token"
-        class_token: True
-        block_chunks: 4
-        ffn_bias: true
-        ffn_layer: "mlp"
-        num_register_tokens: 0
-        interpolate_antialias: false
-        interpolate_offset: 0.1
-        layerscale: 1.0e-05
-        pretrained_weights: ""
-        proj_bias: true
-        qkv_bias: true
-    pretrained_weights: TODO
+#lightning_module:
+#  which: Dinov2EvalSystem
+#  params:
+#    model_hyperparams:
+#        arch: vit_large
+#        img_size: 224
+#        patch_size: 16
+#        global_pool: "token"
+#        class_token: True
+#        block_chunks: 4
+#        ffn_bias: true
+#        ffn_layer: "mlp"
+#        num_register_tokens: 0
+#        interpolate_antialias: false
+#        interpolate_offset: 0.1
+#        layerscale: 1.0e-05
+#        pretrained_weights: ""
+#        proj_bias: true
+#        qkv_bias: true
+#    pretrained_weights: TODO
 #lightning_module:
 #  which: Dinov2EvalSystem
 #  params:
@@ -114,23 +114,24 @@ lightning_module:
 #          init_values: 1.0e-6
 #      pred_params: null
 #      student_proj_params: null
-#lightning_module:
-#  which: SimCLRSystem
-#  params:
-#    model_hyperparams:
-#      backbone_cf:
-#        which: vit_small
-#        params:
-#          img_size: 224
-#          patch_size: 16
-#          global_pool: "token"
-#          class_token: True
-#      proj_params:
-#        hidden_layers: [384]
-#        n_out: 384
-#        activation: relu
-#        drop: 0
-#        bias: True
+lightning_module:
+  which: SimCLRSystem
+  params:
+    model_hyperparams:
+      backbone_cf:
+        which: vit_large
+        params:
+          img_size: 224
+          patch_size: 16
+          global_pool: "token"
+          class_token: True
+          init_values: 1.0e-6
+      proj_params:
+        hidden_layers: [1024, 1024]
+        n_out: 1024
+        activation: relu
+        drop: 0
+        bias: True
 
 testing:
   eval_mode: patch_knn
@@ -154,13 +155,28 @@ testing:
 tune:
   diagonal_items: true
   params:
-    lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/c2aa6c21_Sep03-22-57-07_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/c2aa6c21_Sep03-22-57-07_sd1000_dev_tune0/models/eval/training_137499/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/c2aa6c21_Sep03-22-57-07_sd1000_dev_tune0/models/eval/training_149999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/c2aa6c21_Sep03-22-57-07_sd1000_dev_tune0/models/eval/training_162499/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/c2aa6c21_Sep03-22-57-07_sd1000_dev_tune0/models/eval/training_174999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/he_neuro_dinov2_uniinit/c2aa6c21_Sep03-22-57-07_sd1000_dev_tune0/models/eval/training_187499/teacher_checkpoint.pth
+    testing/ckpt_path:
+    - db6b12e7_Sep08-19-01-55_sd1000_simclr_1000_lr0.00001_tune0/models/ckpt-epoch0-step3138-loss0.00.ckpt
+    - db6b12e7_Sep08-19-01-55_sd1000_simclr_1000_lr0.00001_tune0/models/ckpt-epoch1-step6276-loss0.00.ckpt
+    - db6b12e7_Sep08-19-01-55_sd1000_simclr_1000_lr0.00001_tune0/models/ckpt-epoch2-step9414-loss0.00.ckpt
+    - db6b12e7_Sep08-19-01-55_sd1000_simclr_1000_lr0.00001_tune0/models/ckpt-epoch3-step12552-loss0.00.ckpt
+    - db6b12e7_Sep08-19-01-55_sd1000_simclr_1000_lr0.00001_tune0/models/ckpt-epoch4-step15690-loss0.00.ckpt
+    - db6b12e7_Sep08-19-01-55_sd1000_simclr_1000_lr0.00001_tune0/models/ckpt-epoch5-step18828-loss0.00.ckpt
+    - db6b12e7_Sep08-19-01-55_sd1000_simclr_1000_lr0.00001_tune0/models/ckpt-epoch6-step21966-loss0.00.ckpt
+    - db6b12e7_Sep08-19-01-55_sd1000_simclr_1000_lr0.00001_tune0/models/ckpt-epoch7-step25104-loss0.00.ckpt
+    - db6b12e7_Sep08-19-01-55_sd1000_simclr_1000_lr0.00001_tune0/models/ckpt-epoch8-step28242-loss0.00.ckpt
+    - db6b12e7_Sep08-19-01-55_sd1000_simclr_1000_lr0.00001_tune0/models/ckpt-epoch9-step31380-loss0.00.ckpt
+    infra/comment:
+    - epoch0
+    - epoch1
+    - epoch2
+    - epoch3
+    - epoch4
+    - epoch5
+    - epoch6
+    - epoch7
+    - epoch8
+    - epoch9
 
 #tune:
 #  diagonal_items: true
