@@ -11,6 +11,7 @@ import einops
 import math
 from ts2.data.db_improc import MemmapReader
 from ts2.data.balanceable_dataset import BalanceableBaseDataset
+from itertools import chain
 import random
 
 
@@ -129,10 +130,12 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
         return {"image": im, "label": target}
 
 
-class SingleLevelHierarchicalDatasetDINOV2(SingleLevelHierarchicalDataset):
+class SingleLevelHierarchicalDatasetSingleViewDINOV2(SingleLevelHierarchicalDataset):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        assert self.num_samples_ == 1 # This version only work with 1 xform
+        assert self.num_transforms_ == 0
 
     @torch.no_grad()
     def read_images(self, inst: Dict):
@@ -149,7 +152,44 @@ class SingleLevelHierarchicalDatasetDINOV2(SingleLevelHierarchicalDataset):
         im_id = None
         assert self.transform_ is not None
         images = self.transform_(images.squeeze())
+        return images
 
+    def __getitem__(self, idx: int):
+        """Retrieve a list of patches, from the wholeslide specified by idx"""
+        idx = idx % len(self.instances_)
+        instance = self.instances_[idx]
+        target = self.class_to_idx_[instance["label"]]
+        im = self.read_images(instance)
+
+        if self.target_transform_ is not None:
+            target = self.target_transform_(target)
+
+        return im, target
+
+SingleLevelHierarchicalDatasetDINOV2 = SingleLevelHierarchicalDatasetSingleViewDINOV2
+
+class SingleLevelHierarchicalDatasetMultipleViewDINOV2(SingleLevelHierarchicalDataset):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        assert self.num_transforms_ == 0
+
+    @torch.no_grad()
+    def read_images(self, inst: Dict):
+        """Read in a list of patches, different patches and transformations"""
+
+        #patches_list = inst["patches"]
+        im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
+        #mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
+
+        images = self.process_read_im_(
+            self.make_im_path(self.tensor_shape_map[inst["name"]]["path"]),
+            tuple(self.tensor_shape_map[inst["name"]]["shape"]), im_id)
+
+        im_id = None
+        assert self.transform_ is not None
+        images = [self.transform_(i) for i in images]
+        images = {k: list(chain(*[i[k] for i in images])) for k in images[0].keys()}
         return images
 
     def __getitem__(self, idx: int):

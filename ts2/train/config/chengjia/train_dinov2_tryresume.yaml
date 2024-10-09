@@ -43,7 +43,7 @@ data:
       params:
         common:
           data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
-          num_transforms: 2
+          num_transforms: 0
           num_samples: 1
           balance_instance_class: False
         train:

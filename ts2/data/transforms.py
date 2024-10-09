@@ -16,13 +16,13 @@ from torchvision.transforms import (
     Compose, Resize, RandomCrop, Normalize, RandomAffine, RandomApply,
     RandomHorizontalFlip, RandomVerticalFlip, ColorJitter, GaussianBlur,
     RandomErasing, RandomAutocontrast, RandomSolarize, RandomAdjustSharpness,
-    Grayscale, RandomResizedCrop, RandomGrayscale)
+    Grayscale, RandomResizedCrop, RandomGrayscale, CenterCrop)
 from torchvision.transforms import RandomEqualize, RandomPosterize, ConvertImageDtype
 from torchvision.transforms import functional as F
 
 from torch import Tensor
 
-from dinov2.data.augmentations import DataAugmentationDINO
+from dinov2.data.augmentations import (DataAugmentationDINO, DataAugmentationHiDiscDINO)
 from dinov2.data.transforms import (make_normalize_transform)
 
 
@@ -46,7 +46,7 @@ class HistologyTransform(torch.nn.Module):
 class SRHBaseTransform(torch.nn.Module):
     """Base transformations for SRH training."""
 
-    def __init__(self, laser_noise_config=None, base_aug="three_channels"):
+    def __init__(self, laser_noise_config=None, get_third_channel_params=None):
         super().__init__()
         u16_min = (0, 0)
         u16_max = (65536, 65536)  # 2^16
@@ -59,7 +59,7 @@ class SRHBaseTransform(torch.nn.Module):
                     ModuleList([LaserNoise(**laser_noise_config.params)]),
                     laser_noise_config.prob))
 
-        layers += [GetThirdChannel(mode=base_aug), MinMaxChop()]
+        layers += [GetThirdChannel(**get_third_channel_params), MinMaxChop()]
         self.model = Compose(layers)
 
     def forward(self, x: Tensor):  # pylint: disable=missing-function-docstring
@@ -127,7 +127,9 @@ class StrongTransform(torch.nn.Module):
             "inpaint_rows_always_apply": InpaintRows,
             "inpaint_rows": partial(rand_apply_p, which=InpaintRows),
             "resize_always_apply": Resize,
+            "hidisc_dinov2_always_apply": DataAugmentationHiDiscDINO,
             "dinov2_always_apply": DataAugmentationDINO,
+            "center_crop_always_apply": CenterCrop,
             "resize": Resize,
             "normalize_always_apply": Normalize,
             "dinov2_normalize_always_apply": Dinov2Normalization,

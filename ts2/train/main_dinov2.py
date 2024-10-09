@@ -83,6 +83,7 @@ def main():
 
     logging.info("Doing training")
 
+    cf.dinov2_fair_config.crops.local_crops_number *= dm.train_dataset_.num_samples_
     model = SSLMetaArch(cf.dinov2_fair_config)
 
     if cf.ts_wrap_config.get("load_uni_ckpt", {}).get("do", False):

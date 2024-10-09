@@ -15,9 +15,7 @@ from torchsrh.datasets.common import patch_code_to_list
 
 @unique
 class DiscriminationLevel(str, Enum):
-    CELL = "cell"
     PATCH = "patch"
-    PATCH_NZ = "patch_nz"
     SLIDE = "slide"
     PATIENT = "patient"
     HIERARCHICAL = "hierarchical"
@@ -119,6 +117,55 @@ class SRHCSVParser(ABC):
 
 
 class PatchCSVParser(SRHCSVParser):
+    """Parser to work with MLiNS internal SRH dataset metadata files
+
+    It works with json metadata files for each patient and requires dataframes
+    to describe the slides **in a single patient** that we want. The dataframe
+    should have the format:
+    ```institution, patient, mosaic, patch_code, label1, label2, ... ```
+    It produces list of instances, which are dictionaries in the format
+    specified by make_instance_dict function.
+
+    In patch dataset:
+    - Instance list is a list of patches.
+    - Each patch have its own label, which may be overwritten by the patch's
+        individual patch code (tumor normal nondiag), which is specified via
+        use_patch_code_as_label
+    - process_slides calls process_slide in a loop, with keep_label=True
+
+    In slide dataset:
+    - Instance list is a list of slides, which include a list of patches.
+    - The list of patches for each slide does not contain label (same slide
+        level label not repeated for each patch). process_slide called for
+        each slide, with keep_label=False
+    - Slide has a label that can not be everwritten by patch code (there isn't
+        one for all the patches here), but only patches with patch code
+        specified in the csv are included.
+    - get_slide_instances calls get_gt separately outside of process_slide,
+        with patch code None, i.e. slide label is not overwritten by patch code
+
+    In patient dataset:
+    - Similar to slide dataset. Instance list is a list of patients, which
+        then include a list of all patches in the patient.
+    - Since we define patients as a <patient_id, primary_label> tuple, the
+        primary label from the CSV is used directly as the label
+    - process_all_slides is called with the default keep_label=False
+    - Note the groupby is different for the patient dataset because the other
+        datasets doesn't have a patient label, and it is okay if different
+        patient are grouped together while parsing.
+
+    In Hierarchical dataset:
+    - Similar to patient dataset, groupby includes the label.
+    - Instance list is a list of patients, which contains a list of slides,
+        which contains a list of patches
+    - list of patches is generated using process_slide, which is called with
+        keep_label=False. the patch inclusion is filtered by patch code
+    - list of slides is doen via the loop of the df, with get_gt called for
+        the slide (with the slide's row in the df) with patch_code=None. Each
+        slide's label should be the same, there is an oppotunity to remove this
+        in the future - possible todo.
+    - each patient contains the patient label produced by groupby.
+    """
 
     def __init__(self, data_root: str, seg_model: str, slide_patch_thres: int,
                  df: Union[pd.DataFrame, str], which_patch_path_func: str,
@@ -215,7 +262,8 @@ class PatchCSVParser(SRHCSVParser):
                                    get_patch_gt=self.get_gt_,
                                    **self.hyper_)
             for _, slide_s in patient_s.iterrows():
-                patches_ij, slide_shape_ij = mp_i.process_slide(slide_s, keep_label=False)
+                patches_ij, slide_shape_ij = mp_i.process_slide(
+                    slide_s, keep_label=False)
 
                 if patches_ij:
                     slide_instance_ij = {
@@ -283,7 +331,8 @@ class PatchCSVParser(SRHCSVParser):
 
             slides_i = []
             for _, slide_s in patient_s.iterrows():
-                patches_ij, slide_shape = mp_i.process_slide(slide_s)
+                patches_ij, slide_shape = mp_i.process_slide(slide_s,
+                                                             keep_label=False)
 
                 if patches_ij:
                     slides_i.append({
@@ -356,16 +405,7 @@ class SRHMetaParser(ABC):
 
 
 class PatchMetaParser(SRHMetaParser):
-    """Parser to work with MLiNS internal SRH dataset metadata files
-
-    It works with json metadata files for each patient and requires dataframes
-    to describe the slides **in a single patient** that we want. The dataframe
-    should have the format:
-    ```
-    institution, patient, mosaic, patch_code, label1, label2, ...
-    ```
-    It produces list of instances, which are dictionaries in the format
-    specified by make_instance_dict function.
+    """ Metadata parser taht should be instantiated for each patient
 
     Attributes:
         data_root_: str containing the root path of the dataset

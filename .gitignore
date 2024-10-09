@@ -14,3 +14,4 @@ slurm_out/
 *.npz
 .ipynb_checkpoints
 core.*
+bak/

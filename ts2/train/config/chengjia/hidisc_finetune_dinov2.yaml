@@ -21,18 +21,18 @@ data:
           do_normalize: False
         strong_aug_params:
           aug_list:
-          - which: dinov2_always_apply
+          - which: hidisc_dinov2_always_apply
             params: ${........dinov2_fair_config.crops}
           aug_prob: 1
     trainval: ${.train}
   dataset:
-      which: SingleLevelHierarchicalDatasetDINOV2
+      which: SingleLevelHierarchicalDatasetMultipleViewDINOV2
       which_process_read: memmap_multi
       params:
         common:
           data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
           num_transforms: 0
-          num_samples: 1
+          num_samples: 2
           balance_instance_class: False
         train:
           num_instance_self_replicate: 30
@@ -51,8 +51,14 @@ dinov2_fair_config:
     epochs: 500
     base_lr: 0.004  # learning rate for a batch size of 1024
     warmup_epochs: 10
+  crops:
+    global_crops_scale: [0.32, 1.0]
+    local_crops_number: 4
+    local_crops_scale: [0.05, 0.32]
+    global_crops_size: 224
+    local_crops_size: 96
 tune:
   diagonal_items: true
   params:
     dinov2_fair_config/optim/base_lr:
-    - 0.0001
+    - 0.00005
