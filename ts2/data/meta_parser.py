@@ -15,6 +15,7 @@ from torchsrh.datasets.common import patch_code_to_list
 
 @unique
 class DiscriminationLevel(str, Enum):
+    CELL = "cell"
     PATCH = "patch"
     SLIDE = "slide"
     PATIENT = "patient"
@@ -66,7 +67,7 @@ class GTParser():
     def get_gt_with_patch_code(self, x: pd.Series,
                                patch_code: str) -> str:  # x is a row
         assert patch_code in {
-            None, "tumor", "normal", "nondiagnostic", "nonblank"
+            None, "tumor", "normal", "nondiagnostic", "nonblank", "blank"
         }
 
         if patch_code in {None, "tumor", "nonblank"}:
@@ -74,10 +75,11 @@ class GTParser():
         else:
             return patch_code
 
-    def get_gt_without_patch_code(self, x: pd.Series,
-                                  patch_code: str) -> str:  # x is a row
+    def get_gt_without_patch_code(self,
+                                  x: pd.Series,
+                                  patch_code: Optional[str] = None) -> str:
         assert patch_code in {
-            None, "tumor", "normal", "nondiagnostic", "nonblank"
+            None, "tumor", "normal", "nondiagnostic", "nonblank", "blank"
         }
 
         return self.primary_label_func_(self.make_gt_list(x))

@@ -19,10 +19,12 @@ from torchvision.transforms import (
     Grayscale, RandomResizedCrop, RandomGrayscale, CenterCrop)
 from torchvision.transforms import RandomEqualize, RandomPosterize, ConvertImageDtype
 from torchvision.transforms import functional as F
+from torchvision.transforms.functional import adjust_contrast, adjust_brightness
 
 from torch import Tensor
 
-from dinov2.data.augmentations import (DataAugmentationDINO, DataAugmentationHiDiscDINO)
+from dinov2.data.augmentations import (DataAugmentationDINO,
+                                       DataAugmentationHiDiscDINO)
 from dinov2.data.transforms import (make_normalize_transform)
 
 
@@ -32,6 +34,7 @@ class HistologyTransform(torch.nn.Module):
     def __init__(self, which_set, base_aug_params, strong_aug_params):
         super().__init__()
         base_augs = {
+            "scsrh": SCSRHBaseTransform,
             "srh": SRHBaseTransform,
             "he": NoBaseTransform,
             "cifar": VisionBaseTransform
@@ -41,6 +44,65 @@ class HistologyTransform(torch.nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:  # pylint: disable=missing-function-docstring
         return self.strong_aug(self.base_aug(x))
+
+
+class ProcessSCSRHMask(torch.nn.Module):
+
+    def __init__(self, how_to_process, bg_fill=[9957.5889, 10057.9795]):
+        super().__init__()
+        if how_to_process == "small_patch":
+            self.forward_impl = self.small_patch
+            self.bg_fill = None
+        elif how_to_process == "rm_background":
+            self.bg_fill = bg_fill
+            self.forward_impl = self.rm_bg
+
+    def forward(self, x: Tensor):
+        return self.forward_impl(x)
+
+    def small_patch(self, x: Tensor):
+        return x[:2, ...]
+
+    def rm_bg(self, x: Tensor):
+        x[0, ...][(1 - x[-1, ...]).to(bool)] = self.bg_fill[0]
+        x[1, ...][(1 - x[-1, ...]).to(bool)] = self.bg_fill[1]
+        return x[:2, ...]
+
+
+class SCSRHBaseTransform(torch.nn.Module):
+
+    def __init__(self,
+                 mask_params,
+                 laser_noise_config=None,
+                 get_third_channel_params=None,
+                 to_uint8=False):
+        super().__init__()
+        u16_min = (0, 0)
+        u16_max = (65536, 65536)  # 2^16
+
+        layers = [
+            ProcessSCSRHMask(**mask_params),
+            Normalize(mean=u16_min, std=u16_max)
+        ]
+
+        if laser_noise_config is not None:
+            layers.append(
+                RandomApply(
+                    ModuleList([LaserNoise(**laser_noise_config.params)]),
+                    laser_noise_config.prob))
+        layers += [GetThirdChannel(**get_third_channel_params), MinMaxChop()]
+
+
+        def to_uint8_func(x):
+            return (adjust_brightness(adjust_contrast(x, 2), 2) * 255).to(torch.uint8)
+
+        if to_uint8: 
+            layers.append(to_uint8_func)
+
+        self.model = Compose(layers)
+
+    def forward(self, x: Tensor):  # pylint: disable=missing-function-docstring
+        return self.model(x)
 
 
 class SRHBaseTransform(torch.nn.Module):

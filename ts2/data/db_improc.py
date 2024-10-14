@@ -17,11 +17,36 @@ def instantiate_process_read(which: str, which_set: Optional[str] = "srh"):
         return MemmapMultiReader(which_set=which_set)
     elif which == "memmap_multi_fm":
         return MemmapMultiReaderWithFoundation(which_set=which_set)
+    elif which == "cell_memmap":
+        return CellMemmapReader(which_set=which_set)
 
     return {
         "srh": process_read_srh,
         "png": process_read_png,
     }[which]
+
+
+class CellMemmapReader():
+
+    def __init__(self, which_set):
+        dtype_map = {"scsrh": "uint16", "srh": "uint16"}
+        self.dtype_ = dtype_map.get(which_set, "uint8")
+
+    def __call__(self, mm_path, tensor_shape, patch_idx):
+        """Read in two channel image
+
+        Returns:
+            A 2 channel torch Tensor in the shape 2 * H * W
+        """
+        fd = np.memmap(mm_path,
+                       dtype=self.dtype_,
+                       mode="r",
+                       shape=tensor_shape)
+        im = np.array(fd[patch_idx, ...])
+        fd._mmap.close()
+        del fd
+        return torch.from_numpy(im.astype(np.float32)).to(
+            torch.float32).contiguous()
 
 
 class MemmapReader():

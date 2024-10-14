@@ -37,10 +37,10 @@
 # SBATCH --time=16:00:00
 #------------------------------------------------------------------------------
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:8
-#SBATCH --ntasks-per-node=8
+#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=2
 #------------------------------------------------------------------------------
-#SBATCH --array=0
+#SBATCH --array=3
 #------------------------------------------------------------------------------
 
 set -x
@@ -56,4 +56,6 @@ set -e
 #srun python main_dinov2.py -c=config/chengjia/train_dinov2.yaml
 #srun python main_dinov2.py -c=config/chengjia/train_dinov2_tryresume.yaml
 #srun python main_dinov2.py -c=config/chengjia/finetune_dinov2.yaml
-srun python main_dinov2.py -c=config/chengjia/hidisc_finetune_dinov2.yaml
+#srun python main_dinov2.py -c=config/chengjia/hidisc_finetune_dinov2.yaml
+
+srun python main_dinov2.py -c=config/chengjia/train_dinov2_scsrh.yaml

@@ -10,10 +10,7 @@ from omegaconf import OmegaConf
 from typing import Dict, Any
 import json
 import collections
-
-from ts2.train.common import setup_checkpoints
-from ts2.train.infra import (parse_args, read_process_cf, setup_infra_training,
-                             setup_infra_testing, get_rank)
+from torch.utils.tensorboard import SummaryWriter
 
 from dinov2.train.ssl_meta_arch import SSLMetaArch
 from dinov2.train.train import do_train
@@ -22,7 +19,11 @@ import dinov2.distributed as distributed
 from dinov2.utils import utils as dinov2_utils
 from dinov2.utils.config import apply_scaling_rules_to_cfg
 
-from torch.utils.tensorboard import SummaryWriter
+from ts2.train.common import setup_checkpoints
+from ts2.train.infra import (parse_args, read_process_cf, setup_infra_training,
+                             setup_infra_testing, get_rank)
+from ts2.data.histology_data_module import PatchDataModule
+from ts2.data.cell_data_module import CellDataModule
 
 
 def default_setup(seed):
@@ -49,9 +50,6 @@ def fair_setup(cf, exp_root, model_dir):
     return cf
 
 
-from ts2.data.histology_data_module import PatchDataModule
-
-
 @torch.no_grad()
 def load_uni_one_bbone(backbone, ckpt):
     backbone.cls_token.copy_(ckpt["cls_token"])
@@ -76,7 +74,10 @@ def main():
     exp_root, model_dir = setup_infra_training(cf)
     cf = fair_setup(cf, exp_root, model_dir)
 
-    dm = PatchDataModule(config=cf)
+    if cf.data.set == "scsrh":
+        dm = CellDataModule(config=cf)
+    else:
+        dm = PatchDataModule(config=cf)
     dm.setup(stage="fit")
 
     tb_writer = SummaryWriter(log_dir=os.path.join(exp_root, "tb"))
@@ -99,10 +100,6 @@ def main():
              dataset=dm.train_dataset_,
              tb_writer=tb_writer,
              resume=not cf["ts_wrap_config"].get("no_resume", True))
-
-    #if ("testing" in cf) and (get_rank() == 0 or get_rank() is None):
-    #    logging.info("Doing testing on rank 0")
-    #    do_testing(cf, dm, con_exp, training_exp_root)
 
 
 if __name__ == "__main__":

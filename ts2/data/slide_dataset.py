@@ -130,11 +130,12 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
         return {"image": im, "label": target}
 
 
-class SingleLevelHierarchicalDatasetSingleViewDINOV2(SingleLevelHierarchicalDataset):
+class SingleLevelHierarchicalDatasetSingleViewDINOV2(
+        SingleLevelHierarchicalDataset):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        assert self.num_samples_ == 1 # This version only work with 1 xform
+        assert self.num_samples_ == 1  # This version only work with 1 xform
         assert self.num_transforms_ == 0
 
     @torch.no_grad()
@@ -166,9 +167,12 @@ class SingleLevelHierarchicalDatasetSingleViewDINOV2(SingleLevelHierarchicalData
 
         return im, target
 
+
 SingleLevelHierarchicalDatasetDINOV2 = SingleLevelHierarchicalDatasetSingleViewDINOV2
 
-class SingleLevelHierarchicalDatasetMultipleViewDINOV2(SingleLevelHierarchicalDataset):
+
+class SingleLevelHierarchicalDatasetMultipleViewDINOV2(
+        SingleLevelHierarchicalDataset):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -189,7 +193,10 @@ class SingleLevelHierarchicalDatasetMultipleViewDINOV2(SingleLevelHierarchicalDa
         im_id = None
         assert self.transform_ is not None
         images = [self.transform_(i) for i in images]
-        images = {k: list(chain(*[i[k] for i in images])) for k in images[0].keys()}
+        images = {
+            k: list(chain(*[i[k] for i in images]))
+            for k in images[0].keys()
+        }
         return images
 
     def __getitem__(self, idx: int):

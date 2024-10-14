@@ -1,0 +1,94 @@
+infra:
+  seed: 1000
+data:
+  set: scsrh
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+        train: ./tsmeta/srh7v1_sc/55e0deb2_cell_train
+        trainval: ./tsmeta/srh7v1_sc/55e0deb2_cell_trainval
+  transform:
+    train:
+      which: HistologyTransform
+      params:
+        base_aug_params:
+          laser_noise_config: null
+          get_third_channel_params:
+            mode: three_channels
+            subtracted_base: 0.07629394531
+          mask_params:
+            how_to_process: rm_background #small_patch
+            bg_fill: [9957.5889, 10057.9795]
+          to_uint8: True
+        strong_aug_params:
+          aug_list: []
+          #- which: random_horiz_flip
+          #  params: {}
+          #- which: random_vert_flip
+          #  params: {}
+          #- which: random_autocontrast
+          #  params: {}
+          #- which: random_sharpness
+          #  params:
+          #    sharpness_factor: 2
+          #- which: color_jitter
+          #  params:
+          #    brightness: 0.4
+          #    contrast: 0.4
+          #    saturation: 0.4
+          #    hue: 0.2
+          #- which: gaussian_blur
+          #  params:
+          #    kernel_size: 5
+          #    sigma: 1
+          #- which: gaussian_noise
+          #  params: {}
+          #- which: random_erasing
+          #  params: {}
+          #- which: random_resized_crop
+          #  params:
+          #    size: 64
+          #- which: dinov2_always_apply
+          #  params:
+          #    global_crops_scale:
+          #    - 0.32
+          #    - 1.0
+          #    local_crops_number: 8
+          #    local_crops_scale:
+          #    - 0.05
+          #    - 0.32
+          #    global_crops_size: 48
+          #    local_crops_size: 20
+          aug_prob: 1
+    trainval: ${.train}
+  dataset:
+    which: CellDatasetDINOv2 #CellDataset # SingleLevelHierarchicalDataset
+    which_process_read: cell_memmap
+    params:
+      common:
+        data_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root2/
+        num_transforms: 0
+        #num_samples: 1
+        #num_instance_self_replicate: 1
+        #max_hierarchical_replicate: 1
+        balance_instance_class: False
+      train: {}
+      trainval: {}
+  loader:
+    params:
+      common:
+        pin_memory: True
+        prefetch_factor: 10
+        num_workers: auto
+      train:
+        batch_size: 512
+        drop_last: True
+        shuffle: True
+      trainval:
+        batch_size: 128
+        drop_last: False
+        shuffle: False
+    trainval_sampler:
+      num_samples: 64
+      replacement: False
