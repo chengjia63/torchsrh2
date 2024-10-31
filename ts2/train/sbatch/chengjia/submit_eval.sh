@@ -35,22 +35,25 @@
 #------------------------------------------------------------------------------
 # SBATCH --nodelist=armis20108
 #------------------------------------------------------------------------------
-#SBATCH --time=1-00:00:00
-# SBATCH --time=01:00:00
+# SBATCH --time=1-00:00:00
+#SBATCH --time=01:00:00
 #------------------------------------------------------------------------------
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #------------------------------------------------------------------------------
-#SBATCH --array=0-4
+#SBATCH --array=0-3
 #------------------------------------------------------------------------------
 
 echo @@@ EVALUATION @@@
 set -x
 set -e
 
+python main.py -c=config/chengjia/eval_scsrh7_dinov2.yaml
+#python main.py -c=config/chengjia/eval_scsrh7.yaml
+
 #python main.py -c=config/chengjia/eval_dbta_supcon.yaml
 
-python main.py -c=config/chengjia/eval.yaml
-python main.py -c=config/chengjia/eval_glioma.yaml
-python main.py -c=config/chengjia/eval_umbtb.yaml
+#python main.py -c=config/chengjia/eval.yaml
+#python main.py -c=config/chengjia/eval_glioma.yaml
+#python main.py -c=config/chengjia/eval_umbtb.yaml

@@ -106,3 +106,23 @@ class BalanceableBaseDataset(Dataset):
             all_repl_instances.extend((inst_l * n_rep)[:val_sample])
 
         self.instances_ = all_repl_instances
+
+    def sample_instances_wo_replacement(self,
+                                        num_sample_wo_replacement,
+                                        balance_per_class=False):
+        logging.info("sampling instances without replacement")
+        random.shuffle(self.instances_)
+
+        if balance_per_class:
+            self.process_classes()  # Get classes
+            val_sample = num_sample_wo_replacement // len(self.classes_) + 1
+            all_repl_instances = []
+
+            for l in self.classes_:
+                inst_l = [i for i in self.instances_ if i["label"] == l]
+                all_repl_instances.extend(inst_l[:val_sample])
+
+            self.instances_ = all_repl_instances
+
+        else:
+            self.instances_ = self.instances_[:num_sample_wo_replacement]

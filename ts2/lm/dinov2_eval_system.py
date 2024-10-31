@@ -9,7 +9,9 @@ class Dinov2EvalSystem(pl.LightningModule):
     def __init__(self, model_hyperparams, pretrained_weights):
         super().__init__()
         self.teacher_backbone, _ = build_model(model_hyperparams,
-                                               only_teacher=True)
+                                               only_teacher=True,
+                                               img_size=model_hyperparams.get(
+                                                   "img_size", 224))
         dinov2_utils.load_pretrained_weights(self.teacher_backbone,
                                              pretrained_weights, "teacher")
         self.teacher_backbone.eval()

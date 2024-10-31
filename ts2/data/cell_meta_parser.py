@@ -259,4 +259,4 @@ class CellMetaParser():
             itertools.chain(*itertools.repeat(instances, num_repeat)))
 
         return sorted(instances_repeated[:self.slide_cell_thres_],
-                      key=lambda x: x["patch_idx"])
+                      key=lambda x: x["cell_idx"])

@@ -203,13 +203,19 @@ class PatchDataModule(pl.LightningDataModule):
             loader_params["collate_fn"] = get_collate_fn(
                 **loader_params['collate_fn'])
 
-        if (("trainval_sampler" in self.loader_config_)
-                and (self.loader_config_.trainval_sampler.num_samples > 0)):
-            loader_params.update({
-                "sampler":
-                RandomSampler(self.trainval_dataset_,
-                              **self.loader_config_.trainval_sampler)
-            })
+
+        if ("trainval_sampler" in self.loader_config_):
+            raise ValueError(
+                ("trainval_sampler no longer supported in loader config. ",
+                 "implement this in your dataset"))
+
+        #if (("trainval_sampler" in self.loader_config_)
+        #        and (self.loader_config_.trainval_sampler.num_samples > 0)):
+        #    loader_params.update({
+        #        "sampler":
+        #        RandomSampler(self.trainval_dataset_,
+        #                      **self.loader_config_.trainval_sampler)
+        #    })
         print(loader_params)
         return DataLoader(self.trainval_dataset_, **loader_params)
 

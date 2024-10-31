@@ -1,7 +1,5 @@
 import os
 from os.path import join as opj
-from datetime import datetime
-import uuid
 import gzip
 import logging
 import torch
@@ -10,22 +8,26 @@ from omegaconf import OmegaConf
 from typing import Dict, Any
 
 from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
-#from opensrh.train.common import get_contrastive_dataloaders as get_opensrh_contrastive_dataloaders
-
-from ts2.lm.ssl_systems import (SimCLRSystem, SupConSystem, VICRegSystem,
+from ts2.lm.ssl_systems import (FlattenSystem, SimCLRSystem, SupConSystem, VICRegSystem,
                                 IJEPASystem, InterPatchJEPASystem)
 from ts2.lm.dinov2_eval_system import Dinov2EvalSystem
-#SimSiamSystem, BYOLSystem)
-
 from ts2.lm.distillation_systems import (CommitteeDistillationSystem,
                                          CRDDistillationSystem)
+from ts2.alignment.compute_foundation_embeddings import (UNIEvalSystem,
+                                                         ConchEvalSystem,
+                                                         VirchowEvalSystem,
+                                                         GigapathEvalSystem,
+                                                         PLIPEvalSystem)
+
 from ts2.data.histology_data_module import PatchDataModule
+from ts2.data.cell_data_module import CellDataModule
+
 from ts2.train.common import setup_checkpoints
 from ts2.train.infra import (parse_args, read_process_cf, setup_infra_training,
                              setup_infra_testing, get_rank)
+
 from ts2.eval.common import get_knn_logits, load_prediction
 from ts2.eval.eval_modules import do_eval
-from ts2.alignment.compute_foundation_embeddings import UNIEvalSystem, ConchEvalSystem, VirchowEvalSystem, GigapathEvalSystem, PLIPEvalSystem
 
 lms = {
     "SupConSystem": SupConSystem,
@@ -43,7 +45,8 @@ lms = {
     "VirchowEvalSystem": VirchowEvalSystem,
     "GigapathEvalSystem": GigapathEvalSystem,
     "PLIPEvalSystem": PLIPEvalSystem,
-    "Dinov2EvalSystem": Dinov2EvalSystem
+    "Dinov2EvalSystem": Dinov2EvalSystem,
+    "FlattenSystem": FlattenSystem
 }
 
 
@@ -55,7 +58,6 @@ def instantiate_lightning_module_from_ckpt(which: str,
                                            ckpt: str,
                                            params,
                                            training_params=None):
-
     return lms[which].load_from_checkpoint(ckpt,
                                            training_params=training_params,
                                            **params)
@@ -95,17 +97,24 @@ def do_training(cf):
     # setup training infra
     exp_root, model_dir = setup_infra_training(cf)
 
-    # setup data, possibly train_
-    dm = PatchDataModule(config=cf)
+    # setup data, possibly
+    if cf.data.set == "scsrh":
+        dm = CellDataModule(config=cf)
+    else:
+        dm = PatchDataModule(config=cf)
     dm.setup(stage="fit")
+
+    # setup training parameters
     training_params = get_num_it_per_train_ep(len(dm.train_dataset_), cf)
     training_params.update(
         {"num_ep_total": cf["training"]["trainer_params"]["max_epochs"]})
     logging.info(f"actual num_it_per_ep {training_params}")
 
+    # Setup lightning module
     con_exp = instantiate_lightning_module(**cf["lightning_module"],
                                            training_params=training_params)
 
+    # Load pretrained checkpoints
     if ("load_backbone" in cf.training) and (cf.training.load_backbone
                                              is not None):
         # load lightning checkpint
@@ -191,13 +200,12 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
                 training_params=None).load_state_dict(exist_statedict)
     elif cf.lightning_module.which in {
             "UNIEvalSystem", "ConchEvalSystem", "VirchowEvalSystem",
-            "GigapathEvalSystem", "PLIPEvalSystem"
+            "GigapathEvalSystem", "PLIPEvalSystem", "FlattenSystem"
     }:
         con_exp = instantiate_lightning_module(**cf.lightning_module,
                                                training_params=None)
     elif cf.lightning_module.which == "Dinov2EvalSystem":
         con_exp = Dinov2EvalSystem(**cf.lightning_module.params)
-
     else:
         ckpt_path = os.path.join(cf.infra.log_dir, cf.infra.exp_name,
                                  cf.testing.ckpt_path)
@@ -205,7 +213,12 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
                                                          **cf.lightning_module)
 
     if not dm:
-        dm = PatchDataModule(config=cf)
+        if cf.data.set == "scsrh":
+            dm = CellDataModule(config=cf)
+        else:
+            dm = PatchDataModule(config=cf)
+
+    do_knn = cf.testing.get("knn", {}).get("do_knn", False)
 
     if not pred_fname:
         device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -228,7 +241,7 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
                     pred[k] = torch.cat([p[k] for p in predictions])
             return pred
 
-        if cf.testing.get("knn", {}).get("do_knn", False):
+        if do_knn:
             pred = {
                 "train": process_predictions(pred_raw[0]),
                 "val": process_predictions(pred_raw[1])
@@ -250,11 +263,11 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
             "val": load_prediction(pred_fname["val"]),
         }
 
-        if cf.testing.get("knn", {}).get("do_knn", False):
+        if do_knn:
             pred.update({"train": load_prediction(pred_fname["train"])})
 
     # knn inference
-    if cf.testing.get("knn", {}).get("do_knn", False):
+    if do_knn:
         pred["val"] = get_knn_logits(cf, pred["train"], pred["val"])
 
         val_pred_fname = opj(pred_dir, "val_predictions.pt.gz")
@@ -262,7 +275,7 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
             torch.save(pred["val"], fd)
 
     # metrics reporting
-    do_eval(cf, results_dir, pred, is_knn=True)
+    do_eval(cf, results_dir, pred, do_softmax=not do_knn)
 
 
 def main():

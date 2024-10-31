@@ -43,6 +43,29 @@ class EvalBaseSystem(pl.LightningModule, ABC):
         raise NotImplementedError()
 
 
+class FlattenSystem(pl.LightningModule, ABC):
+
+    def __init__(self, training_params: Optional[Dict] = None):
+        super().__init__()
+
+    @torch.inference_mode()
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        assert batch["image"].shape[1] == 1
+
+        emb = einops.rearrange(batch["image"][:, 0, ...],
+                               "b c h w -> b (c h w)")
+        results = {
+            "path": batch["path"],
+            "label": batch["label"],
+            "embeddings": emb
+        }
+
+        return results
+
+    def test_step(self, batch, batch_idx, dataloader_idx):
+        raise NotImplementedError()
+
+
 class ContrastiveBaseSystem(EvalBaseSystem):
     """Lightning system for contrastive learning experiments."""
 
@@ -170,7 +193,7 @@ class SimCLRSystem(ContrastiveBaseSystem):
 class SupConSystem(ContrastiveBaseSystem):
     """Lightning system for SupCon experiment"""
 
-    def __init__(self, loss_params, **kwargs):
+    def __init__(self, loss_params=None, **kwargs):
         super().__init__(**kwargs)
 
         if self.opt_cf_: self.criterion = SupConLoss(**loss_params)

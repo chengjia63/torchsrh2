@@ -137,13 +137,12 @@ def setup_infra_testing(cf: OmegaConf,
         for d in [pred_dir, results_dir]:
             os.makedirs(d)
         pred_fname = None
-    else:  #standalone eval
 
+    else:  #standalone eval
         if cf["lightning_module"]["which"] == "Dinov2EvalSystem":
-            eval_root = opj(
-                os.path.dirname(
-                    cf["lightning_module"]["params"]["pretrained_weights"]),
-                eval_instance_name)
+            pt_wt_dirname = os.path.dirname(
+                cf["lightning_module"]["params"]["pretrained_weights"])
+            eval_root = opj(pt_wt_dirname, eval_instance_name)
 
             pred_dir = os.path.join(eval_root, 'predictions')
             config_dir = os.path.join(eval_root, 'config')
@@ -156,12 +155,19 @@ def setup_infra_testing(cf: OmegaConf,
                 if not os.path.exists(dir_name):
                     os.makedirs(dir_name)
 
+            # if there is a previously generated prediction, also return the
+            # prediction filename so we don't have to predict again
             if cf.testing.get("eval_predictions", None):
-                raise ValueError(
-                    "DINOv2 standalone eval does not support previously presaved embeddings - yet"
-                )
+                other_eval_instance_name = cf.testing["eval_predictions"]
+                other_pred_dir = opj(pt_wt_dirname, other_eval_instance_name,
+                                     "predictions")
+                pred_fname = {
+                    "train": opj(other_pred_dir, "train_predictions.pt.gz"),
+                    "val": opj(other_pred_dir, "val_predictions.pt.gz"),
+                }
+            else:
+                pred_fname = None
 
-            pred_fname = None
         else:
             (eval_root, config_dir, pred_dir, code_dir, results_dir,
              pred_fname) = setup_testing_output_dirs(cf, eval_instance_name)
@@ -213,7 +219,7 @@ def setup_testing_output_dirs(cf: OmegaConf, eval_instance_name: str):
     if "ckpt_path" in cf.testing:
         training_instance_name = cf.testing.ckpt_path.split("/")[0]
     else:
-        training_instance_name = "imnet"
+        training_instance_name = cf.get("lightning_module",{}).get("which","unknown_system")
 
     exp_root = os.path.join(log_root, exp_name, training_instance_name,
                             "evals", eval_instance_name)

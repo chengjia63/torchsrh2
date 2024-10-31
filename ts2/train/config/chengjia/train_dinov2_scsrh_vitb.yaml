@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2_scsrh/scsrh_dinov2/vits
+  exp_name: ts2_scsrh/scsrh_dinov2
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -59,12 +59,12 @@ dinov2_fair_config:
     separate_head: true
     head_n_prototypes: 131072
   train:
-    batch_size_per_gpu: 128
+    batch_size_per_gpu: 64
     centering: sinkhorn_knopp
   student:
-    arch: vit_small
+    arch: vit_base
     patch_size: 4
-    drop_path_rate: 0.0 #0.4
+    drop_path_rate: 0.4
     ffn_layer: swiglufused
     block_chunks: 4
   teacher:

@@ -42,9 +42,9 @@ data:
       which: PatchDataset
       which_process_read: memmap
       params:
-          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
-          num_transforms: 1
-          balance_instance_class: False
+        data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/he.plip
+        num_transforms: 1
+        balance_instance_class: False
       negative_class_index: 1
       classes_reorder: [0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26]
       camera_ready_classes: ["astro_idhmut", "atypical_meningioma", "chondrosarcoma", "chordoma", "circum_glioma", "cpp", "craniopharyngioma", "embryonal", "ependymoma", "germ_cell", "germinoma", "glioblastoma", "glioneuronal", "hemangioma", "histiocytic", "lymphoma", "medulloblastoma", "meningioma", "metastasis", "neuroblastoma", "normal", "oligo_idhmut_codel", "peds_glioma", "pineal", "pituitary_adenoma", "sarcoma", "schwannoma"]

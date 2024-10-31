@@ -1,0 +1,138 @@
+infra:
+  exp_name: ts2_scsrh/scsrh_supcon #TODO
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
+  comment: smallpatch_SE
+  log_gpu: True
+  seed: 1000
+  float32_matmul_precision: medium
+
+data:
+  set: scsrh
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+        test_databank: ../data/tsmeta/srh7v1_sc/c191d6d5_cell40_train
+        test: ../data/tsmeta/srh7v1_sc/c191d6d5_cell40_trainval
+  transform:
+    test:
+      which: HistologyTransform
+      params:
+        base_aug_params:
+          laser_noise_config: null
+          get_third_channel_params:
+            mode: three_channels
+            subtracted_base: 0.07629394531
+          mask_params:
+            how_to_process: small_patch # rm_background #small_patch
+            bg_fill: [9957.5889, 10057.9795]
+          #to_uint8: True
+        strong_aug_params:
+          aug_list:
+          #- which: dinov2_normalize_always_apply
+          #  params: {}
+          - which: center_crop_always_apply
+            params:
+              size: 48
+          aug_prob: 1
+  test_dataset:
+    which: CellDataset # SingleLevelHierarchicalDataset
+    which_process_read: cell_memmap
+    params:
+      data_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root2/
+      num_transforms: 1
+      balance_instance_class: False
+    classes_reorder: [0, 1, 2, 3, 5, 6, 4]
+    camera_ready_classes: [HGG, LGG, Mening, Mets, Normal, Pit, Schwan]
+  loader:
+    params:
+      common:
+        pin_memory: False
+        persistent_workers: False
+        prefetch_factor: 8
+        num_workers: 7
+      test:
+        batch_size: 256
+        drop_last: False
+        shuffle: False
+#lightning_module:
+#  which: Dinov2EvalSystem
+#  params:
+#    model_hyperparams:
+#        arch: vit_base
+#        img_size: 48
+#        patch_size: 4
+#        #global_pool: "token"
+#        #class_token: True
+#        block_chunks: 4
+#        ffn_bias: true
+#        ffn_layer: swiglufused
+#        num_register_tokens: 0
+#        interpolate_antialias: false
+#        interpolate_offset: 0.1
+#        layerscale: 1.0e-05
+#        proj_bias: true
+#        qkv_bias: true
+#    pretrained_weights: TODO
+lightning_module:
+  which: SupConSystem
+  params:
+    model_hyperparams:
+      backbone_cf:
+        which: vit_base
+        params:
+          img_size: 48
+          patch_size: 4
+          global_pool: "token"
+          class_token: True
+          init_values: 1.0e-6
+      proj_params:
+        hidden_layers: [768, 768]
+        n_out: 768
+        activation: relu
+        drop: 0
+        bias: True
+#lightning_module:
+#  which: FlattenSystem
+#  params: {}
+testing:
+  eval_mode: knn
+  save_train_pred: True
+  #eval_predictions: 4cf5a93d_Oct14-23-29-19_sd1000_standaloneeval_37
+  knn:
+    do_knn: True
+    knn_params:
+      batch_size: 1536
+      k: 20
+      t: 0.07
+  tsne:
+    interactive: True
+    num_patches: [4096]
+    which_set: [val]
+    embed_images: true
+    class_params:
+      perplexity: 50
+      learning_rate: auto
+      init : pca
+  nn_viz:
+    query_set: val
+    n_sample: 32
+    target_set: val
+    exclude_same_patient: True
+    k: 40
+tune:
+  diagonal_items: true
+  params:
+    data/transform/test/params/base_aug_params/mask_params/how_to_process:
+    - rm_background
+    - rm_background
+    - rm_background
+    - small_patch
+    - small_patch
+    #lightning_module/params/pretrained_weights:
+    testing/ckpt_path:
+    - 24956279_Oct20-11-37-53_sd1000_rmbg_1000_lr0.001_tune1/models/ckpt-epoch7-step170720-loss0.00.ckpt
+    - 03052393_Oct20-11-37-52_sd1000_rmbg_1000_lr0.0001_tune2/models/ckpt-epoch7-step170720-loss0.00.ckpt
+    - f70fcbfa_Oct20-20-32-29_sd1000_rmbg_1000_lr0.0000001_tune2/models/ckpt-epoch7-step170720-loss0.00.ckpt
+    - be8aa243_Oct20-11-37-52_sd1000_smpt_1000_lr0.001_tune4/models/ckpt-epoch7-step170720-loss0.00.ckpt
+    - 4b125263_Oct20-11-37-56_sd1000_smpt_1000_lr0.0001_tune5/models/ckpt-epoch7-step170720-loss0.00.ckpt
