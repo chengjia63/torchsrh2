@@ -68,6 +68,25 @@ def load_uni_one_bbone(backbone, ckpt):
             collections.OrderedDict([(k, ckpt[f"blocks.{k}"])
                                      for k in expected_keys]))
 
+#@torch.no_grad()
+#def load_dinov2_one_bbone(backbone, ckpt):
+#    backbone.cls_token.copy_(ckpt["embeddings.cls_token"])
+#    backbone.mask_token.copy_(ckpt["embeddings.mask_token"])
+#    #backbone.pos_embed.copy_(ckpt["embeddings.position_embeddings"])
+#    #backbone.patch_embed.load_state_dict(
+#    #    collections.OrderedDict([(k.removeprefix("embeddings.patch_embeddings.").replace("projection", "proj"), ckpt[k])
+#    #                             for k in ckpt.keys()
+#    #                             if k.startswith("embeddings.patch_embeddings.")]))
+#
+#    backbone.norm.load_state_dict(
+#        collections.OrderedDict([(k.removeprefix("layernorm."), ckpt[k])
+#                                 for k in ckpt.keys()
+#                                 if k.startswith("layernorm.")]))
+#    for b in backbone.blocks:
+#        expected_keys = b.state_dict().keys()
+#        b.load_state_dict(
+#            collections.OrderedDict([(k, ckpt[f"encoder.layer.{k}"])
+#                                     for k in expected_keys]))
 
 def main():
     cf = read_process_cf(parse_args())
@@ -92,6 +111,9 @@ def main():
                               map_location="cpu")
         load_uni_one_bbone(model.teacher.backbone, uni_ckpt)
         load_uni_one_bbone(model.student.backbone, uni_ckpt)
+
+        #load_dinov2_one_bbone(model.teacher.backbone, uni_ckpt)
+        #load_dinov2_one_bbone(model.student.backbone, uni_ckpt)
     model = model.to(torch.device("cuda"))
     model.prepare_for_distributed_training()
 
