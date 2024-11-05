@@ -9,14 +9,23 @@ import torch
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, RandomSampler
 from omegaconf import OmegaConf
-
+import torchvision
+import einops
 from torchsrh.train.common import get_num_worker
 from ts2.data.cell_meta_parser import CellCSVParser
 from ts2.data.meta_parser import CachedCSVParser
 from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
 from ts2.data.cell_dataset import CellDataset, CellDatasetDINOv2
-from ts2.data.histology_data_module import get_collate_fn, get_num_replicate
+from ts2.data.histology_data_module import get_num_replicate
+from ts2.data.utils import get_collate_fn
+
+
+def check_collate_fn_which(loader_params, which_split):
+    if cfw := loader_params.common.get("collate_fn", {}).get("which"):
+        return cfw
+
+    return loader_params[which_split].get("collate_fn", {}).get("which")
 
 
 class CellDataModule(pl.LightningDataModule):
@@ -87,11 +96,27 @@ class CellDataModule(pl.LightningDataModule):
                 which_set=self.set_)
             train_inst, train_tsm = CachedCSVParser(
                 cache_dir=self.instance_cache_fname_["train"])()
+
+            train_xform = transforms[self.xform_config_.train.which](
+                which_set=self.set_, **self.xform_config_.train.params)
+            trainval_xform = transforms[self.xform_config_.trainval.which](
+                which_set=self.set_, **self.xform_config_.trainval.params)
+
+            if check_collate_fn_which(self.loader_config_.params,
+                                      "train") == "SingleCellBlendedCollator":
+                self.train_strong_xform = train_xform.strong_aug
+                train_xform.strong_aug = torch.nn.Identity()
+
+            if check_collate_fn_which(
+                    self.loader_config_.params,
+                    "trainval") == "SingleCellBlendedCollator":
+                self.trainval_strong_xform = trainval_xform.strong_aug
+                trainval_xform.strong_aug = torch.nn.Identity()
+
             self.train_dataset_ = datasets[self.dset_config_.which](
                 instances=train_inst,
                 tensor_shape_map=train_tsm,
-                transform=transforms[self.xform_config_.train.which](
-                    which_set=self.set_, **self.xform_config_.train.params),
+                transform=train_xform,
                 process_read_im=prf,
                 **self.dset_config_.params.common,
                 **self.dset_config_.params.train)
@@ -101,8 +126,7 @@ class CellDataModule(pl.LightningDataModule):
             self.trainval_dataset_ = datasets[self.dset_config_.which](
                 instances=trainval_inst,
                 tensor_shape_map=trainval_tsm,
-                transform=transforms[self.xform_config_.trainval.which](
-                    which_set=self.set_, **self.xform_config_.trainval.params),
+                transform=trainval_xform,
                 process_read_im=prf,
                 **self.dset_config_.params.common,
                 **self.dset_config_.params.trainval)
@@ -158,7 +182,13 @@ class CellDataModule(pl.LightningDataModule):
         loader_params.update(self.loader_config_.params.common)
         if loader_params.get("num_workers") == "auto":
             loader_params["num_workers"] = get_num_worker()
-        if loader_params.get("collate_fn", False):
+
+        if "collate_fn" in loader_params:
+            if loader_params["collate_fn"][
+                    "which"] == "SingleCellBlendedCollator":
+                loader_params["collate_fn"]["params"].update(
+                    {"strong_transforms": self.train_strong_xform})
+
             loader_params["collate_fn"] = get_collate_fn(
                 **loader_params['collate_fn'])
 
@@ -166,8 +196,10 @@ class CellDataModule(pl.LightningDataModule):
         #    train_loader_params["collate_fn"] = emb_collate_fn
         #    val_loader_params["collate_fn"] = emb_collate_fn
 
-        logging.info(loader_params)
-        return DataLoader(self.train_dataset_, **loader_params)
+        logging.info(f"train loader params {loader_params}")
+
+        return DataLoader(self.train_dataset_,
+                          **loader_params)
 
     def val_dataloader(self):
         loader_params = OmegaConf.to_container(
@@ -176,19 +208,23 @@ class CellDataModule(pl.LightningDataModule):
         loader_params.update(self.loader_config_.params.common)
         if loader_params.get("num_workers") == "auto":
             loader_params["num_workers"] = get_num_worker()
-        if loader_params.get("collate_fn", False):
+
+        if "collate_fn" in loader_params:
+            if loader_params["collate_fn"][
+                    "which"] == "SingleCellBlendedCollator":
+                loader_params["collate_fn"]["params"].update(
+                    {"strong_transforms": self.trainval_strong_xform})
+
             loader_params["collate_fn"] = get_collate_fn(
                 **loader_params['collate_fn'])
 
-        if (("trainval_sampler" in self.loader_config_)
-                and (self.loader_config_.trainval_sampler.num_samples > 0)):
-            loader_params.update({
-                "sampler":
-                RandomSampler(self.trainval_dataset_,
-                              **self.loader_config_.trainval_sampler)
-            })
-        print(loader_params)
-        return DataLoader(self.trainval_dataset_, **loader_params)
+        if ("trainval_sampler" in self.loader_config_):
+            raise ValueError(
+                ("trainval_sampler no longer supported in loader config. ",
+                 "implement this in your dataset"))
+        logging.info(f"val loader params {loader_params}")
+        return DataLoader(self.trainval_dataset_,
+                          **loader_params)
 
     def test_dataloader(self):
         raise NotImplementedError()

@@ -1,7 +1,7 @@
 infra:
-  exp_name: ts2_scsrh/scsrh_supcon #TODO
+  exp_name: ts2_scsrh/scsrh_bgs_varsigma  #TODO
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
-  comment: smallpatch_SE
+  comment: smpt_SE9
   log_gpu: True
   seed: 1000
   float32_matmul_precision: medium
@@ -24,7 +24,7 @@ data:
             mode: three_channels
             subtracted_base: 0.07629394531
           mask_params:
-            how_to_process: small_patch # rm_background #small_patch
+            how_to_process: small_patch #rm_background #
             bg_fill: [9957.5889, 10057.9795]
           #to_uint8: True
         strong_aug_params:
@@ -123,16 +123,13 @@ testing:
 tune:
   diagonal_items: true
   params:
-    data/transform/test/params/base_aug_params/mask_params/how_to_process:
-    - rm_background
-    - rm_background
-    - rm_background
-    - small_patch
-    - small_patch
-    #lightning_module/params/pretrained_weights:
     testing/ckpt_path:
-    - 24956279_Oct20-11-37-53_sd1000_rmbg_1000_lr0.001_tune1/models/ckpt-epoch7-step170720-loss0.00.ckpt
-    - 03052393_Oct20-11-37-52_sd1000_rmbg_1000_lr0.0001_tune2/models/ckpt-epoch7-step170720-loss0.00.ckpt
-    - f70fcbfa_Oct20-20-32-29_sd1000_rmbg_1000_lr0.0000001_tune2/models/ckpt-epoch7-step170720-loss0.00.ckpt
-    - be8aa243_Oct20-11-37-52_sd1000_smpt_1000_lr0.001_tune4/models/ckpt-epoch7-step170720-loss0.00.ckpt
-    - 4b125263_Oct20-11-37-56_sd1000_smpt_1000_lr0.0001_tune5/models/ckpt-epoch7-step170720-loss0.00.ckpt
+    - b108477d_Nov05-00-39-55_sd1000_supcon_lr0.0001_tune5/models/ckpt-epoch0-step21340-loss0.00.ckpt
+    - b108477d_Nov05-00-39-55_sd1000_supcon_lr0.0001_tune5/models/ckpt-epoch1-step42680-loss0.00.ckpt
+    - eb1469b0_Nov05-00-39-51_sd1000_simclr_lr0.0001_tune4/models/ckpt-epoch0-step21340-loss0.00.ckpt
+    - eb1469b0_Nov05-00-39-51_sd1000_simclr_lr0.0001_tune4/models/ckpt-epoch1-step42680-loss0.00.ckpt
+    infra/comment:
+    - smpt_SE0
+    - smpt_SE1
+    - smpt_SE0
+    - smpt_SE1

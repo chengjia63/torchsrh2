@@ -40,7 +40,7 @@
 #SBATCH --gres=gpu:2
 #SBATCH --ntasks-per-node=2
 #------------------------------------------------------------------------------
-#SBATCH --array=0-2
+#SBATCH --array=0-5
 #------------------------------------------------------------------------------
 
 set -x
@@ -61,4 +61,4 @@ set -e
 #srun python main_dinov2.py -c=config/chengjia/train_dinov2_scsrh.yaml
 #srun python main_dinov2.py -c=config/chengjia/train_dinov2_scsrh_vitb.yaml
 
-srun python main.py -c=config/chengjia/train_supcon_scsrh7.yaml
+srun python main.py -c=config/chengjia/train_supcon_scsrh7_debug.yaml

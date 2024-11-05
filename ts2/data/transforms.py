@@ -53,9 +53,15 @@ class ProcessSCSRHMask(torch.nn.Module):
         if how_to_process == "small_patch":
             self.forward_impl = self.small_patch
             self.bg_fill = None
+            self.num_channel_out = 2
         elif how_to_process == "rm_background":
             self.bg_fill = bg_fill
             self.forward_impl = self.rm_bg
+            self.num_channel_out = 2
+        elif how_to_process == "rgba":
+            self.forward_impl = torch.nn.Identity()
+            self.bg_fill = None
+            self.num_channel_out = 3
 
     def forward(self, x: Tensor):
         return self.forward_impl(x)
@@ -77,13 +83,17 @@ class SCSRHBaseTransform(torch.nn.Module):
                  get_third_channel_params=None,
                  to_uint8=False):
         super().__init__()
-        u16_min = (0, 0)
-        u16_max = (65536, 65536)  # 2^16
 
-        layers = [
-            ProcessSCSRHMask(**mask_params),
-            Normalize(mean=u16_min, std=u16_max)
-        ]
+        proc_mask = ProcessSCSRHMask(**mask_params)
+
+        if proc_mask.num_channel_out == 2:
+            u16_min = (0, 0)
+            u16_max = (65535, 65535)
+        else:
+            u16_min = (0, 0, 0)
+            u16_max = (65535, 65535, 1)
+
+        layers = [proc_mask, Normalize(mean=u16_min, std=u16_max)]
 
         if laser_noise_config is not None:
             layers.append(
@@ -92,11 +102,20 @@ class SCSRHBaseTransform(torch.nn.Module):
                     laser_noise_config.prob))
         layers += [GetThirdChannel(**get_third_channel_params), MinMaxChop()]
 
+        if proc_mask.num_channel_out == 2:
 
-        def to_uint8_func(x):
-            return (adjust_brightness(adjust_contrast(x, 2), 2) * 255).to(torch.uint8)
+            def to_uint8_func(x):
+                return (adjust_brightness(adjust_contrast(x, 2), 3) * 255).to(
+                    torch.uint8)
+        else:
 
-        if to_uint8: 
+            def to_uint8_func(x):
+                im = (adjust_brightness(adjust_contrast(x[:3, ...], 2), 3) *
+                      255).to(torch.uint8)
+                mask = (x[[3], ...] * 255).to(torch.uint8)
+                return torch.cat((im, mask))
+
+        if to_uint8:
             layers.append(to_uint8_func)
 
         self.model = Compose(layers)
@@ -208,6 +227,7 @@ class StrongTransform(torch.nn.Module):
             "random_affine": partial(rand_apply_p, RandomAffine),
             "random_crop": partial(RandomCrop),
             "random_resized_crop": partial(rand_apply_p, RandomResizedCrop),
+            "random_resized_crop_always_apply": RandomResizedCrop,
             "random_grayscale": partial(RandomGrayscale, p=aug_prob),
             "fft_low_pass_filter": partial(rand_apply_p, FFTLowPassFilter),
             "fft_high_pass_filter": partial(rand_apply_p, FFTHighPassFilter),
@@ -242,10 +262,16 @@ class GetThirdChannel(torch.nn.Module):
 
         self.subtracted_base = subtracted_base
         aug_func_dict = {
-            "three_channels": self.get_third_channel_,
-            "ch2_only": self.get_ch2_,
-            "ch3_only": self.get_ch3_,
-            "diff_only": self.get_diff_
+            "three_channels":
+            self.get_third_channel_,
+            "ch2_only":
+            self.get_ch2_,
+            "ch3_only":
+            self.get_ch3_,
+            "diff_only":
+            self.get_diff_,
+            "get_third_channel_cellmask_passthrough":
+            self.get_third_channel_cellmask_passthrough_
         }
         if mode in aug_func_dict:
             self.aug_func = aug_func_dict[mode]
@@ -258,6 +284,12 @@ class GetThirdChannel(torch.nn.Module):
         ch3 = im2[1, :, :]
         ch1 = ch3 - ch2 + self.subtracted_base
         return torch.stack((ch1, ch2, ch3), dim=0)
+
+    def get_third_channel_cellmask_passthrough_(self, im2: Tensor) -> Tensor:
+        ch2 = im2[0, :, :]
+        ch3 = im2[1, :, :]
+        ch1 = ch3 - ch2 + self.subtracted_base
+        return torch.stack((ch1, ch2, ch3, im2[2, ...]), dim=0)
 
     def get_ch2_(self, im2: Tensor) -> Tensor:
         return im2[0, :, :].unsqueeze(0)

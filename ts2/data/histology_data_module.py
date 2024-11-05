@@ -19,18 +19,12 @@ from ts2.data.slide_dataset import (SingleLevelHierarchicalDataset,
                                     SingleLevelHierarchicalDatasetDINOV2, SingleLevelHierarchicalDatasetMultipleViewDINOV2)
 from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
-from ts2.data.collate_func import MBMaskCollator
-
+from ts2.data.utils import get_collate_fn
 
 def get_num_replicate(num_instance_self_replicate, max_hierarchical_replicate,
                       num_samples):
     return max(1, (num_instance_self_replicate * max_hierarchical_replicate //
                    num_samples))
-
-
-def get_collate_fn(which, params):
-    collate_list = {"MBMaskCollator": MBMaskCollator}
-    return collate_list[which](**params)
 
 
 class PatchDataModule(pl.LightningDataModule):
@@ -209,13 +203,6 @@ class PatchDataModule(pl.LightningDataModule):
                 ("trainval_sampler no longer supported in loader config. ",
                  "implement this in your dataset"))
 
-        #if (("trainval_sampler" in self.loader_config_)
-        #        and (self.loader_config_.trainval_sampler.num_samples > 0)):
-        #    loader_params.update({
-        #        "sampler":
-        #        RandomSampler(self.trainval_dataset_,
-        #                      **self.loader_config_.trainval_sampler)
-        #    })
         print(loader_params)
         return DataLoader(self.trainval_dataset_, **loader_params)
 
