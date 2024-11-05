@@ -1,0 +1,235 @@
+infra:
+  exp_name: ts2_scsrh/scsrh_bgs_varsigma
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
+  comment: dev
+  log_gpu: True
+  seed: 1000
+  float32_matmul_precision: medium
+
+data:
+  set: scsrh
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+        train: ../data/tsmeta/srh7v1_sc/55e0deb2_cell_train
+        trainval: ../data/tsmeta/srh7v1_sc/55e0deb2_cell_trainval
+        test_databank: ../data/tsmeta/srh7v1_sc/c191d6d5_cell40_train
+        test: ../data/tsmeta/srh7v1_sc/c191d6d5_cell40_trainval
+  transform:
+    train:
+      which: HistologyTransform
+      params:
+        base_aug_params:
+          laser_noise_config: null
+          get_third_channel_params:
+            mode: get_third_channel_cellmask_passthrough
+            subtracted_base: 0.07629394531
+          mask_params:
+            how_to_process: rgba #rm_background #small_patch
+            #bg_fill: [9957.5889, 10057.9795]
+          #to_uint8: True
+        strong_aug_params:
+          aug_list:
+          - which: random_resized_crop_always_apply
+            params:
+              size: 48
+              scale: [0.8, 1.0]
+              ratio: [0.9, 1.2]
+          - which: random_horiz_flip
+            params: {}
+          - which: random_vert_flip
+            params: {}
+          - which: color_jitter
+            params:
+              brightness: 0.2
+              contrast: 0.2
+              saturation: 0.2
+              hue: 0.1
+          - which: gaussian_blur
+            params:
+              kernel_size: 3
+              sigma: 1
+          - which: gaussian_noise
+            params:
+                min_var: 0.01
+                max_var: 0.02
+          aug_prob: .3
+    trainval: ${.train}
+    test:
+      which: HistologyTransform
+      params:
+        base_aug_params:
+          laser_noise_config: null
+          get_third_channel_params:
+            mode: three_channels
+            subtracted_base: 0.07629394531
+          mask_params:
+            how_to_process: rm_background #small_patch
+            bg_fill: [9957.5889, 10057.9795]
+          to_uint8: True
+        strong_aug_params:
+          aug_list:
+          - which: center_crop_always_apply
+            params:
+              size: 48
+          aug_prob: 1
+  dataset:
+    which: CellDataset # SingleLevelHierarchicalDataset
+    which_process_read: cell_memmap
+    params:
+      common:
+        data_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root2/
+        num_transforms: 1
+        #num_samples: 1
+        #num_instance_self_replicate: 1
+        #max_hierarchical_replicate: 1
+        balance_instance_class: False
+      train: {}
+      trainval:
+        num_sample_wo_replacement: 64
+  test_dataset:
+      which: CellDataset
+      which_process_read: cell_memmap
+      params:
+          data_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root2/
+          num_transforms: 1
+          balance_instance_class: False
+      classes_reorder: [0, 1, 2, 3, 5, 6, 4]
+      camera_ready_classes: [HGG, LGG, Mening, Mets, Normal, Pit, Schwan]
+  loader:
+    params:
+      common:
+        pin_memory: True
+        persistent_workers: True
+        prefetch_factor: 12
+        num_workers: 8
+      train:
+        batch_size: 256
+        drop_last: True
+        shuffle: True
+        collate_fn:
+          which: SingleCellBlendedCollator
+          params:
+            kernel_size: 21
+            sigma: 5
+            min_val_sigma: 0.2
+      trainval:
+        batch_size: 64
+        drop_last: False
+        shuffle: False
+        collate_fn:
+          which: SingleCellBlendedCollator
+          params:
+            kernel_size: 21
+            sigma: 5
+            min_val_sigma: 0.2
+      test:
+        batch_size: 256
+        drop_last: False
+        shuffle: False
+lightning_module:
+  which: SimCLRSystem #SupConSystem
+  params:
+    model_hyperparams:
+      backbone_cf:
+        which: vit_base
+        params:
+          img_size: 48
+          patch_size: 4
+          global_pool: "token"
+          class_token: True
+          init_values: 1.0e-6
+      proj_params:
+        hidden_layers: [768, 768]
+        n_out: 768
+        activation: relu
+        drop: 0
+        bias: True
+    loss_params: {}
+    opt_cf:
+      which: adamw
+      scale_lr: True
+      params:
+        lr: 0.001
+        betas: [0.9, 0.999]
+        eps: 1.0e-8
+        weight_decay: 0.01
+        amsgrad: False
+    #opt_cf:
+    #  which: lars
+    #  scale_lr: True
+    #  params:
+    #    lr: 0.001
+    #    weight_decay: 1.0e-4
+    #    momentum: 0.9
+    #    #eta: 0.001
+    schd_cf:
+      which: cos_linear_warmup
+      params:
+        num_warmup_steps: 0.1
+        num_cycles: 0.5
+training:
+  resume_checkpoint: null
+  #load_backbone:
+  #  ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/uni/vit_large_patch16_224.dinov2.uni_mass100k/pytorch_model.bin
+  #  remove_prefix: null
+  trainer_params:
+    max_epochs: 10
+    gradient_clip_val: 0.5
+    enable_progress_bar: True
+    precision: 'bf16-mixed'
+    deterministic: False
+  trainval:
+    freq:
+      interval: 1
+      unit: "epoch"
+testing:
+  eval_mode: knn
+  save_train_pred: True
+  #eval_predictions: 4cf5a93d_Oct14-23-29-19_sd1000_standaloneeval_37
+  knn:
+    do_knn: True
+    knn_params:
+      batch_size: 1536
+      k: 20
+      t: 0.07
+  tsne:
+    interactive: True
+    num_patches: [4096]
+    which_set: [val]
+    embed_images: true
+    class_params:
+      perplexity: 50
+      learning_rate: auto
+      init : pca
+  nn_viz:
+    query_set: val
+    n_sample: 32
+    target_set: val
+    exclude_same_patient: True
+    k: 40
+tune:
+  diagonal_items: true
+  params:
+    lightning_module/which:
+    - SimCLRSystem
+    - SupConSystem
+    - SimCLRSystem
+    - SupConSystem
+    - SimCLRSystem
+    - SupConSystem
+    lightning_module/params/opt_cf/params/lr:
+    - 0.001
+    - 0.001
+    - 0.00001
+    - 0.00001
+    - 0.0001
+    - 0.0001
+    infra/comment:
+    - simclr_lr0.001
+    - supcon_lr0.001
+    - simclr_lr0.00001
+    - supcon_lr0.00001
+    - simclr_lr0.0001
+    - supcon_lr0.0001
