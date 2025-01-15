@@ -87,7 +87,7 @@ class SingleCellBlendedCollator():
         #blend_scale = torch.zeros_like(fg_im)
         for i, (mi, ma, fg, bg) in enumerate(zip(minrc, maxrc, fg_im, bg_im)):
             bg[:, mi[0]:ma[0], mi[1]:ma[1]] = fg[:, mi[0]:ma[0], mi[1]:ma[1]]
-            #blend_scale[i,:, mi[0]:ma[0], mi[1]: ma[1]] = 1
+        #    blend_scale[i,:, mi[0]:ma[0], mi[1]: ma[1]] = 1
         return
         #return blend_scale
 
@@ -113,7 +113,7 @@ class SingleCellBlendedCollator():
 
         #torch.save(
         #    {
-        #        "blend_scale": blend_scale,
+        #       "blend_scale": blend_scale,
         #        "fg": fg,
         #        "alt_fg": bg,
         #        "fg_clean": fg_clone,

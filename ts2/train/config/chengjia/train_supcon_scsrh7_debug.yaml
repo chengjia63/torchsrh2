@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2_scsrh/scsrh_bgs_varsigma
+  exp_name: ts2_scsrh/scsrh_bsv2_vits_stronger
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -34,7 +34,7 @@ data:
           - which: random_resized_crop_always_apply
             params:
               size: 48
-              scale: [0.8, 1.0]
+              scale: [0.6, 1.0]
               ratio: [0.9, 1.2]
           - which: random_horiz_flip
             params: {}
@@ -42,9 +42,9 @@ data:
             params: {}
           - which: color_jitter
             params:
-              brightness: 0.2
-              contrast: 0.2
-              saturation: 0.2
+              brightness: 0.4
+              contrast: 0.4
+              saturation: 0.4
               hue: 0.1
           - which: gaussian_blur
             params:
@@ -53,7 +53,7 @@ data:
           - which: gaussian_noise
             params:
                 min_var: 0.01
-                max_var: 0.02
+                max_var: 0.03
           aug_prob: .3
     trainval: ${.train}
     test:
@@ -105,7 +105,7 @@ data:
         prefetch_factor: 12
         num_workers: 8
       train:
-        batch_size: 256
+        batch_size: 512
         drop_last: True
         shuffle: True
         collate_fn:
@@ -133,7 +133,7 @@ lightning_module:
   params:
     model_hyperparams:
       backbone_cf:
-        which: vit_base
+        which: vit_small
         params:
           img_size: 48
           patch_size: 4
@@ -141,8 +141,8 @@ lightning_module:
           class_token: True
           init_values: 1.0e-6
       proj_params:
-        hidden_layers: [768, 768]
-        n_out: 768
+        hidden_layers: [384, 384]
+        n_out: 384
         activation: relu
         drop: 0
         bias: True
@@ -220,16 +220,16 @@ tune:
     - SimCLRSystem
     - SupConSystem
     lightning_module/params/opt_cf/params/lr:
-    - 0.001
-    - 0.001
-    - 0.00001
-    - 0.00001
+    - 0.0005
+    - 0.0005
     - 0.0001
     - 0.0001
+    - 0.00005
+    - 0.00005
     infra/comment:
-    - simclr_lr0.001
-    - supcon_lr0.001
-    - simclr_lr0.00001
-    - supcon_lr0.00001
+    - simclr_lr0.0005
+    - supcon_lr0.0005
     - simclr_lr0.0001
+    - supcon_lr0.00005
+    - simclr_lr0.00005
     - supcon_lr0.0001

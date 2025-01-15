@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2_scsrh/scsrh_bgs_varsigma  #TODO
+  exp_name: ts2_scsrh/scsrh_bsv2_vits_stronger/
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: smpt_SE9
   log_gpu: True
@@ -74,12 +74,30 @@ data:
 #        proj_bias: true
 #        qkv_bias: true
 #    pretrained_weights: TODO
+#lightning_module:
+#  which: SupConSystem
+#  params:
+#    model_hyperparams:
+#      backbone_cf:
+#        which: vit_base
+#        params:
+#          img_size: 48
+#          patch_size: 4
+#          global_pool: "token"
+#          class_token: True
+#          init_values: 1.0e-6
+#      proj_params:
+#        hidden_layers: [768, 768]
+#        n_out: 768
+#        activation: relu
+#        drop: 0
+#        bias: True
 lightning_module:
   which: SupConSystem
   params:
     model_hyperparams:
       backbone_cf:
-        which: vit_base
+        which: vit_small
         params:
           img_size: 48
           patch_size: 4
@@ -87,8 +105,8 @@ lightning_module:
           class_token: True
           init_values: 1.0e-6
       proj_params:
-        hidden_layers: [768, 768]
-        n_out: 768
+        hidden_layers: [384,384]
+        n_out: 384
         activation: relu
         drop: 0
         bias: True
@@ -124,12 +142,16 @@ tune:
   diagonal_items: true
   params:
     testing/ckpt_path:
-    - b108477d_Nov05-00-39-55_sd1000_supcon_lr0.0001_tune5/models/ckpt-epoch0-step21340-loss0.00.ckpt
-    - b108477d_Nov05-00-39-55_sd1000_supcon_lr0.0001_tune5/models/ckpt-epoch1-step42680-loss0.00.ckpt
-    - eb1469b0_Nov05-00-39-51_sd1000_simclr_lr0.0001_tune4/models/ckpt-epoch0-step21340-loss0.00.ckpt
-    - eb1469b0_Nov05-00-39-51_sd1000_simclr_lr0.0001_tune4/models/ckpt-epoch1-step42680-loss0.00.ckpt
+    - 0783b969_Nov08-11-07-56_sd1000_simclr_lr0.0005_tune0/models/ckpt-epoch9-step106700-loss0.00.ckpt
+    - 17346017_Nov08-11-07-56_sd1000_supcon_lr0.0005_tune1/models/ckpt-epoch9-step106700-loss0.00.ckpt
+    - 6999ab3f_Nov08-11-09-20_sd1000_simclr_lr0.0001_tune2/models/ckpt-epoch9-step106700-loss0.00.ckpt
+    - 6c9c9135_Nov08-15-51-44_sd1000_supcon_lr0.0001_tune5/models/ckpt-epoch9-step106700-loss0.00.ckpt
+    - 93c8cb50_Nov08-11-09-20_sd1000_supcon_lr0.00005_tune3/models/ckpt-epoch9-step106700-loss0.00.ckpt
+    - e3eb58d6_Nov08-11-09-20_sd1000_simclr_lr0.00005_tune4/models/ckpt-epoch9-step106700-loss0.00.ckpt
     infra/comment:
-    - smpt_SE0
-    - smpt_SE1
-    - smpt_SE0
-    - smpt_SE1
+    - smpt_SE9
+    - smpt_SE9
+    - smpt_SE9
+    - smpt_SE9
+    - smpt_SE9
+    - smpt_SE9
