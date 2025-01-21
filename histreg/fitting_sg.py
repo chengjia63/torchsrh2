@@ -80,7 +80,23 @@ def normalize(x: torch.Tensor) -> torch.Tensor:
     min_ = einops.reduce(x, 'c h w -> c', 'min')
     return torchvision.transforms.functional.normalize(x, min_, max_ - min_)
 
+def normalize_np(x: torch.Tensor) -> torch.Tensor:
+    """
+    Normalizes a PyTorch tensor image channel-wise.
 
+    Args:
+        x (torch.Tensor): A PyTorch tensor representing an image with shape (C, H, W),
+            where C is the number of channels, H is the height, and W is
+            the width.
+
+    Returns:
+        torch.Tensor: A normalized PyTorch tensor with the same shape as the input,
+                    where each channel is normalized to have values in the range [0, 1].
+    """
+    max_ = x.max()
+    min_ = x.min()
+    return  (x - min_) / (max_ - min_)
+    
 def convert_to_gray(x: torch.Tensor) -> torch.Tensor:
     """
     Converts an RGB image tensor to a grayscale image tensor.
@@ -98,7 +114,7 @@ def convert_to_gray(x: torch.Tensor) -> torch.Tensor:
         x, num_output_channels=1)
 
 
-def basic_preprocessing(x: np.ndarray) -> torch.Tensor:
+def basic_preprocessing(x: np.ndarray, red_only=False) -> torch.Tensor:
     """
     Performs preprocessing on an input image.
 
@@ -117,8 +133,18 @@ def basic_preprocessing(x: np.ndarray) -> torch.Tensor:
            contrast enhancement.
         4. Convert the processed image back to a PyTorch tensor.
     """
-    x = normalize(x)
-    x = 1 - convert_to_gray(x).squeeze()
+    if red_only:
+        test_hsv = cv2.cvtColor(x, cv2.COLOR_RGB2HSV).astype(float)
+        blue_green_saturated = ((test_hsv[..., 0] > 30) & (test_hsv[..., 0] < 150) & (test_hsv[..., 1] > 50))
+        where_bgs = np.argwhere(blue_green_saturated)
+        test_hsv[where_bgs[:,0], where_bgs[:,1], 2] *= 2
+        test_hsv[where_bgs[:,0], where_bgs[:,1], 1] /= 2
+        test_hsv[...,2][test_hsv[...,2]>255] = 255
+        x = cv2.cvtColor(test_hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
+
+    
+    x = cv2.cvtColor(x, cv2.COLOR_RGB2GRAY) #convert_to_gray(x).squeeze()
+    x = 1 - normalize_np(x)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     x = clahe.apply((np.array(x) * 255).astype(np.uint8))
     return torch.from_numpy((x.astype(np.float32) / 255))
@@ -971,26 +997,26 @@ def adjust_matrix_and_size(image_shape, transform_matrix):
     new_height = int(np.ceil(max_y - min_y))
 
     # Adjust the translation part of the transformation matrix
-    dx = -min_x
-    dy = -min_y
-    adjustment_matrix = np.array([[1, 0, dx], [0, 1, dy]])
+    adjustment_matrix = np.array([[1, 0, -min_x], [0, 1, -min_y], [0,0,1]])
 
     new_transform_matrix = adjustment_matrix @ np.vstack(
         [transform_matrix, [0, 0, 1]])
 
-    return new_transform_matrix, (new_height, new_width)
+    return new_transform_matrix[:2,...], (new_height, new_width)
 
+def make3x3(x): return np.vstack((x, np.array([[0, 0, 1]])))
 
 def multi_feature(source: torch.Tensor,
                   target: torch.Tensor,
                   registration_params,
+                  he_proc_bg = 0,
                   angle_step=30,
                   resolution=768) -> torch.Tensor:
 
     transforms = []
     source, target, resample_ratio = initial_resampling(
         source, target, resolution)
-
+    
     resample_scale_matrix = get_uniform_resizing_affine_matrix(resample_ratio)
 
     for angle in range(-180, 180, angle_step):
@@ -1008,20 +1034,28 @@ def multi_feature(source: torch.Tensor,
                                                           r_transform)
         transformed_source = cv2.warpAffine(
             np.array(source).squeeze().astype(np.float64),
-            r_transform[:2, ...].squeeze(), new_size_xy)
+            r_transform[:2, ...].squeeze(), new_size_xy[::-1], borderValue=he_proc_bg.item())
+
 
         transformed_source = torch.tensor(
             transformed_source, dtype=torch.float).unsqueeze(0).unsqueeze(0)
+        
+        #plt.figure()
+        #plt.imshow(transformed_source.squeeze())
+        #plt.figure()
+        #plt.imshow(target.squeeze())
 
+        
         _, _, M, num_matches = superpoint_superglue(
             transformed_source,
             target,
             registration_params=registration_params)
-        M = np.vstack(
-            (resample_scale_matrix, np.array([[0, 0, 1]]))) @ M @ np.vstack(
-                (r_transform, np.array([[0, 0, 1]]))) @ np.vstack(
-                    (inverse_affine_transform(resample_scale_matrix),
-                     np.array([[0, 0, 1]])))
+        #plt.title(num_matches)
+        M = (make3x3(resample_scale_matrix) @
+            M @ 
+            make3x3(r_transform) @
+            make3x3(inverse_affine_transform(resample_scale_matrix))
+        )
         transforms.append((M, num_matches))
 
     best_matches = 0
@@ -1034,4 +1068,4 @@ def multi_feature(source: torch.Tensor,
 
     #(f"Final matches: {best_matches}")
     #print(f"Final transform: {best_transform}")
-    return best_transform, source, target
+    return best_transform, best_matches

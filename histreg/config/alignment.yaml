@@ -10,12 +10,14 @@ alignment:
       match_threshold: 0.5 # cheng change. higher seems to be a little better
   superpoint_weights_path: /nfs/turbo/umms-tocho/code/chengjia/DeeperHistReg/deeperhistreg/dhr_models/superpoint_v1.pth
   superglue_weights_path: /nfs/turbo/umms-tocho/code/chengjia/DeeperHistReg/deeperhistreg/dhr_models/superglue_outdoor.pth
-  transform_type: affine
+  transform_type: rigid # affine
   device: cuda
 
 infra:
   svs_root: /nfs/mm-isilon/brainscans/dropbox/Slide_Incoming/svs
   annot_root: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/pixel_alignment/sections_annot2/
-  out_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia/block_align
-  num_block_per_job: 7
-  blocks_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/data/to_reg_250115.csv
+  out_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop/
+  num_block_per_job: 41
+  blocks_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/data/to_reg_250120_all.csv
+  #blocks_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/data/to_reg_250121.csv
+  #blocks_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/data/to_reg_debug.csv

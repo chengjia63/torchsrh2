@@ -29,12 +29,15 @@ def merge_two_pdfs(file1, file2, output_file):
 
 def main():
 
-    block_align_out_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align/"
-    block_align_viz_root = "./viz_out"
+    block_align_out_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_0120_rigid"
+    block_align_viz_root = "./viz_out_rigid"
     existing = os.listdir(block_align_out_root)
     im = set([i.removesuffix("_im_align.pdf") for i in existing if i.endswith("_im_align.pdf")])
     mask = set([i.removesuffix("_mask_align.pdf") for i in existing if i.endswith("_mask_align.pdf")])
     to_review = sorted(im.intersection(mask))
+
+    os.makedirs(block_align_viz_root, exist_ok=True)
+
 
     out_fname = opj(block_align_viz_root,
                      f"to_review_{datetime.now().strftime('%y%m%d')}.csv") 

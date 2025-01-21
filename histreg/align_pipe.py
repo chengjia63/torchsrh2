@@ -23,7 +23,7 @@ import torch.nn.functional as F
 from itertools import chain, accumulate
 import pickle
 
-from histreg.fitting_sg import basic_preprocessing, multi_feature, default_match_cf, np_to_tensor
+from histreg.fitting_sg import basic_preprocessing, multi_feature, default_match_cf, np_to_tensor, inverse_affine_transform, make3x3
 
 
 def sanitize_string(string):
@@ -54,7 +54,7 @@ def get_sections_annot(he_annot):
                                    cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     if len(contours) == 0:
-        return [None]
+        return [None], [None]
 
     # Create a filled mask for each contour
     masked_ims = []
@@ -65,37 +65,107 @@ def get_sections_annot(he_annot):
         cv2.drawContours(mask, [contour], -1, 1, thickness=cv2.FILLED)
         masked_ims.append(torch.tensor(mask))
 
-    return masked_ims
+    if len(masked_ims) == 1:
+        neg_mask = ~masked_ims[0].to(bool)
+    else:
+        neg_mask = ~torch.logical_or(*masked_ims)
+
+    return masked_ims, [neg_mask] * len(masked_ims)
 
 
-def rescale_and_mask(he_proc, he_mask):
-    if he_mask is None:
-        return he_proc
+#def circular_kernel(radius):
+#    size = 2 * radius + 1
+#    y, x = torch.meshgrid(torch.arange(size), torch.arange(size), indexing='ij')
+#    center = radius
+#    dist = (x - center) ** 2 + (y - center) ** 2
+#    kernel = (dist <= radius ** 2).float()
+#    return kernel
+#
+## Function to compute ring coordinates
+#def ring_coordinates(binary_mask, dilation_radius=5):
+#    # Ensure binary mask is float for calculations
+#    binary_mask = binary_mask.float()
+#
+#    # Generate circular kernel
+#    kernel = circular_kernel(dilation_radius).unsqueeze(0).unsqueeze(0)
+#
+#    # Dilate the mask
+#    dilated_mask = F.conv2d(binary_mask.unsqueeze(0).unsqueeze(0), kernel, padding=dilation_radius).squeeze()
+#    dilated_mask = (dilated_mask > 0).float()
+#
+#    # Create the ring mask
+#    ring_mask = dilated_mask - binary_mask
+#    ring_mask = (ring_mask > 0).float()
+#
+#    # Get coordinates where the ring mask is 1
+#    ring_coords = torch.nonzero(ring_mask, as_tuple=False)
+#    return ring_coords
 
-    desired_mask_size = max(he_proc.shape[0], he_proc.shape[1])
 
+def interpolate_crop_mask(he_proc_shape, he_mask):
+    desired_mask_size = max(he_proc_shape[0], he_proc_shape[1])
+
+    # using nearest because this is a binary mask
     new_size = (desired_mask_size, desired_mask_size)
-    mask_resized = F.interpolate(he_mask.unsqueeze(0).unsqueeze(0),
+    mask_resized = F.interpolate(he_mask.to(
+        torch.uint8).unsqueeze(0).unsqueeze(0),
                                  size=new_size,
                                  mode='nearest').squeeze(0).squeeze(0)
-    # using nearest because this is a binary mask
 
-    if he_proc.shape[0] < he_proc.shape[1]:
-        mask_resized = mask_resized[:he_proc.shape[0], :]
+    if he_proc_shape[0] < he_proc_shape[1]:
+        mask_resized = mask_resized[:he_proc_shape[0], :]
     else:
-        mask_resized = mask_resized[:, :he_proc.shape[1]]
+        mask_resized = mask_resized[:, :he_proc_shape[1]]
+    return mask_resized
+
+
+def rescale_and_mask(he_proc, he_mask, he_mask_neg):
+    if he_mask is None:
+        if len(he_proc.shape) == 3:
+            means = None
+        else:
+            means = he_proc.mean()
+        return he_proc, means, np.eye(3)
+
+    mask_resized = interpolate_crop_mask(he_proc.shape, he_mask)
+    fg_coords2 = torch.argwhere(mask_resized.to(bool))
+    min_fg = fg_coords2.min(dim=0).values  # r,c
+    max_fg = fg_coords2.max(dim=0).values  # r,c
+    mask_resized = mask_resized[min_fg[0]:max_fg[0], min_fg[1]:max_fg[1]]
+    xform = np.eye(3)
+    xform[0:2, 2] = [-min_fg[1], -min_fg[0]]
+
+    neg_mask_resized = interpolate_crop_mask(he_proc.shape, he_mask_neg)
+    bg_coords2 = torch.argwhere(neg_mask_resized.to(bool))
 
     if len(he_proc.shape) == 3:
         if he_proc.shape[-1] == 3:  # HWC
-            mask = einops.repeat(mask_resized, "H W -> H W C", C=3)
-        elif he_proc.shape[0] == 3:  # CHW
-            mask = einops.repeat(mask_resized, "H W -> C H W", C=3)
-        else:
-            assert False
+            fg = he_proc[min_fg[0]:max_fg[0], min_fg[1]:max_fg[1], :]
+            mask3 = einops.repeat(mask_resized, "H W -> H W C", C=3)
+            bg_avg = he_proc[bg_coords2[:, 0], bg_coords2[:,
+                                                          1], :].mean(axis=0)
 
-        return mask * he_proc + (1 - mask) * torch.ones(he_proc.shape) * 255
+        elif he_proc.shape[0] == 3:  # CHW
+            fg = he_proc[:, min_fg[0]:max_fg[0], min_fg[1]:max_fg[1]]
+            mask3 = einops.repeat(mask_resized, "H W -> C H W", C=3)
+            bg_avg = he_proc[:, bg_coords2[:, 0], bg_coords2[:,
+                                                             1]].mean(axis=0)
+
+        else:
+            raise ValueError("3 channel he_proc must be CHW or HWC, C=3")
+
+        masked_im = mask3 * fg + (1 - mask3) * einops.repeat(
+            bg_avg, "C -> H W C", H=fg.shape[0], W=fg.shape[1])
+        bg_avg = None
+
     else:
-        return mask_resized * he_proc
+        fg = he_proc[min_fg[0]:max_fg[0], min_fg[1]:max_fg[1]]
+        bg_avg = he_proc[bg_coords2[:, 0], bg_coords2[:, 1]].mean()
+        masked_im = mask_resized * fg + (
+            1 - mask_resized) * einops.repeat(
+                [bg_avg], "1 -> H W", H=fg.shape[0], W=fg.shape[1])
+
+    return masked_im, bg_avg, xform
 
 
 def inverse_affine_transform_3x3(T):
@@ -137,8 +207,12 @@ def align_block(mask_annot, mask_annot_meta, match_cf, svs_root, out_dir):
     #mask_annot_meta = mask_annot_meta.rename(
     #    columns={"Unnamed: 0": "main_idx"})
 
-    section_mask = [get_sections_annot(m) for m in mask_annot]
+    section_mask_both = [get_sections_annot(m) for m in mask_annot]
+    section_mask = [smb[0] for smb in section_mask_both]
+    section_mask_neg = [smb[1] for smb in section_mask_both]
+
     flat_mask = list(chain.from_iterable(section_mask))
+    flat_mask_neg = list(chain.from_iterable(section_mask_neg))
     lengths = list(map(len, section_mask))  # Lengths of each sublist
     starts = [0] + list(accumulate(lengths[:-1]))  # Start idx of each sublist
     list_indices = [
@@ -162,8 +236,7 @@ def align_block(mask_annot, mask_annot_meta, match_cf, svs_root, out_dir):
                  f"{len(curr_he)} / {len(curr_ihc)} / {len(curr_block)}")
 
     matrices = np.zeros((len(curr_he), len(curr_block), 3, 3))
-
-    matrices = np.zeros((len(curr_he), len(curr_block), 3, 3))
+    num_matches = np.zeros((len(curr_he), len(curr_block)))
     align_viz_binary = [[None for _ in range(len(curr_block))]
                         for _ in range(len(curr_he))]
     align_viz_im = [[None for _ in range(len(curr_block))]
@@ -179,26 +252,33 @@ def align_block(mask_annot, mask_annot_meta, match_cf, svs_root, out_dir):
 
     for he_i, he_s in curr_he.iterrows():
         he_slide = openslide.OpenSlide(opj(svs_root, he_s["path"]))
-        he_thumbnail, he_scale_i = get_thumbnail(he_slide)
-        he_proc = basic_preprocessing(np_to_tensor(he_thumbnail))
+        he_thumbnail_orig, he_scale_i = get_thumbnail(he_slide)
+        src_is_he = (he_s["Stain"] == "H&E")
+        he_proc_orig = basic_preprocessing(he_thumbnail_orig, red_only=src_is_he)
+        logging.info(src_is_he)
 
-        he_thumbnail = rescale_and_mask(he_thumbnail,
-                                        flat_mask[he_s["sections_mask"]])
-        he_proc = rescale_and_mask(he_proc, flat_mask[he_s["sections_mask"]])
+        he_thumbnail, _, _ = rescale_and_mask(
+            he_thumbnail_orig, flat_mask[he_s["sections_mask"]],
+            flat_mask_neg[he_s["sections_mask"]])
+        he_proc, he_proc_bg, he_xform = rescale_and_mask(
+            he_proc_orig, flat_mask[he_s["sections_mask"]],
+            flat_mask_neg[he_s["sections_mask"]])
 
-        he_binary.append(np.array(he_proc).squeeze().astype(np.float64))
-        he_im.append(np.array(he_thumbnail).squeeze().astype(np.float64))
+        he_binary.append(np.array(he_proc_orig).squeeze().astype(np.float64))
+        he_im.append(np.array(he_thumbnail_orig).squeeze().astype(np.float64))
         he_scale.append(he_scale_i)
 
         for ihc_i, ihc_s in curr_block.iterrows():
             ihc_slide = openslide.OpenSlide(opj(svs_root, ihc_s["path"]))
-            ihc_thumbnail, ihc_scale_j = get_thumbnail(ihc_slide)
-            ihc_proc = basic_preprocessing(np_to_tensor(ihc_thumbnail))
+            ihc_thumbnail_orig, ihc_scale_j = get_thumbnail(ihc_slide)
+            tgt_is_he = (ihc_s["Stain"] == "H&E")
+            ihc_proc_orig = basic_preprocessing(ihc_thumbnail_orig, red_only=tgt_is_he)
+            logging.info(tgt_is_he)
 
-            ihc_thumbnail = rescale_and_mask(ihc_thumbnail,
-                                             flat_mask[ihc_s["sections_mask"]])
-            ihc_proc = rescale_and_mask(ihc_proc,
-                                        flat_mask[ihc_s["sections_mask"]])
+            ihc_thumbnail, _, _ = rescale_and_mask(
+                ihc_thumbnail_orig, flat_mask[ihc_s["sections_mask"]], flat_mask_neg[ihc_s["sections_mask"]])
+            ihc_proc, _, ihc_xform = rescale_and_mask(
+                ihc_proc_orig, flat_mask[ihc_s["sections_mask"]], flat_mask_neg[ihc_s["sections_mask"]])
 
             if he_i == 0:
                 all_binary.append(
@@ -207,26 +287,31 @@ def align_block(mask_annot, mask_annot_meta, match_cf, svs_root, out_dir):
                     np.array(ihc_thumbnail).squeeze().astype(np.float64))
                 all_scale.append(ihc_scale_j)
 
-            M, _, _ = multi_feature(he_proc.to(torch.float),
-                                    ihc_proc.to(torch.float), match_cf)
+            M, nm = multi_feature(he_proc.to(torch.float),
+                                  ihc_proc.to(torch.float),
+                                  match_cf,
+                                  he_proc_bg,
+                                  angle_step=20)
+            M = make3x3(inverse_affine_transform(ihc_xform[:2,...])) @ M @ he_xform
 
-            matrices[he_i, ihc_i, ...] = M  #np.vstack((M, [[0,0,1]]))
+            matrices[he_i, ihc_i, ...] = M
+            num_matches[he_i, ihc_i] = nm
             transformed1 = cv2.warpAffine(
-                np.array(he_proc).squeeze().astype(np.float64),
+                np.array(he_proc_orig).squeeze().astype(np.float64),
                 M[:2, ...].squeeze(),
-                np.array(ihc_proc).squeeze().shape[::-1])
+                np.array(ihc_proc_orig).squeeze().shape[::-1])
             b = np.zeros(transformed1.shape)
             stacked_im = np.dstack(
-                (transformed1, np.array(ihc_proc).squeeze().astype(np.float64),
+                (transformed1, np.array(ihc_proc_orig).squeeze().astype(np.float64),
                  b))
 
             transformed2 = cv2.warpAffine(
-                np.array(he_thumbnail).squeeze().astype(np.float64),
+                np.array(he_thumbnail_orig).squeeze().astype(np.float64),
                 M[:2, ...].squeeze(),
-                np.array(ihc_proc).squeeze().shape[::-1])
+                np.array(ihc_proc_orig).squeeze().shape[::-1])
             overlay = cv2.addWeighted(
                 transformed2, .2,
-                np.array(ihc_thumbnail).squeeze().astype(np.float64), .8,
+                np.array(ihc_thumbnail_orig).squeeze().astype(np.float64), .8,
                 0).astype(np.uint8)
 
             align_viz_binary[he_i][ihc_i] = stacked_im
@@ -236,14 +321,20 @@ def align_block(mask_annot, mask_annot_meta, match_cf, svs_root, out_dir):
         pickle.dump(
             {
                 "matrices": matrices,
+                "num_matches": num_matches,
+                "all_scale": all_scale
+            }, fd)
+
+    with open(opj(out_dir, f"{curr_block_str}_align_viz.pkl"), "wb") as fd:
+        pickle.dump(
+            {
                 "align_viz_binary": align_viz_binary,
                 "align_viz_im": align_viz_im,
                 "he_binary": he_binary,
                 "he_im": he_im,
                 "he_scale": he_scale,
                 "all_binary": all_binary,
-                "all_im": all_im,
-                "all_scale": all_scale
+                "all_im": all_im
             }, fd)
 
     plt.rcParams['pdf.fonttype'] = 42
@@ -362,10 +453,10 @@ def main():
                 opj(cf["infra"]["annot_root"], "meta",
                     f"{b}_sections_annot_meta.csv"))
             align_block(mask_annot,
-                        mask_annot_meta,
-                        cf["alignment"],
-                        svs_root=cf["infra"]["svs_root"],
-                        out_dir=cf["infra"]["out_dir"])
+                    mask_annot_meta,
+                    cf["alignment"],
+                    svs_root=cf["infra"]["svs_root"],
+                    out_dir=cf["infra"]["out_dir"])
             logging.info(f"OK - {b}")
 
         except Exception as e:
@@ -373,8 +464,8 @@ def main():
             logging.error(e.__class__.__name__)
             logging.error(e)
 
-        
         torch.cuda.empty_cache()
+
 
 if __name__ == "__main__":
     main()

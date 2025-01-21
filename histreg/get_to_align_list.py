@@ -6,7 +6,7 @@ from os.path import join as opj
 
 def main():
     block_annot_path = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/pixel_alignment/sections_annot2/block_annot/"
-    block_align_prev = "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align/"
+    block_align_prev = "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_0120_rigid/"
     out_data_dir = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/data"
 
     finished_annot_blocks = os.listdir(block_annot_path)
