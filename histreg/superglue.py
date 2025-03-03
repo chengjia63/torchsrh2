@@ -80,6 +80,7 @@ def normalize(x: torch.Tensor) -> torch.Tensor:
     min_ = einops.reduce(x, 'c h w -> c', 'min')
     return torchvision.transforms.functional.normalize(x, min_, max_ - min_)
 
+
 def normalize_np(x: torch.Tensor) -> torch.Tensor:
     """
     Normalizes a PyTorch tensor image channel-wise.
@@ -95,8 +96,9 @@ def normalize_np(x: torch.Tensor) -> torch.Tensor:
     """
     max_ = x.max()
     min_ = x.min()
-    return  (x - min_) / (max_ - min_)
-    
+    return (x - min_) / (max_ - min_)
+
+
 def convert_to_gray(x: torch.Tensor) -> torch.Tensor:
     """
     Converts an RGB image tensor to a grayscale image tensor.
@@ -135,15 +137,16 @@ def basic_preprocessing(x: np.ndarray, red_only=False) -> torch.Tensor:
     """
     if red_only:
         test_hsv = cv2.cvtColor(x, cv2.COLOR_RGB2HSV).astype(float)
-        blue_green_saturated = ((test_hsv[..., 0] > 30) & (test_hsv[..., 0] < 150) & (test_hsv[..., 1] > 50))
+        blue_green_saturated = ((test_hsv[..., 0] > 30) &
+                                (test_hsv[..., 0] < 150) &
+                                (test_hsv[..., 1] > 50))
         where_bgs = np.argwhere(blue_green_saturated)
-        test_hsv[where_bgs[:,0], where_bgs[:,1], 2] *= 2
-        test_hsv[where_bgs[:,0], where_bgs[:,1], 1] /= 2
-        test_hsv[...,2][test_hsv[...,2]>255] = 255
+        test_hsv[where_bgs[:, 0], where_bgs[:, 1], 2] *= 2
+        test_hsv[where_bgs[:, 0], where_bgs[:, 1], 1] /= 2
+        test_hsv[..., 2][test_hsv[..., 2] > 255] = 255
         x = cv2.cvtColor(test_hsv.astype(np.uint8), cv2.COLOR_HSV2RGB)
 
-    
-    x = cv2.cvtColor(x, cv2.COLOR_RGB2GRAY) #convert_to_gray(x).squeeze()
+    x = cv2.cvtColor(x, cv2.COLOR_RGB2GRAY)  #convert_to_gray(x).squeeze()
     x = 1 - normalize_np(x)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     x = clahe.apply((np.array(x) * 255).astype(np.uint8))
@@ -626,8 +629,55 @@ def calculate_affine_transform(source_points: np.ndarray,
     transform = transform.T
     return transform
 
+def calculate_rigid_transform(source_points: np.ndarray, target_points: np.ndarray) -> np.ndarray:
+    """
+    Compute the rigid transformation (rotation + translation, no scaling) that best aligns
+    source_points to target_points using the least-squares approach.
+    
+    Args:
+        source_points (np.ndarray): Nx2 array of source points.
+        target_points (np.ndarray): Nx2 array of target points.
+        
+    Returns:
+        np.ndarray: 3x3 transformation matrix.
+    """
+    assert source_points.shape == target_points.shape, "Source and target must have the same shape."
+    
+    # Compute centroids
+    centroid_source = np.mean(source_points, axis=0)
+    centroid_target = np.mean(target_points, axis=0)
+    
+    # Center the points
+    centered_source = source_points - centroid_source
+    centered_target = target_points - centroid_target
 
-def calculate_rigid_transform(source_points: np.ndarray,
+    # Compute cross-covariance matrix
+    H = centered_source.T @ centered_target  # 2x2 matrix
+    
+    # SVD decomposition
+    U, _, Vt = np.linalg.svd(H)
+    
+    # Compute rotation matrix
+    R = Vt.T @ U.T
+    
+    # Ensure proper rotation matrix (no reflection)
+    #if np.linalg.det(R) < 0:
+    #    Vt[-1, :] *= -1
+    #    R = Vt.T @ U.T
+    
+    # Compute translation vector
+    t = centroid_target - R @ centroid_source
+
+    # Construct the rigid transformation matrix
+    transform = np.array([
+        [R[0, 0], R[0, 1], t[0]],
+        [R[1, 0], R[1, 1], t[1]],
+        [0, 0, 1]
+    ], dtype=source_points.dtype)
+    
+    return transform
+
+def calculate_rigid_transform_bak(source_points: np.ndarray,
                               target_points: np.ndarray) -> np.ndarray:
     """
     TODO
@@ -654,6 +704,10 @@ def calculate_rigid_transform(source_points: np.ndarray,
                          dtype=source_points.dtype)
     return transform
 
+def calculate_perspective_transform(source_points: np.ndarray,
+                              target_points: np.ndarray) -> np.ndarray:
+
+    return cv2.getPerspectiveTransform(source_points, target_points)
 
 def perform_registration(source: torch.Tensor,
                          target: torch.Tensor,
@@ -661,6 +715,7 @@ def perform_registration(source: torch.Tensor,
                          superpoint_weights_path: str,
                          superglue_weights_path: str,
                          transform_type: str,
+                         do_ransac: bool = False,
                          device: str = "cuda") -> torch.Tensor:
     model = Matching(superglue_params).eval().to(device)
     model.superpoint.load_state_dict(
@@ -670,7 +725,6 @@ def perform_registration(source: torch.Tensor,
 
     source = source.to(device)
     target = target.to(device)
-
     pred = model({'image0': source, 'image1': target})
     pred = {k: v[0].detach().cpu().numpy() for k, v in pred.items()}
     kpts0, kpts1 = pred['keypoints0'], pred['keypoints1']
@@ -683,23 +737,32 @@ def perform_registration(source: torch.Tensor,
     mkpts0 = kpts0[valid]
     mkpts1 = kpts1[matches[valid]]
 
-    if len(mkpts0) < 10:
-        return np.eye(3), len(mkpts0), None
     #print(f"Number of matches: {len(h_pts0)}")
-    transform = no_ransac(source_points=mkpts0,
-                          target_points=mkpts1,
-                          transform_type=transform_type)
+    if do_ransac:
+        #transform, _ = cv2.findHomography(mkpts0, mkpts1, cv2.RANSAC, ransacReprojThreshold = 8)
+        transform, n_match = ransac(source_points=mkpts0,
+                                    target_points=mkpts1,
+                                    transform_type=transform_type)
+    elif len(mkpts0) < 10:
+        transform = np.eye(3)
+        n_match = 0
 
-    return transform, len(mkpts0), mkpts1
+    else:
+        transform, n_match = no_ransac(source_points=mkpts0,
+                                       target_points=mkpts1,
+                                       transform_type=transform_type)
+        n_match = len(mkpts0)
+
+    return transform, n_match, (len(kpts0), len(kpts1))
 
 
 def ransac(source_points: np.ndarray,
            target_points: np.ndarray,
-           num_iters: int = 500,
-           threshold: float = 16.0,
-           num_points: int = 3,
+           num_iters: int = 1000,
+           threshold: float = 4.0,
+           num_points: int = 4,
            transform_type: str = 'affine') -> np.ndarray:
-    log.warning("Using ransac")
+    #log.warning("Using ransac")
     best_transform = no_ransac(source_points,
                                target_points,
                                transform_type=transform_type)
@@ -707,9 +770,14 @@ def ransac(source_points: np.ndarray,
 
     best_ratio = 0.0
     best_inliers = None
-
+    #print(f"num_mathes: {len(source_points)}")
     for _ in range(num_iters):
-        current_indices = np.random.choice(indices, num_points, replace=False)
+        if num_points > len(source_points):
+            current_indices = indices
+        else:
+            current_indices = np.random.choice(indices,
+                                               num_points,
+                                               replace=False)
         current_sp = source_points[current_indices, :]
         current_tp = target_points[current_indices, :]
 
@@ -717,14 +785,15 @@ def ransac(source_points: np.ndarray,
                               current_tp,
                               transform_type=transform_type)
 
-        transformed_target_points = (
+        transformed_source_points = (
             transform
-            @ points_to_homogeneous_representation(target_points).swapaxes(
-                1, 0)).swapaxes(0, 1)
-        error = ((points_to_homogeneous_representation(source_points) -
-                  transformed_target_points)**2).mean(axis=1)
+            @ points_to_homogeneous_representation(source_points).T).T
+        error = np.linalg.norm(transformed_source_points[:, :2] -
+                               target_points,
+                               axis=1)
         inliers = error < threshold
         ratio = inliers.sum() / len(source_points)
+
         if ratio > best_ratio:
             best_ratio = ratio
             best_transform = transform
@@ -732,10 +801,11 @@ def ransac(source_points: np.ndarray,
             #print(f"Current best ratio: {best_ratio}")
 
     if best_inliers is not None and np.any(best_inliers):
-        best_transform = no_ransac(source_points[best_inliers, :],
-                                   target_points[best_inliers, :],
-                                   transform_type=transform_type)
-    return best_transform
+        return no_ransac(source_points[best_inliers, :],
+                         target_points[best_inliers, :],
+                         transform_type=transform_type), sum(best_inliers)
+    else:
+        return np.eye(3), 0
 
 
 def no_ransac(source_points: np.ndarray,
@@ -748,8 +818,11 @@ def no_ransac(source_points: np.ndarray,
         transform = calculate_affine_transform(h_pts0, h_pts1)
     elif transform_type == "rigid":
         transform = calculate_rigid_transform(source_points, target_points)
+    elif transform_type == "perspective":
+        transform = calculate_perspective_transform(source_points, target_points)
     else:
         raise ValueError("Unsupported transform type (rigid or affine only).")
+
     return transform
 
 
@@ -858,26 +931,6 @@ def initial_resampling(
         gaussian_smoothing(target, min(max(resample_ratio - 1, 0.1), 10)),
         resample_ratio)
     return resampled_source, resampled_target, resample_ratio
-
-
-def superpoint_superglue(src: torch.Tensor, trg: torch.Tensor,
-                         registration_params: Dict) -> torch.Tensor:
-    """
-    Performs feature matching and transformation estimation using SuperPoint 
-    and SuperGlue.
-
-    Args:
-        src (torch.Tensor): Source tensor with shape (C, H, W).
-        trg (torch.Tensor): Target tensor with shape (C, H, W).
-        registration_params (Dict): Parameters for registration.
-
-    Returns:
-        torch.Tensor: The transformed source, target, and registration info.
-    """
-    transform, num_matches, _ = perform_registration(src, trg,
-                                                     **registration_params)
-
-    return src, trg, transform, num_matches
 
 
 def generate_rigid_matrix(angle: float, x0: float, y0: float, tx: float,
@@ -997,26 +1050,29 @@ def adjust_matrix_and_size(image_shape, transform_matrix):
     new_height = int(np.ceil(max_y - min_y))
 
     # Adjust the translation part of the transformation matrix
-    adjustment_matrix = np.array([[1, 0, -min_x], [0, 1, -min_y], [0,0,1]])
+    adjustment_matrix = np.array([[1, 0, -min_x], [0, 1, -min_y], [0, 0, 1]])
 
     new_transform_matrix = adjustment_matrix @ np.vstack(
         [transform_matrix, [0, 0, 1]])
 
-    return new_transform_matrix[:2,...], (new_height, new_width)
+    return new_transform_matrix[:2, ...], (new_height, new_width)
 
-def make3x3(x): return np.vstack((x, np.array([[0, 0, 1]])))
 
-def multi_feature(source: torch.Tensor,
+def make3x3(x):
+    return np.vstack((x, np.array([[0, 0, 1]])))
+
+
+def match_superglue(source: torch.Tensor,
                   target: torch.Tensor,
                   registration_params,
-                  he_proc_bg = 0,
+                  he_proc_bg=0,
                   angle_step=30,
                   resolution=768) -> torch.Tensor:
 
     transforms = []
     source, target, resample_ratio = initial_resampling(
         source, target, resolution)
-    
+
     resample_scale_matrix = get_uniform_resizing_affine_matrix(resample_ratio)
 
     for angle in range(-180, 180, angle_step):
@@ -1032,36 +1088,31 @@ def multi_feature(source: torch.Tensor,
 
         r_transform, new_size_xy = adjust_matrix_and_size((y_size, x_size),
                                                           r_transform)
-        transformed_source = cv2.warpAffine(
-            np.array(source).squeeze().astype(np.float64),
-            r_transform[:2, ...].squeeze(), new_size_xy[::-1], borderValue=he_proc_bg.item())
-
+        transformed_source = cv2.warpAffine(np.array(source).squeeze().astype(
+            np.float64),
+                                            r_transform[:2, ...].squeeze(),
+                                            new_size_xy[::-1],
+                                            borderValue=he_proc_bg.item())
 
         transformed_source = torch.tensor(
             transformed_source, dtype=torch.float).unsqueeze(0).unsqueeze(0)
-        
+
         #plt.figure()
         #plt.imshow(transformed_source.squeeze())
         #plt.figure()
         #plt.imshow(target.squeeze())
-
-        
-        _, _, M, num_matches = superpoint_superglue(
-            transformed_source,
-            target,
-            registration_params=registration_params)
         #plt.title(num_matches)
-        M = (make3x3(resample_scale_matrix) @
-            M @ 
-            make3x3(r_transform) @
-            make3x3(inverse_affine_transform(resample_scale_matrix))
-        )
-        transforms.append((M, num_matches))
+        M, num_matches, nkps = perform_registration(transformed_source, target,
+                                                    **registration_params)
+        #print(f"{num_matches} / {nkps}")
+        M = (make3x3(resample_scale_matrix) @ M @ make3x3(r_transform)
+             @ make3x3(inverse_affine_transform(resample_scale_matrix)))
+        transforms.append((M, num_matches, nkps))
 
     best_matches = 0
     best_transform = np.eye(3)
 
-    for transform, num_matches in transforms:
+    for transform, num_matches, nkps in transforms:
         if num_matches > best_matches:
             best_transform = transform
             best_matches = num_matches

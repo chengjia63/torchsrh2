@@ -1,17 +1,17 @@
 #!/bin/bash
 
 #------------------------------------------------------------------------------
-#SBATCH --job-name=eval
+#SBATCH --job-name=infra
 #SBATCH --mail-type=ALL
 #SBATCH --output=slurm_out/%A_%a.out
 #------------------------------------------------------------------------------
-#SBATCH --partition=precisionhealth
-#SBATCH --cpus-per-task=5
-#SBATCH --mem-per-cpu=18750m
+# SBATCH --partition=precisionhealth
+# SBATCH --cpus-per-task=5
+# SBATCH --mem-per-cpu=18750m
 # --------
 # SBATCH --partition=gpu
-# SBATCH --mem-per-cpu=7500m
-# SBATCH --cpus-per-task=4
+# SBATCH --mem-per-cpu=6000m
+# SBATCH --cpus-per-task=10
 # SBATCH --partition=gpu
 # SBATCH --mem-per-cpu=7500m
 # SBATCH --cpus-per-task=4
@@ -27,26 +27,34 @@
 # SBATCH --partition=tocho
 # SBATCH --cpus-per-task=8
 # SBATCH --mem-per-cpu=7739m
-#------------------------------------------------------------------------------
+# --------
+#SBATCH --partition=standard
+#SBATCH --cpus-per-task=1
+#SBATCH --mem-per-cpu=5000m
+# ------------------------------------------------------------------------------
 # SBATCH --account=tocho1
+#SBATCH --account=tocho99
 # SBATCH --account=tocho0
-#SBATCH --account=precisionhealth_owned1
+# SBATCH --account=precisionhealth_owned1
 # SBATCH --account=tocho_owned1
 #------------------------------------------------------------------------------
 # SBATCH --nodelist=armis20108
 #------------------------------------------------------------------------------
-#SBATCH --time=14-00:00:00
-# SBATCH --time=27:00:00
+# SBATCH --time=14-00:00:00
+#SBATCH --time=72:00:00
 # SBATCH --time=16:00:00
 #------------------------------------------------------------------------------
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:1
+# SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #------------------------------------------------------------------------------
-#SBATCH --array=0-39
+#SBATCH --array=0-58
+# SBATCH --array=300-599
+# SBATCH --array=600-869
+# SBATCH --array=0-28
 #------------------------------------------------------------------------------
 
 set -x
 set -e
 
-python patch.py --slide_dir=/nfs/mm-isilon/brainscans/dropbox/Slide_Incoming/svs --local_dir=/nfs/turbo/umms-tocho-snr/exp/chengjia/madeleine_patch --patch_mag=40 --patch_size=512 --slide_fnames=data/to_patch_250216.csv --process_batch_size=54
+python patch_block.py

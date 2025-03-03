@@ -23,7 +23,8 @@ import torch.nn.functional as F
 from itertools import chain, accumulate
 import pickle
 
-from histreg.fitting_sg import basic_preprocessing, multi_feature, default_match_cf, np_to_tensor, inverse_affine_transform, make3x3
+from histreg.superglue import match_superglue, basic_preprocessing, default_match_cf, np_to_tensor, inverse_affine_transform, make3x3
+from histreg.bf import match_bf
 
 
 def sanitize_string(string):
@@ -68,7 +69,7 @@ def get_sections_annot(he_annot):
     if len(masked_ims) == 1:
         neg_mask = ~masked_ims[0].to(bool)
     else:
-        neg_mask = ~torch.logical_or(*masked_ims)
+        neg_mask = ~torch.stack(masked_ims).any(dim=0)
 
     return masked_ims, [neg_mask] * len(masked_ims)
 
@@ -104,19 +105,24 @@ def get_sections_annot(he_annot):
 
 def interpolate_crop_mask(he_proc_shape, he_mask):
     desired_mask_size = max(he_proc_shape[0], he_proc_shape[1])
+    ann_size = max(he_mask.shape[0], he_mask.shape[1])
 
-    # using nearest because this is a binary mask
-    new_size = (desired_mask_size, desired_mask_size)
-    mask_resized = F.interpolate(he_mask.to(
-        torch.uint8).unsqueeze(0).unsqueeze(0),
-                                 size=new_size,
-                                 mode='nearest').squeeze(0).squeeze(0)
-
-    if he_proc_shape[0] < he_proc_shape[1]:
-        mask_resized = mask_resized[:he_proc_shape[0], :]
+    if desired_mask_size < ann_size:
+        image = he_mask[:he_proc_shape[0], :he_proc_shape[1]].to(torch.uint8)
+        #canvas = torch.zeros_like(he_mask).to(torch.uint8)
+        return image
     else:
-        mask_resized = mask_resized[:, :he_proc_shape[1]]
-    return mask_resized
+        # using nearest because this is a binary mask
+        new_size = (desired_mask_size, desired_mask_size)
+        mask_resized = F.interpolate(he_mask.to(
+            torch.uint8).unsqueeze(0).unsqueeze(0),
+                                     size=new_size,
+                                     mode='nearest').squeeze(0).squeeze(0)
+        if he_proc_shape[0] < he_proc_shape[1]:
+            mask_resized = mask_resized[:he_proc_shape[0], :]
+        else:
+            mask_resized = mask_resized[:, :he_proc_shape[1]]
+        return mask_resized
 
 
 def rescale_and_mask(he_proc, he_mask, he_mask_neg):
@@ -161,9 +167,8 @@ def rescale_and_mask(he_proc, he_mask, he_mask_neg):
     else:
         fg = he_proc[min_fg[0]:max_fg[0], min_fg[1]:max_fg[1]]
         bg_avg = he_proc[bg_coords2[:, 0], bg_coords2[:, 1]].mean()
-        masked_im = mask_resized * fg + (
-            1 - mask_resized) * einops.repeat(
-                [bg_avg], "1 -> H W", H=fg.shape[0], W=fg.shape[1])
+        masked_im = mask_resized * fg + (1 - mask_resized) * einops.repeat(
+            [bg_avg], "1 -> H W", H=fg.shape[0], W=fg.shape[1])
 
     return masked_im, bg_avg, xform
 
@@ -207,6 +212,9 @@ def align_block(mask_annot, mask_annot_meta, match_cf, svs_root, out_dir):
     #mask_annot_meta = mask_annot_meta.rename(
     #    columns={"Unnamed: 0": "main_idx"})
 
+    if len(mask_annot.shape) == 3: # 1 physical slide
+        mask_annot = np.expand_dims(mask_annot, 0)
+
     section_mask_both = [get_sections_annot(m) for m in mask_annot]
     section_mask = [smb[0] for smb in section_mask_both]
     section_mask_neg = [smb[1] for smb in section_mask_both]
@@ -223,6 +231,10 @@ def align_block(mask_annot, mask_annot_meta, match_cf, svs_root, out_dir):
     mask_annot_meta["sections_mask"] = list_indices
     curr_block = mask_annot_meta.explode("sections_mask").reset_index(
         drop=True)
+    curr_block = curr_block[~(curr_block["comment"] == "RM")].reset_index(
+        drop=True)
+    #curr_block = curr_block.iloc[[0,3,5,6,7,-1]].reset_index(drop=True) # for debugging
+    #curr_block = curr_block.iloc[[0,3]].reset_index(drop=True) # for debugging
 
     assert curr_block['UM Accession'].nunique() == 1
     assert curr_block['Block'].nunique() == 1
@@ -231,6 +243,14 @@ def align_block(mask_annot, mask_annot_meta, match_cf, svs_root, out_dir):
 
     curr_he = curr_block[curr_block["Stain"] == "H&E"]
     curr_ihc = curr_block[~(curr_block["Stain"] == "H&E")]
+
+    if len(curr_he) == 0:
+        logging.info(f"@@@ {curr_block_str},no_he,abort")
+        return
+
+    if len(curr_block) == 1:
+        logging.info(f"@@@ {curr_block_str},one_section_only,ok")
+        return
 
     logging.info("Num slide: HE / IHC / Total: " +
                  f"{len(curr_he)} / {len(curr_ihc)} / {len(curr_block)}")
@@ -254,8 +274,8 @@ def align_block(mask_annot, mask_annot_meta, match_cf, svs_root, out_dir):
         he_slide = openslide.OpenSlide(opj(svs_root, he_s["path"]))
         he_thumbnail_orig, he_scale_i = get_thumbnail(he_slide)
         src_is_he = (he_s["Stain"] == "H&E")
-        he_proc_orig = basic_preprocessing(he_thumbnail_orig, red_only=src_is_he)
-        logging.info(src_is_he)
+        he_proc_orig = basic_preprocessing(he_thumbnail_orig,
+                                           red_only=src_is_he)
 
         he_thumbnail, _, _ = rescale_and_mask(
             he_thumbnail_orig, flat_mask[he_s["sections_mask"]],
@@ -264,21 +284,24 @@ def align_block(mask_annot, mask_annot_meta, match_cf, svs_root, out_dir):
             he_proc_orig, flat_mask[he_s["sections_mask"]],
             flat_mask_neg[he_s["sections_mask"]])
 
-        he_binary.append(np.array(he_proc_orig).squeeze().astype(np.float64))
-        he_im.append(np.array(he_thumbnail_orig).squeeze().astype(np.float64))
+        he_binary.append(np.array(he_proc).squeeze().astype(np.float64))
+        he_im.append(np.array(he_thumbnail).squeeze().astype(np.float64))
         he_scale.append(he_scale_i)
 
         for ihc_i, ihc_s in curr_block.iterrows():
             ihc_slide = openslide.OpenSlide(opj(svs_root, ihc_s["path"]))
             ihc_thumbnail_orig, ihc_scale_j = get_thumbnail(ihc_slide)
             tgt_is_he = (ihc_s["Stain"] == "H&E")
-            ihc_proc_orig = basic_preprocessing(ihc_thumbnail_orig, red_only=tgt_is_he)
-            logging.info(tgt_is_he)
+            ihc_proc_orig = basic_preprocessing(ihc_thumbnail_orig,
+                                                red_only=tgt_is_he)
+            logging.info(f"{he_s['Stain']} {he_i} -> {ihc_s['Stain']} {ihc_i}")
 
             ihc_thumbnail, _, _ = rescale_and_mask(
-                ihc_thumbnail_orig, flat_mask[ihc_s["sections_mask"]], flat_mask_neg[ihc_s["sections_mask"]])
+                ihc_thumbnail_orig, flat_mask[ihc_s["sections_mask"]],
+                flat_mask_neg[ihc_s["sections_mask"]])
             ihc_proc, _, ihc_xform = rescale_and_mask(
-                ihc_proc_orig, flat_mask[ihc_s["sections_mask"]], flat_mask_neg[ihc_s["sections_mask"]])
+                ihc_proc_orig, flat_mask[ihc_s["sections_mask"]],
+                flat_mask_neg[ihc_s["sections_mask"]])
 
             if he_i == 0:
                 all_binary.append(
@@ -287,12 +310,25 @@ def align_block(mask_annot, mask_annot_meta, match_cf, svs_root, out_dir):
                     np.array(ihc_thumbnail).squeeze().astype(np.float64))
                 all_scale.append(ihc_scale_j)
 
-            M, nm = multi_feature(he_proc.to(torch.float),
-                                  ihc_proc.to(torch.float),
-                                  match_cf,
-                                  he_proc_bg,
-                                  angle_step=20)
-            M = make3x3(inverse_affine_transform(ihc_xform[:2,...])) @ M @ he_xform
+            if match_cf.get("bf_only", False):
+                M, nm = match_bf(he_proc.to(torch.float), ihc_proc.to(torch.float))
+                logging.info(f"{he_s['Stain']} {he_i} -> {ihc_s['Stain']} {ihc_i}: {nm} BF dice")
+            else:
+                M, nm = match_superglue(he_proc.to(torch.float),
+                                    ihc_proc.to(torch.float),
+                                        match_cf,
+                                        he_proc_bg,
+                                        angle_step=20)
+
+                #if nm < 50:  # do BF matching - it is too slow, will do it later
+                #    M, nm = match_bf(he_proc.to(torch.float), ihc_proc.to(torch.float))
+                #    logging.info(f"{he_s['Stain']} {he_i} -> {ihc_s['Stain']} {ihc_i}: {nm} BF dice")
+                #else:
+
+                logging.info(f"{he_s['Stain']} {he_i} -> {ihc_s['Stain']} {ihc_i}: {nm} matches")
+
+            M = make3x3(inverse_affine_transform(
+                ihc_xform[:2, ...])) @ M @ he_xform
 
             matrices[he_i, ihc_i, ...] = M
             num_matches[he_i, ihc_i] = nm
@@ -302,8 +338,8 @@ def align_block(mask_annot, mask_annot_meta, match_cf, svs_root, out_dir):
                 np.array(ihc_proc_orig).squeeze().shape[::-1])
             b = np.zeros(transformed1.shape)
             stacked_im = np.dstack(
-                (transformed1, np.array(ihc_proc_orig).squeeze().astype(np.float64),
-                 b))
+                (transformed1,
+                 np.array(ihc_proc_orig).squeeze().astype(np.float64), b))
 
             transformed2 = cv2.warpAffine(
                 np.array(he_thumbnail_orig).squeeze().astype(np.float64),
@@ -453,18 +489,18 @@ def main():
                 opj(cf["infra"]["annot_root"], "meta",
                     f"{b}_sections_annot_meta.csv"))
             align_block(mask_annot,
-                    mask_annot_meta,
-                    cf["alignment"],
-                    svs_root=cf["infra"]["svs_root"],
-                    out_dir=cf["infra"]["out_dir"])
+                        mask_annot_meta,
+                        cf["alignment"],
+                        svs_root=cf["infra"]["svs_root"],
+                        out_dir=cf["infra"]["out_dir"])
             logging.info(f"OK - {b}")
 
         except Exception as e:
-            logging.error(f"FAIL - {b}")
+            logging.error(f"@@@ FAIL - {b}")
             logging.error(e.__class__.__name__)
             logging.error(e)
 
-        torch.cuda.empty_cache()
+        #torch.cuda.empty_cache()
 
 
 if __name__ == "__main__":
