@@ -45,6 +45,7 @@ class PatchDataset(BalanceableBaseDataset):
                  num_transforms: int = 1,
                  process_read_im: callable = MemmapReader("srh"),
                  balance_instance_class=False,
+                 num_sample_wo_replacement=None,
                  **kwargs) -> None:
 
         super().__init__(**kwargs)
@@ -66,6 +67,9 @@ class PatchDataset(BalanceableBaseDataset):
 
         if balance_instance_class:
             self.replicate_balance_instances()
+        
+        if num_sample_wo_replacement:
+            self.sample_instances_wo_replacement(num_sample_wo_replacement)
         self.get_weights()
 
         logging.info(self.transform_)

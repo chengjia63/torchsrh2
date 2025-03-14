@@ -8,6 +8,7 @@ from omegaconf import OmegaConf
 from typing import Dict, Any
 
 from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
+from ts2.lm.mcm_systems import MCMSystem
 from ts2.lm.ssl_systems import (FlattenSystem, SimCLRSystem, SupConSystem, VICRegSystem,
                                 IJEPASystem, InterPatchJEPASystem)
 from ts2.lm.dinov2_eval_system import Dinov2EvalSystem
@@ -30,6 +31,7 @@ from ts2.eval.common import get_knn_logits, load_prediction
 from ts2.eval.eval_modules import do_eval
 
 lms = {
+    "MCMSystem": MCMSystem,
     "SupConSystem": SupConSystem,
     "SimCLRSystem": SimCLRSystem,
     #"SimSiamSystem": SimSiamSystem,
@@ -148,7 +150,7 @@ def do_training(cf):
     ]
 
     # config callbacks
-    logging.info(con_exp.model)
+    #logging.info(con_exp.model)
     ckpts, ckpt_params = setup_checkpoints(cf["training"]["trainval"],
                                            model_dir,
                                            training_params["num_it_per_ep"])

@@ -42,15 +42,15 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #------------------------------------------------------------------------------
-#SBATCH --array=0-3
+#SBATCH --array=0-7
 #------------------------------------------------------------------------------
 
 echo @@@ EVALUATION @@@
 set -x
 set -e
 
-python main.py -c=config/chengjia/eval_scsrh7_dinov2.yaml
-#python main.py -c=config/chengjia/eval_scsrh7.yaml
+#python main.py -c=config/chengjia/eval_scsrh7_dinov2.yaml
+python main.py -c=config/chengjia/eval_scsrh7.yaml
 
 #python main.py -c=config/chengjia/eval_dbta_supcon.yaml
 

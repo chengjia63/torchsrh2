@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2_scsrh/scsrh_bsv2_vits_stronger/
+  exp_name: ts2/scsrh_ibot
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: smpt_SE9
   log_gpu: True
@@ -29,8 +29,6 @@ data:
           #to_uint8: True
         strong_aug_params:
           aug_list:
-          #- which: dinov2_normalize_always_apply
-          #  params: {}
           - which: center_crop_always_apply
             params:
               size: 48
@@ -92,8 +90,26 @@ data:
 #        activation: relu
 #        drop: 0
 #        bias: True
+#lightning_module:
+#  which: SupConSystem
+#  params:
+#    model_hyperparams:
+#      backbone_cf:
+#        which: vit_small
+#        params:
+#          img_size: 48
+#          patch_size: 4
+#          global_pool: "token"
+#          class_token: True
+#          init_values: 0
+#      proj_params:
+#        hidden_layers: [384,384]
+#        n_out: 384
+#        activation: relu
+#        drop: 0
+#        bias: True
 lightning_module:
-  which: SupConSystem
+  which: MCMSystem
   params:
     model_hyperparams:
       backbone_cf:
@@ -103,13 +119,13 @@ lightning_module:
           patch_size: 4
           global_pool: "token"
           class_token: True
-          init_values: 1.0e-6
       proj_params:
-        hidden_layers: [384,384]
+        hidden_layers: [384]
         n_out: 384
         activation: relu
         drop: 0
         bias: True
+    strict: False
 #lightning_module:
 #  which: FlattenSystem
 #  params: {}
@@ -142,16 +158,29 @@ tune:
   diagonal_items: true
   params:
     testing/ckpt_path:
-    - 0783b969_Nov08-11-07-56_sd1000_simclr_lr0.0005_tune0/models/ckpt-epoch9-step106700-loss0.00.ckpt
-    - 17346017_Nov08-11-07-56_sd1000_supcon_lr0.0005_tune1/models/ckpt-epoch9-step106700-loss0.00.ckpt
-    - 6999ab3f_Nov08-11-09-20_sd1000_simclr_lr0.0001_tune2/models/ckpt-epoch9-step106700-loss0.00.ckpt
-    - 6c9c9135_Nov08-15-51-44_sd1000_supcon_lr0.0001_tune5/models/ckpt-epoch9-step106700-loss0.00.ckpt
-    - 93c8cb50_Nov08-11-09-20_sd1000_supcon_lr0.00005_tune3/models/ckpt-epoch9-step106700-loss0.00.ckpt
-    - e3eb58d6_Nov08-11-09-20_sd1000_simclr_lr0.00005_tune4/models/ckpt-epoch9-step106700-loss0.00.ckpt
+    - ad3cd942_Mar10-17-23-43_sd1000_ibot_1000_lr0.0005_tune1/models/ckpt-epoch53-step360450-loss0.00.ckpt
+    - b050cd38_Mar10-17-23-42_sd1000_ibot_1000_lr0.001_tune0/models/ckpt-epoch53-step360450-loss0.00.ckpt
+    - c647ab60_Mar10-08-48-03_sd1000_ibot_1000_lr0.001_tune0/models/ckpt-epoch161-step360450-loss0.00.ckpt
+    - e1eb758d_Mar10-08-48-03_sd1000_ibot_1000_lr0.0005_tune1/models/ckpt-epoch161-step360450-loss0.00.ckpt
+    - ad3cd942_Mar10-17-23-43_sd1000_ibot_1000_lr0.0005_tune1/models/ckpt-epoch53-step360450-loss0.00.ckpt
+    - b050cd38_Mar10-17-23-42_sd1000_ibot_1000_lr0.001_tune0/models/ckpt-epoch53-step360450-loss0.00.ckpt
+    - c647ab60_Mar10-08-48-03_sd1000_ibot_1000_lr0.001_tune0/models/ckpt-epoch161-step360450-loss0.00.ckpt
+    - e1eb758d_Mar10-08-48-03_sd1000_ibot_1000_lr0.0005_tune1/models/ckpt-epoch161-step360450-loss0.00.ckpt
     infra/comment:
-    - smpt_SE9
-    - smpt_SE9
-    - smpt_SE9
-    - smpt_SE9
-    - smpt_SE9
-    - smpt_SE9
+    - smpt_SEs36k
+    - smpt_SEs36k
+    - smpt_SEs36k
+    - smpt_SEs36k
+    - rmbg_SEs36k
+    - rmbg_SEs36k
+    - rmbg_SEs36k
+    - rmbg_SEs36k
+    data/transform/test/params/base_aug_params/mask_params/how_to_process:
+    - small_patch
+    - small_patch
+    - small_patch
+    - small_patch
+    - rm_background
+    - rm_background
+    - rm_background
+    - rm_background
