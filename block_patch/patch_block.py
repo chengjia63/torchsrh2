@@ -35,7 +35,6 @@ def sanitize_string(string):
 
 def get_sections_annot(he_annot):
     annot_mask = np.all(he_annot == np.array([[[0, 255, 0]]]), axis=2)
-
     contours, _ = cv2.findContours(annot_mask.astype(np.uint8),
                                    cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -58,13 +57,12 @@ def get_sections_annot2(he_annot, tissue_mask, wsi_size):
     annot_mask = np.all(he_annot == np.array([[[0, 255, 0]]]), axis=2)
     contours, _ = cv2.findContours(annot_mask.astype(np.uint8),
                                    cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
+    print(contours)
     if len(contours) == 0:
         return [tissue_mask]
 
     scale_factor = max(wsi_size) / he_annot.shape[0]
     contours = [c * scale_factor for c in contours]
-
     contour_polygons = [Polygon(c.reshape(-1, 2)) for c in contours]
     new_masks = [
         tissue_mask[tissue_mask['geometry'].apply(
@@ -232,11 +230,14 @@ def patch_one_block(su_b_df,
         opj(sections_annot_root, f"meta/{su_b}_sections_annot_meta.csv"))
     #mask_annot_meta = mask_annot_meta.rename(
     #    columns={"Unnamed: 0": "main_idx"})
-
-    with open(
-            opj(alignment_results_dir, su_b_df["which"], f"{su_b}_align.pkl"),
-            "rb") as fd:
-        alignment_result = pickle.load(fd)
+    
+    if su_b_df["which"] == "one_section_only":
+        pass
+    else:
+        with open(
+                opj(alignment_results_dir, su_b_df["which"], f"{su_b}_align.pkl"),
+                "rb") as fd:
+            alignment_result = pickle.load(fd)
 
     he_svs_fname = [
         x.split("/")[-1].removesuffix(".svs")
@@ -281,21 +282,22 @@ def patch_one_block(su_b_df,
     flatten_he_idx = list(chain(*he_df["sections_mask"].tolist()))
 
     merged_he_mask = flatten_he_masks[0]
-    for i, m in zip(flatten_he_idx[1:], flatten_he_masks[1:]):
-        joint = scale_alignment_matrix(
-            alignment_result["matrices"][flatten_he_idx[i], flatten_he_idx[0]],
-            scale_down_factor=64,
-            scale_up_factor=64)
-        (a, b, xoff), (d, e, yoff) = joint[0], joint[1]
+    if len(flatten_he_masks) > 1:
+        for i, m in zip(flatten_he_idx[1:], flatten_he_masks[1:]):
+            joint = scale_alignment_matrix(
+                alignment_result["matrices"][flatten_he_idx[i], flatten_he_idx[0]],
+                scale_down_factor=64,
+                scale_up_factor=64)
+            (a, b, xoff), (d, e, yoff) = joint[0], joint[1]
 
-        #m["geometry"] = m["geometry"].apply(lambda geom: affine_transform(geom, [a, b, d, e, xoff, yoff]))
+            #m["geometry"] = m["geometry"].apply(lambda geom: affine_transform(geom, [a, b, d, e, xoff, yoff]))
 
-        union_geom = unary_union(
-            merged_he_mask.geometry.tolist() +
-            m["geometry"].apply(lambda geom: affine_transform(
-                geom, [a, b, d, e, xoff, yoff])).tolist())
-        merged_he_mask = gpd.GeoDataFrame(geometry=[union_geom],
-                                          crs=merged_he_mask.crs)
+            union_geom = unary_union(
+                merged_he_mask.geometry.tolist() +
+                m["geometry"].apply(lambda geom: affine_transform(
+                    geom, [a, b, d, e, xoff, yoff])).tolist())
+            merged_he_mask = gpd.GeoDataFrame(geometry=[union_geom],
+                                              crs=merged_he_mask.crs)
 
     curr_block = mask_annot_meta.explode("sections_mask").reset_index(
         drop=False).rename({"index": "svs_idx"}, axis=1)
@@ -388,7 +390,9 @@ if __name__ == "__main__":
     logging.info("Block patching log")
 
     accepted_blocks = pd.read_csv(
-        "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/accepted.csv")
+        "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/out/accepted.csv")
+    #accepted_blocks = pd.read_csv(
+    #    "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/out/one_section.csv")
 
     env_var = dict(os.environ)
     if "SLURM_ARRAY_TASK_ID" in env_var:
@@ -397,11 +401,10 @@ if __name__ == "__main__":
         taskid = 0
 
 
-    #already_patched = glob("/nfs/turbo/umms-tocho-snr/exp/chengjia/mns_block_patch/*_coords_failed_256.pkl")
-    #already_patched = set([p.split("/")[-1].removesuffix("_coords_failed_256.pkl") for p in already_patched])
-    to_patch = {"SU-17-12682.BFS1", "SU-16-77440.C1", "SU-23-91257.BFS1", "SU-18-80489.BFS1", "SU-23-33206.AFS1", "SU-21-73814.AFS1", "SU-16-67977.DFS1", "SU-20-15566.AFS2", "SU-23-25914.AFS1", "SU-16-67977.BFS1", "SU-16-8718.AFS2", "SU-18-80489.CFS1", "SU-16-23941.BFS1", "SU-16-56241.A2", "SU-22-67885.AFS1", "SU-16-15163.F1", "SU-16-77052.B1", "SU-20-69044.AFS2", "SU-16-67977.GFS1", "SU-20-56730.AFS1", "SU-24-13913.AFS1", "SU-15-67638.B3", "SU-23-91257.CFS1", "SU-22-42978.AFS1", "SU-18-75995.CFS1", "SU-20-48305.B1", "SU-16-55822.BFS1", "SU-24-6697.BFS1", "SU-16-67977.AFS1", "SU-17-11331.AFS1", "SU-16-69491.D1", "SU-16-67977.EFS1", "SU-18-87344.B1", "SU-19-29875.AFS1", "SU-16-78984.AFS1", "SU-19-92145.AFS1", "SU-21-77631.AFS1", "SU-22-20422.AFS1", "SU-16-66639.AFS1", "SU-19-51322.A1", "SU-21-29260.AFS1", "SU-21-60796.BFS1", "SU-15-36882.BFS1", "SU-21-60796.CFS1", "SU-17-6316.AFS1", "SU-23-90902.AFS1", "SU-16-67977.CFS1", "SU-23-35133.AFS1", "SU-17-5919.D1", "SU-18-72877.AFS1", "SU-16-23941.AFS1", "SU-24-6697.AFS1", "SU-16-67977.FFS1", "SU-24-15184.AFS1", "SU-16-78185.AFS1", "SU-21-63941.AFS1", "SU-19-17477.BFS1", "SU-24-6697.CFS1", "SU-16-55822.CFS1", "SU-16-71485.C1", "SU-22-30350.BFS1"}
+    already_patched = glob("/nfs/turbo/umms-tocho-snr/exp/chengjia/mns_block_patch/*_coords_failed_256.pkl")
+    already_patched = set([p.split("/")[-1].removesuffix("_coords_failed_256.pkl") for p in already_patched])
     #to_patch = {"SU-15-62441.A3"}
-    accepted_blocks = accepted_blocks[accepted_blocks["block"].isin(to_patch)]
+    accepted_blocks = accepted_blocks[~ accepted_blocks["block"].isin(already_patched)]
 
     logging.info(f"GOT TASK ID {taskid}")
     patch_one_block(

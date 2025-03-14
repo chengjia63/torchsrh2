@@ -43,10 +43,10 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #------------------------------------------------------------------------------
-#SBATCH --array=0-39
+#SBATCH --array=0-19
 #------------------------------------------------------------------------------
 
 set -x
 set -e
 
-python patch.py --slide_dir=/nfs/mm-isilon/brainscans/dropbox/Slide_Incoming/svs --local_dir=/nfs/turbo/umms-tocho-snr/exp/chengjia/madeleine_patch --patch_mag=40 --patch_size=512 --slide_fnames=data/to_patch_250216.csv --process_batch_size=54
+python patch.py --slide_dir=/nfs/mm-isilon/brainscans/dropbox/Slide_Incoming/svs --local_dir=/nfs/turbo/umms-tocho-snr/exp/chengjia/madeleine_patch --patch_mag=40 --patch_size=512 --slide_fnames=data/to_patch_250314.csv --process_batch_size=100

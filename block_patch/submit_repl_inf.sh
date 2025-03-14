@@ -48,7 +48,7 @@
 # SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #------------------------------------------------------------------------------
-#SBATCH --array=0-58
+#SBATCH --array=0-47
 # SBATCH --array=300-599
 # SBATCH --array=600-869
 # SBATCH --array=0-28

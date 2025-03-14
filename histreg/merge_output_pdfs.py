@@ -81,18 +81,16 @@ def merge_two_pdfs(file1, file2, output_file):
 
 def main():
 
-    block_align_out_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_affine_ransac" #"/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_affine_ransac"
+    block_align_out_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_rigid_ransac" #"/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_affine_ransac"
     meta_root="/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/pixel_alignment/sections_annot2/meta/"
     block_align_viz_root = "./viz_out_crop_affine_ransac_0227"
     block_align_viz_root_bad = "./viz_out_crop_affine_ransac_0227_reject"
-    block_align_viz_root_he = "./viz_out_crop_affine_ransac_0227_he"
-    block_align_viz_root_he_bad = "./viz_out_crop_affine_ransac_0227_he_reject"
     align_finished = os.listdir(block_align_out_root)
 
     #im = set([i.removesuffix("_align.pkl") for i in align_finished if i.endswith("_align.pkl")])
     #to_review = sorted(im)
 
-    to_review = pd.read_csv("out/to_viz_0227.csv")["block"].tolist()
+    to_review = pd.read_csv("out/0227_re_viz1.csv")["block"].tolist()
 
     #previously_reviewed_root = "./viz_out_crop_affine"
     #if previously_reviewed_root:
@@ -100,13 +98,11 @@ def main():
     #    previously_reviewed = [pr.removesuffix("_mask_align.pdf") for pr in previously_reviewed]
     #    to_review = sorted(set(to_review).difference(previously_reviewed))
 
-    previously_accepted_blocks = pd.read_csv("accepted.csv")["block"] 
+    #previously_accepted_blocks = pd.read_csv("accepted.csv")["block"] 
 
-    to_review = sorted(set(to_review).difference(previously_accepted_blocks))
+    #to_review = sorted(set(to_review).difference(previously_accepted_blocks))
     os.makedirs(block_align_viz_root, exist_ok=True)
     os.makedirs(block_align_viz_root_bad, exist_ok=True)
-    os.makedirs(block_align_viz_root_he, exist_ok=True)
-    os.makedirs(block_align_viz_root_he_bad, exist_ok=True)
 
 
     out_fname = opj(block_align_viz_root,
@@ -120,7 +116,6 @@ def main():
         block_meta = pd.read_csv(opj(meta_root, f"{tr}_sections_annot_meta.csv"))
 
         stain_list = sorted(set(block_meta[~(block_meta["comment"]=="RM")]["Stain"].tolist()))
-        is_he_only = (( len(stain_list) == 1) and (stain_list[0]=="H&E"))
         with open(opj(block_align_out_root, f"{tr}_align.pkl"), "rb") as fd:
             align_results = pickle.load(fd)
 
@@ -131,16 +126,10 @@ def main():
             ((decomposed_params["scale_y"] - 1).abs() > 0.2).any() or
             (align_results["num_matches"] <= 50).any())
 
-        if is_he_only:
-            if reject:
-                curr_out_dir = block_align_viz_root_he_bad
-            else:
-                curr_out_dir = block_align_viz_root_he
+        if reject:
+            curr_out_dir = block_align_viz_root_bad
         else:
-            if reject:
-                curr_out_dir = block_align_viz_root_bad
-            else:
-                curr_out_dir = block_align_viz_root
+            curr_out_dir = block_align_viz_root
 
         first =  opj(block_align_out_root, f"{tr}_im_align.pdf")
         second = opj(block_align_out_root, f"{tr}_mask_align.pdf")
