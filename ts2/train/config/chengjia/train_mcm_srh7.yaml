@@ -151,7 +151,7 @@ training:
     deterministic: False
   trainval:
     freq:
-      interval: 1
+      interval: 5
       unit: "epoch"
 #testing:
 #  eval_mode: patch_knn
@@ -178,5 +178,5 @@ tune:
     - 0.001
     - 0.0005
     infra/comment:
-    - ibot_1000_lr0.001
-    - ibot_1000_lr0.0005
+    - ibot_mcm_patch_1_0.5_1000_lr0.001
+    - ibot_mcm_patch_1_0.5_1000_lr0.0005

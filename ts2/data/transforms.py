@@ -54,7 +54,7 @@ class ProcessSCSRHMask(torch.nn.Module):
             self.forward_impl = self.small_patch
             self.bg_fill = None
             self.num_channel_out = 2
-        elif how_to_process == "rm_background":
+        elif how_to_process in {"rm_background", "remove_background"}:
             self.bg_fill = bg_fill
             self.forward_impl = self.rm_bg
             self.num_channel_out = 2

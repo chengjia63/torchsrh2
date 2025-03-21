@@ -3,9 +3,7 @@ import itertools
 import copy
 from functools import partial
 from typing import Dict, Any, Optional
-from abc import ABC
 import gc
-import psutil
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -22,19 +20,25 @@ from torchsrh.losses.vicreg import GeneralVICRegLoss
 from ts2.models.ssl import (instantiate_backbone, MLP)
 from ts2.optim.utils import get_optimizer_scheduler
 from ts2.lm.ssl_systems import EvalBaseSystem
-from ts2.models.pjepa import trunc_normal_
 from ts2.models.ibot_vit import vit_small
 from torchvision import transforms as transforms
 
 
-def init_weights(m):
-    if isinstance(m, torch.nn.Linear):
-        trunc_normal_(m.weight, std=0.02)
-        if m.bias is not None:
-            torch.nn.init.constant_(m.bias, 0)
-    elif isinstance(m, torch.nn.LayerNorm):
-        torch.nn.init.constant_(m.bias, 0)
-        torch.nn.init.constant_(m.weight, 1.0)
+class GaussianBlur(transforms.RandomApply):
+    """
+    Apply Gaussian Blur to the PIL image.
+    """
+
+    def __init__(self,
+                 *,
+                 p: float = 0.5,
+                 radius_min: float = 0.1,
+                 radius_max: float = 2.0):
+        # NOTE: torchvision is applying 1 - probability to return the original image
+        keep_p = 1 - p
+        transform = transforms.GaussianBlur(kernel_size=9,
+                                            sigma=(radius_min, radius_max))
+        super().__init__(transforms=[transform], p=keep_p)
 
 
 class DataAugmentationiBOT(object):
@@ -67,7 +71,7 @@ class DataAugmentationiBOT(object):
                 scale=global_crops_scale,
                 interpolation=transforms.InterpolationMode.BICUBIC),
             flip_and_color_jitter,
-            #utils.GaussianBlur(1.0),
+            GaussianBlur(p=1.0),
             #normalize,
         ])
         # transformation for the rest of global crops
@@ -77,8 +81,8 @@ class DataAugmentationiBOT(object):
                 scale=global_crops_scale,
                 interpolation=transforms.InterpolationMode.BICUBIC),
             flip_and_color_jitter,
-            #utils.GaussianBlur(0.1),
-            #utils.Solarization(0.2),
+            GaussianBlur(p=0.1),
+            transforms.RandomSolarize(threshold=0.5, p=0.2),
             #normalize,
         ])
         # transformation for the local crops
@@ -89,7 +93,7 @@ class DataAugmentationiBOT(object):
                 scale=local_crops_scale,
                 interpolation=transforms.InterpolationMode.BICUBIC),
             flip_and_color_jitter,
-            #utils.GaussianBlur(p=0.5),
+            GaussianBlur(p=0.5),
             #normalize,
         ])
 
@@ -691,16 +695,68 @@ class MCMSystem(EvalBaseSystem):
             p.requires_grad = False
 
 
-#        self.predictor = None #vit_predictor( # TODO
-#            num_patches=self.encoder.patch_embed.num_patches,
-#            embed_dim=self.encoder.embed_dim,
-#            num_heads=self.encoder.num_heads,
-#            **pred_params)
+        # patch level encoder
+        self.student_patch_encoder = vit_small(img_size=[6],
+                                              patch_size=1,
+                                              in_chans=384,
+                                              masked_im_modeling=True,
+                                              return_all_tokens=True)
+        self.teacher_patch_encoder = vit_small(img_size=[6],
+                                              patch_size=1,
+                                              in_chans=384,
+                                              return_all_tokens=True)
+
+        self.student_patch_encoder = MultiCropWrapper(
+            self.student_patch_encoder,
+            iBOTHead(
+                384,  #embed_dim,
+                1024,  #args.out_dim,
+                patch_out_dim=1024,  #args.patch_out_dim,
+                norm=None,  #args.norm_in_head,
+                act='gelu',  #args.act_in_head,
+                norm_last_layer=True,  #args.norm_last_layer,
+                shared_head=False,  #args.shared_head,
+            ))
+
+        self.teacher_patch_encoder = MultiCropWrapper(
+            self.teacher_patch_encoder,
+            iBOTHead(
+                384,  #embed_dim, 
+                1024,  #args.out_dim,
+                patch_out_dim=1024,  #args.patch_out_dim,
+                norm=None,  #args.norm_in_head,
+                act="gelu",  #args.act_in_head,
+                shared_head=True,  #args.shared_head_teacher,
+            ),
+        )
+
+        # teacher and student start with the same weights
+        self.teacher_patch_encoder.load_state_dict(
+            self.student_patch_encoder.state_dict(), strict=False)
+        # there is no backpropagation through the teacher, so no need for gradients
+        for p in self.teacher_patch_encoder.parameters():
+            p.requires_grad = False
 
         self.training_params_ = training_params
         print(training_params)
         if training_params:
             self.criterion = iBOTLoss(
+                1024,  #args.out_dim,
+                1024,  #args.out_dim if same_dim else args.patch_out_dim,
+                2,  #args.global_crops_number,
+                8,  #args.local_crops_number,
+                0.04,  #args.warmup_teacher_temp,
+                0.04,  #args.teacher_temp,
+                0.07,  #args.warmup_teacher_patch_temp,
+                0.07,  #args.teacher_patch_temp,
+                int(training_params["num_ep_total"] *
+                    0.3),  #args.warmup_teacher_temp_epochs,
+                training_params["num_ep_total"],  # TODO #args.epochs,
+                lambda1=1.0,  #args.lambda1,
+                lambda2=1.0,  #args.lambda2,
+                mim_start_epoch=0,  #args.pred_start_epoch,
+            )
+            self.patch_criterion = iBOTLoss(
                 1024,  #args.out_dim,
                 1024,  #args.out_dim if same_dim else args.patch_out_dim,
                 2,  #args.global_crops_number,
@@ -723,7 +779,7 @@ class MCMSystem(EvalBaseSystem):
             self.tile_xform = DataAugmentationiBOT(global_crops_number=2,
                                                    local_crops_number=8)
             self.tile_mask_generator = IBotMaskGenerator(patch_size=4)
-            #self.patch_mask_generator = IBotMaskGenerator(patch_size=1)
+            self.patch_mask_generator = IBotMaskGenerator(patch_size=1)
 
             self.momentum_scheduler = cosine_scheduler(
                 0.9995, 1, training_params["num_ep_total"],
@@ -735,7 +791,7 @@ class MCMSystem(EvalBaseSystem):
 
         with torch.no_grad():
             self.tile_mask_generator.set_epoch(self.current_epoch)
-            #self.patch_mask_generator.set_epoch(self.current_epoch)
+            self.patch_mask_generator.set_epoch(self.current_epoch)
 
             # batch patches into tile regions
             batched_regions = einops.rearrange(
@@ -744,8 +800,10 @@ class MCMSystem(EvalBaseSystem):
                 rh=48,
                 rw=48)
 
-            # transform image, get crops
+            # transform image, get cropsself.teacher_tile_encoder
             region_crops = self.tile_xform(batched_regions)  # global, local
+            #region_crops = [self.tile_xform(i) for i in batched_regions]  # global, local
+            #region_crops = [torch.stack([i[j] for i in region_crops]) for j in range(len(region_crops[0]))]
 
             # get mask for global crop
             tile_masks = [
@@ -753,29 +811,155 @@ class MCMSystem(EvalBaseSystem):
                 for i in region_crops[:2]
             ]
 
+        #torch.save({"region_crops": region_crops, "tile_masks": tile_masks}, "test_aug.pt")
         # 48x48 tile encoding
-        student_global_emb = self.student_tile_encoder(region_crops[:2],
-                                                       mask=tile_masks)
-        teacher_emb = self.teacher_tile_encoder(region_crops[:2])
+        student_global_bb_emb, student_global_emb = self.student_tile_encoder(
+            region_crops[:2], mask=tile_masks, return_backbone_feat=True)
+
+        with torch.no_grad():
+            teacher_bb_emb, teacher_emb = self.teacher_tile_encoder(
+                region_crops[:2], return_backbone_feat=True)
 
         self.student_tile_encoder.backbone.masked_im_modeling = False
-        student_local_emb = self.student_tile_encoder(region_crops[2:])
+        student_local_bb_emb, student_local_emb = self.student_tile_encoder(
+            region_crops[2:], return_backbone_feat=True)
         self.student_tile_encoder.backbone.masked_im_modeling = True
 
-        # reshape the student and teacher output for second stage modeling
-        #studnet_emb_shaped0 = einops.rearrange(student_emb0, "(b a nh nw) d -> b a d nh nw", b=batch["image"].shape[0], nh=6, nw=6)
-        #student_emb_shaped1 = einops.rearrange(studnet_emb1, "(b a nh nw) d -> b a d nh nw", b=batch["image"].shape[0], nh=6, nw=6)
-        #
-        #with torch.no_grad():
-        #    teacher_emb0 = self.target_encoder(region0)
-        #    teacher_emb1 = self.target_encoder(region1)
+        student_token_global_reshaped = einops.rearrange(
+            student_global_bb_emb[:, 0, :],
+            "(v b nh nw) d -> v b d nh nw",
+            v=2,
+            nh=6,
+            nw=6)
+        student_token_local_reshaped = einops.rearrange(
+            student_local_bb_emb[:, 0, :],
+            "(v b nh nw) d -> v b d nh nw",
+            v=len(region_crops) - 2,
+            nh=6,
+            nw=6)
+        student_tokens = torch.cat(
+            (student_token_global_reshaped, student_token_local_reshaped))
 
-        #    teacher_emb_shaped0 = einops.rearrange(teacher_emb0, "(b a nh nw) d -> b a d nh nw", b=batch["image"].shape[0], nh=6, nw=6)
-        #    teacher_emb_shaped1 = einops.rearrange(teacher_emb1, "(b a nh nw) d -> b a d nh nw", b=batch["image"].shape[0], nh=6, nw=6)
+        with torch.no_grad():
+            teacher_tokens = einops.rearrange(teacher_bb_emb[:, 0, :],
+                                              "(v b nh nw) d -> v b d nh nw",
+                                              v=2,
+                                              nh=6,
+                                              nw=6)
+
+        def sample_view(tokens, v_min=None, v_max=None):
+            # tokens shape: (v, b, c, h, w)
+            v, b, c, h, w = tokens.shape
+            if v_min is None:
+                v_min = 0
+            if v_max is None:
+                v_max = v  # typically, v_max should be <= v, not b
+
+            # Permute to shape: (b, v, c, h, w) for easier gathering along the v dimension.
+            tokens_perm = tokens.permute(1, 0, 2, 3,
+                                         4)  # shape: (b, v, c, h, w)
+
+            # Generate random indices for each (b, h, w) location, shape: (b, h, w)
+            idx = torch.randint(low=v_min,
+                                high=v_max,
+                                size=(b, h, w),
+                                device=tokens.device)
+
+            # Expand idx to shape (b, 1, h, w) so it can be used to gather along the v dimension.
+            idx = idx.unsqueeze(1)  # shape: (b, 1, h, w)
+
+            # Expand indices to cover the channel dimension.
+            # The gather will be done along dim=1 (the v dimension).
+            idx = idx.expand(b, 1, h, w)
+
+            # Use gather to sample the selected view.
+            # We need to expand indices to also match the channel dimension.
+            # tokens_perm shape: (b, v, c, h, w)
+            # We want to gather along dim=1, resulting in shape (b, 1, c, h, w).
+            sampled = tokens_perm.gather(dim=1,
+                                         index=idx.unsqueeze(2).expand(
+                                             b, 1, c, h, w))
+
+            # Squeeze out the singleton view dimension to get shape: (b, c, h, w)
+            return sampled.squeeze(1)
+
+        def crop_views(xs, h0, w0):
+            # x: (b, c, h, w)
+            b, c, h, w = xs[0].shape
+            device = xs[0].device
+
+            # Random top and left coordinates for each image in the batch
+            top = torch.randint(0, h - h0 + 1, (b, ), device=device)
+            left = torch.randint(0, w - w0 + 1, (b, ), device=device)
+
+            # Create a range for the crop dimensions and expand it to (b, h0, w0)
+            row_offsets = torch.arange(h0, device=device).view(1, h0, 1)
+            col_offsets = torch.arange(w0, device=device).view(1, 1, w0)
+
+            # Compute absolute row and column indices for each crop
+            # top and left are reshaped to (b, 1, 1) so they broadcast properly
+            rows = top.view(b, 1, 1) + row_offsets  # shape: (b, h0, 1)
+            cols = left.view(b, 1, 1) + col_offsets  # shape: (b, 1, w0)
+
+            # Create a batch index for advanced indexing
+            batch_idx = torch.arange(b, device=device).view(b, 1, 1)
+
+            # Use advanced indexing to extract the crop for each image.
+            # This returns a tensor of shape (b, h0, w0, c)
+            cropped = [
+                x[batch_idx, :, rows, cols].permute(0, 3, 1, 2).contiguous() for x in xs
+            ]
+
+            return cropped
+
+        sampled_student_tokens = sample_view(student_tokens, 0, 2)
+        with torch.no_grad():
+            sampled_teacher_tokens = sample_view(teacher_tokens, 0, 2)
+
+        cropped_global_tokens = [
+            crop_views([sampled_student_tokens, sampled_teacher_tokens],
+                       h0=5,
+                       w0=5) for _ in range(2)
+        ]
+        student_global_tokens = [i[0] for i in cropped_global_tokens]
+        teacher_global_tokens = [i[1] for i in cropped_global_tokens]
+        student_local_tokens = [
+            crop_views([sampled_student_tokens], h0=3, w0=3)[0]
+            for _ in range(8)
+        ]
+
+        patch_masks = [
+            self.patch_mask_generator.get_mask(i).to(i.device)
+            for i in student_global_tokens
+        ]
+
+        student_patch_global_emb = self.student_patch_encoder(
+            student_global_tokens, mask=patch_masks)
+
+        with torch.no_grad():
+            teacher_patch_emb = self.teacher_patch_encoder(
+                teacher_global_tokens)
+
+        self.student_patch_encoder.backbone.masked_im_modeling = False
+        student_patch_local_emb = self.student_patch_encoder(student_local_tokens)
+        self.student_patch_encoder.backbone.masked_im_modeling = True
+
+
+        #torch.save(
+        #    {
+        #        "t": teacher_tokens,
+        #        "ts": sampled_teacher_tokens,
+        #        "s": student_tokens,
+        #        "ss": sampled_student_tokens
+        #    }, "stage1_out.pt")
 
         all_loss = self.criterion(student_global_emb, teacher_emb,
                                   student_local_emb[0], tile_masks,
                                   self.current_epoch)
+        #all_loss = {}
+        patch_loss = self.patch_criterion(student_patch_global_emb, teacher_patch_emb, student_patch_local_emb[0], patch_masks, self.current_epoch)
+
+        for k in patch_loss: all_loss[f"patch_{k}"] = patch_loss[k]
 
         for l in all_loss:
             self.log(f"train/{l}",
@@ -785,9 +969,17 @@ class MCMSystem(EvalBaseSystem):
                      batch_size=batched_regions.shape[0],
                      rank_zero_only=True)
 
-        loss = all_loss.pop('loss')
+        loss = all_loss.pop("loss") + 0.5 * all_loss.pop("patch_loss")
+        #loss = all_loss.pop("patch_loss")
         self.train_loss.update(loss.detach().item(),
                                weight=batched_regions.shape[0])
+
+        self.log(f"train/combined_loss",
+                     loss.detach().item(),
+                     on_step=True,
+                     on_epoch=True,
+                     batch_size=batched_regions.shape[0],
+                     rank_zero_only=True)
         return loss
 
     @torch.inference_mode()
@@ -838,8 +1030,6 @@ class MCMSystem(EvalBaseSystem):
 
     @torch.inference_mode()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        assert batch["image"].shape[1] == 1
-
         emb = self.teacher_tile_encoder.backbone(batch["image"][:, 0,
                                                                 ...])[:, 0, :]
         results = {
