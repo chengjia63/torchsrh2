@@ -639,151 +639,174 @@ def cosine_scheduler(base_value,
     return schedule
 
 
+def sample_view(tokens, v_min=None, v_max=None):
+    # tokens shape: (v, b, c, h, w)
+    v, b, c, h, w = tokens.shape
+    if v_min is None:
+        v_min = 0
+    if v_max is None:
+        v_max = v  # typically, v_max should be <= v, not b
+
+    # Permute to shape: (b, v, c, h, w) for easier gathering along the v dimension.
+    tokens_perm = tokens.permute(1, 0, 2, 3, 4)  # shape: (b, v, c, h, w)
+
+    # Generate random indices for each (b, h, w) location, shape: (b, h, w)
+    idx = torch.randint(low=v_min,
+                        high=v_max,
+                        size=(b, h, w),
+                        device=tokens.device)
+
+    # Expand idx to shape (b, 1, h, w) so it can be used to gather along the v dimension.
+    idx = idx.unsqueeze(1)  # shape: (b, 1, h, w)
+
+    # Expand indices to cover the channel dimension.
+    # The gather will be done along dim=1 (the v dimension).
+    idx = idx.expand(b, 1, h, w)
+
+    # Use gather to sample the selected view.
+    # We need to expand indices to also match the channel dimension.
+    # tokens_perm shape: (b, v, c, h, w)
+    # We want to gather along dim=1, resulting in shape (b, 1, c, h, w).
+    sampled = tokens_perm.gather(dim=1,
+                                 index=idx.unsqueeze(2).expand(b, 1, c, h, w))
+
+    # Squeeze out the singleton view dimension to get shape: (b, c, h, w)
+    return sampled.squeeze(1)
+
+
+def crop_views(xs, h0, w0):
+    # x: (b, c, h, w)
+    b, c, h, w = xs[0].shape
+    device = xs[0].device
+
+    # Random top and left coordinates for each image in the batch
+    top = torch.randint(0, h - h0 + 1, (b, ), device=device)
+    left = torch.randint(0, w - w0 + 1, (b, ), device=device)
+
+    # Create a range for the crop dimensions and expand it to (b, h0, w0)
+    row_offsets = torch.arange(h0, device=device).view(1, h0, 1)
+    col_offsets = torch.arange(w0, device=device).view(1, 1, w0)
+
+    # Compute absolute row and column indices for each crop
+    # top and left are reshaped to (b, 1, 1) so they broadcast properly
+    rows = top.view(b, 1, 1) + row_offsets  # shape: (b, h0, 1)
+    cols = left.view(b, 1, 1) + col_offsets  # shape: (b, 1, w0)
+
+    # Create a batch index for advanced indexing
+    batch_idx = torch.arange(b, device=device).view(b, 1, 1)
+
+    # Use advanced indexing to extract the crop for each image.
+    # This returns a tensor of shape (b, h0, w0, c)
+    cropped = [
+        x[batch_idx, :, rows, cols].permute(0, 3, 1, 2).contiguous()
+        for x in xs
+    ]
+
+    return cropped
+
+
 class MCMSystem(EvalBaseSystem):
 
     def __init__(self,
                  model_hyperparams,
-                 loss_params: Optional[Dict] = None,
-                 ema_beta: Optional[Dict] = None,
                  opt_cf: Optional[Dict] = None,
                  schd_cf: Optional[Dict] = None,
                  training_params: Optional[Dict] = None):
         super().__init__()
 
-        self.beta = ema_beta
         self.opt_cf_ = opt_cf
         self.schd_cf_ = schd_cf
 
-        # tile level encoder
-        self.student_tile_encoder = vit_small(img_size=[48],
-                                              patch_size=4,
-                                              masked_im_modeling=True,
-                                              return_all_tokens=True)
-        self.teacher_tile_encoder = vit_small(img_size=[48],
-                                              patch_size=4,
-                                              return_all_tokens=True)
-
-        self.student_tile_encoder = MultiCropWrapper(
-            self.student_tile_encoder,
-            iBOTHead(
-                384,  #embed_dim,
-                1024,  #args.out_dim,
-                patch_out_dim=1024,  #args.patch_out_dim,
-                norm=None,  #args.norm_in_head,
-                act='gelu',  #args.act_in_head,
-                norm_last_layer=True,  #args.norm_last_layer,
-                shared_head=False,  #args.shared_head,
-            ))
-
-        self.teacher_tile_encoder = MultiCropWrapper(
-            self.teacher_tile_encoder,
-            iBOTHead(
-                384,  #embed_dim, 
-                1024,  #args.out_dim,
-                patch_out_dim=1024,  #args.patch_out_dim,
-                norm=None,  #args.norm_in_head,
-                act="gelu",  #args.act_in_head,
-                shared_head=True,  #args.shared_head_teacher,
-            ),
-        )
-
-        # teacher and student start with the same weights
-        self.teacher_tile_encoder.load_state_dict(
-            self.student_tile_encoder.state_dict(), strict=False)
-        # there is no backpropagation through the teacher, so no need for gradients
-        for p in self.teacher_tile_encoder.parameters():
-            p.requires_grad = False
-
-
-        # patch level encoder
-        self.student_patch_encoder = vit_small(img_size=[6],
-                                              patch_size=1,
-                                              in_chans=384,
-                                              masked_im_modeling=True,
-                                              return_all_tokens=True)
-        self.teacher_patch_encoder = vit_small(img_size=[6],
-                                              patch_size=1,
-                                              in_chans=384,
-                                              return_all_tokens=True)
-
-        self.student_patch_encoder = MultiCropWrapper(
-            self.student_patch_encoder,
-            iBOTHead(
-                384,  #embed_dim,
-                1024,  #args.out_dim,
-                patch_out_dim=1024,  #args.patch_out_dim,
-                norm=None,  #args.norm_in_head,
-                act='gelu',  #args.act_in_head,
-                norm_last_layer=True,  #args.norm_last_layer,
-                shared_head=False,  #args.shared_head,
-            ))
-
-        self.teacher_patch_encoder = MultiCropWrapper(
-            self.teacher_patch_encoder,
-            iBOTHead(
-                384,  #embed_dim, 
-                1024,  #args.out_dim,
-                patch_out_dim=1024,  #args.patch_out_dim,
-                norm=None,  #args.norm_in_head,
-                act="gelu",  #args.act_in_head,
-                shared_head=True,  #args.shared_head_teacher,
-            ),
-        )
-
-        # teacher and student start with the same weights
-        self.teacher_patch_encoder.load_state_dict(
-            self.student_patch_encoder.state_dict(), strict=False)
-        # there is no backpropagation through the teacher, so no need for gradients
-        for p in self.teacher_patch_encoder.parameters():
-            p.requires_grad = False
-
         self.training_params_ = training_params
         print(training_params)
+
+        if training_params:
+            # tile level encoder
+            self.student_tile_encoder = vit_small(
+                **model_hyperparams.student_tile_encoder)
+
+            self.teacher_tile_encoder = vit_small(
+                **model_hyperparams.teacher_tile_encoder)
+
+            self.student_tile_encoder = MultiCropWrapper(
+                self.student_tile_encoder,
+                iBOTHead(**model_hyperparams.student_tile_ibot_head))
+
+            self.teacher_tile_encoder = MultiCropWrapper(
+                self.teacher_tile_encoder,
+                iBOTHead(**model_hyperparams.teacher_tile_ibot_head))
+
+            # teacher and student start with the same weights
+            self.teacher_tile_encoder.load_state_dict(
+                self.student_tile_encoder.state_dict(), strict=False)
+            # there is no backpropagation through the teacher, so no need for gradients
+            for p in self.teacher_tile_encoder.parameters():
+                p.requires_grad = False
+        else:
+            self.teacher_tile_encoder = vit_small(
+                **model_hyperparams.teacher_tile_encoder)
+
+            self.teacher_tile_encoder = MultiCropWrapper(
+                self.teacher_tile_encoder,
+                iBOTHead(**model_hyperparams.teacher_tile_ibot_head))
+
+        if training_params:
+
+            # patch level encoder
+            self.student_patch_encoder = vit_small(
+                **model_hyperparams.student_patch_encoder)
+            self.teacher_patch_encoder = vit_small(
+                **model_hyperparams.teacher_patch_encoder)
+
+            self.student_patch_encoder = MultiCropWrapper(
+                self.student_patch_encoder,
+                iBOTHead(**model_hyperparams.student_patch_ibot_head))
+
+            self.teacher_patch_encoder = MultiCropWrapper(
+                self.teacher_patch_encoder,
+                iBOTHead(**model_hyperparams.teacher_patch_ibot_head))
+
+            # teacher and student start with the same weights
+            self.teacher_patch_encoder.load_state_dict(
+                self.student_patch_encoder.state_dict(), strict=False)
+            # there is no backpropagation through the teacher, so no need for gradients
+            for p in self.teacher_patch_encoder.parameters():
+                p.requires_grad = False
+
         if training_params:
             self.criterion = iBOTLoss(
-                1024,  #args.out_dim,
-                1024,  #args.out_dim if same_dim else args.patch_out_dim,
-                2,  #args.global_crops_number,
-                8,  #args.local_crops_number,
-                0.04,  #args.warmup_teacher_temp,
-                0.04,  #args.teacher_temp,
-                0.07,  #args.warmup_teacher_patch_temp,
-                0.07,  #args.teacher_patch_temp,
-                int(training_params["num_ep_total"] *
-                    0.3),  #args.warmup_teacher_temp_epochs,
-                training_params["num_ep_total"],  # TODO #args.epochs,
-                lambda1=1.0,  #args.lambda1,
-                lambda2=1.0,  #args.lambda2,
-                mim_start_epoch=0,  #args.pred_start_epoch,
+                **model_hyperparams.tile_ibot_loss,
+                warmup_teacher_temp_epochs=int(
+                    training_params["num_ep_total"] *
+                    0.3),  #args.warmup_teacher_temp_epochs
+                nepochs=training_params["num_ep_total"]  # TODO #args.epochs
             )
             self.patch_criterion = iBOTLoss(
-                1024,  #args.out_dim,
-                1024,  #args.out_dim if same_dim else args.patch_out_dim,
-                2,  #args.global_crops_number,
-                8,  #args.local_crops_number,
-                0.04,  #args.warmup_teacher_temp,
-                0.04,  #args.teacher_temp,
-                0.07,  #args.warmup_teacher_patch_temp,
-                0.07,  #args.teacher_patch_temp,
-                int(training_params["num_ep_total"] *
-                    0.3),  #args.warmup_teacher_temp_epochs,
-                training_params["num_ep_total"],  # TODO #args.epochs,
-                lambda1=1.0,  #args.lambda1,
-                lambda2=1.0,  #args.lambda2,
-                mim_start_epoch=0,  #args.pred_start_epoch,
+                **model_hyperparams.patch_ibot_loss,
+                warmup_teacher_temp_epochs=int(
+                    training_params["num_ep_total"] *
+                    0.3),  #args.warmup_teacher_temp_epochs
+                nepochs=training_params["num_ep_total"]  # TODO #args.epochs
             )
+            self.loss_coeff = model_hyperparams.loss_coeff
+
             self.train_loss = torchmetrics.MeanMetric()
             self.val_loss = torchmetrics.MeanMetric()
             #self.test_output = []
 
-            self.tile_xform = DataAugmentationiBOT(global_crops_number=2,
-                                                   local_crops_number=8)
-            self.tile_mask_generator = IBotMaskGenerator(patch_size=4)
-            self.patch_mask_generator = IBotMaskGenerator(patch_size=1)
+            self.tile_xform = DataAugmentationiBOT(
+                **model_hyperparams.tile_xform)
+            self.patch_cropping_params = model_hyperparams.patch_cropping
+
+            self.tile_mask_generator = IBotMaskGenerator(
+                **model_hyperparams.tile_mask_generator)
+            self.patch_mask_generator = IBotMaskGenerator(
+                **model_hyperparams.patch_mask_generator)
 
             self.momentum_scheduler = cosine_scheduler(
-                0.9995, 1, training_params["num_ep_total"],
-                self.training_params_["num_it_per_ep"])
+                epochs=training_params["num_ep_total"],
+                niter_per_ep=self.training_params_["num_it_per_ep"],
+                **model_hyperparams.momentum_scheduler)
         else:
             self.criterion = None
 
@@ -811,7 +834,7 @@ class MCMSystem(EvalBaseSystem):
                 for i in region_crops[:2]
             ]
 
-        #torch.save({"region_crops": region_crops, "tile_masks": tile_masks}, "test_aug.pt")
+        #torch.save({"orig_im": batch["image"], "region_crops": region_crops, "tile_masks": tile_masks}, "test_aug_ncc.pt")
         # 48x48 tile encoding
         student_global_bb_emb, student_global_emb = self.student_tile_encoder(
             region_crops[:2], mask=tile_masks, return_backbone_feat=True)
@@ -847,85 +870,27 @@ class MCMSystem(EvalBaseSystem):
                                               nh=6,
                                               nw=6)
 
-        def sample_view(tokens, v_min=None, v_max=None):
-            # tokens shape: (v, b, c, h, w)
-            v, b, c, h, w = tokens.shape
-            if v_min is None:
-                v_min = 0
-            if v_max is None:
-                v_max = v  # typically, v_max should be <= v, not b
-
-            # Permute to shape: (b, v, c, h, w) for easier gathering along the v dimension.
-            tokens_perm = tokens.permute(1, 0, 2, 3,
-                                         4)  # shape: (b, v, c, h, w)
-
-            # Generate random indices for each (b, h, w) location, shape: (b, h, w)
-            idx = torch.randint(low=v_min,
-                                high=v_max,
-                                size=(b, h, w),
-                                device=tokens.device)
-
-            # Expand idx to shape (b, 1, h, w) so it can be used to gather along the v dimension.
-            idx = idx.unsqueeze(1)  # shape: (b, 1, h, w)
-
-            # Expand indices to cover the channel dimension.
-            # The gather will be done along dim=1 (the v dimension).
-            idx = idx.expand(b, 1, h, w)
-
-            # Use gather to sample the selected view.
-            # We need to expand indices to also match the channel dimension.
-            # tokens_perm shape: (b, v, c, h, w)
-            # We want to gather along dim=1, resulting in shape (b, 1, c, h, w).
-            sampled = tokens_perm.gather(dim=1,
-                                         index=idx.unsqueeze(2).expand(
-                                             b, 1, c, h, w))
-
-            # Squeeze out the singleton view dimension to get shape: (b, c, h, w)
-            return sampled.squeeze(1)
-
-        def crop_views(xs, h0, w0):
-            # x: (b, c, h, w)
-            b, c, h, w = xs[0].shape
-            device = xs[0].device
-
-            # Random top and left coordinates for each image in the batch
-            top = torch.randint(0, h - h0 + 1, (b, ), device=device)
-            left = torch.randint(0, w - w0 + 1, (b, ), device=device)
-
-            # Create a range for the crop dimensions and expand it to (b, h0, w0)
-            row_offsets = torch.arange(h0, device=device).view(1, h0, 1)
-            col_offsets = torch.arange(w0, device=device).view(1, 1, w0)
-
-            # Compute absolute row and column indices for each crop
-            # top and left are reshaped to (b, 1, 1) so they broadcast properly
-            rows = top.view(b, 1, 1) + row_offsets  # shape: (b, h0, 1)
-            cols = left.view(b, 1, 1) + col_offsets  # shape: (b, 1, w0)
-
-            # Create a batch index for advanced indexing
-            batch_idx = torch.arange(b, device=device).view(b, 1, 1)
-
-            # Use advanced indexing to extract the crop for each image.
-            # This returns a tensor of shape (b, h0, w0, c)
-            cropped = [
-                x[batch_idx, :, rows, cols].permute(0, 3, 1, 2).contiguous() for x in xs
-            ]
-
-            return cropped
-
-        sampled_student_tokens = sample_view(student_tokens, 0, 2)
+        sampled_student_tokens = sample_view(
+            student_tokens, self.patch_cropping_params.sample_min,
+            self.patch_cropping_params.sample_max)
         with torch.no_grad():
-            sampled_teacher_tokens = sample_view(teacher_tokens, 0, 2)
+            sampled_teacher_tokens = sample_view(
+                teacher_tokens, self.patch_cropping_params.sample_min,
+                self.patch_cropping_params.sample_max)
 
         cropped_global_tokens = [
             crop_views([sampled_student_tokens, sampled_teacher_tokens],
-                       h0=5,
-                       w0=5) for _ in range(2)
+                       h0=self.patch_cropping_params.global_size,
+                       w0=self.patch_cropping_params.global_size)
+            for _ in range(self.patch_cropping_params.global_crops_number)
         ]
         student_global_tokens = [i[0] for i in cropped_global_tokens]
         teacher_global_tokens = [i[1] for i in cropped_global_tokens]
         student_local_tokens = [
-            crop_views([sampled_student_tokens], h0=3, w0=3)[0]
-            for _ in range(8)
+            crop_views([sampled_student_tokens],
+                       h0=self.patch_cropping_params.local_size,
+                       w0=self.patch_cropping_params.local_size)[0]
+            for _ in range(self.patch_cropping_params.local_crops_number)
         ]
 
         patch_masks = [
@@ -941,9 +906,9 @@ class MCMSystem(EvalBaseSystem):
                 teacher_global_tokens)
 
         self.student_patch_encoder.backbone.masked_im_modeling = False
-        student_patch_local_emb = self.student_patch_encoder(student_local_tokens)
+        student_patch_local_emb = self.student_patch_encoder(
+            student_local_tokens)
         self.student_patch_encoder.backbone.masked_im_modeling = True
-
 
         #torch.save(
         #    {
@@ -957,9 +922,13 @@ class MCMSystem(EvalBaseSystem):
                                   student_local_emb[0], tile_masks,
                                   self.current_epoch)
         #all_loss = {}
-        patch_loss = self.patch_criterion(student_patch_global_emb, teacher_patch_emb, student_patch_local_emb[0], patch_masks, self.current_epoch)
+        patch_loss = self.patch_criterion(student_patch_global_emb,
+                                          teacher_patch_emb,
+                                          student_patch_local_emb[0],
+                                          patch_masks, self.current_epoch)
 
-        for k in patch_loss: all_loss[f"patch_{k}"] = patch_loss[k]
+        for k in patch_loss:
+            all_loss[f"patch_{k}"] = patch_loss[k]
 
         for l in all_loss:
             self.log(f"train/{l}",
@@ -969,17 +938,19 @@ class MCMSystem(EvalBaseSystem):
                      batch_size=batched_regions.shape[0],
                      rank_zero_only=True)
 
-        loss = all_loss.pop("loss") + 0.5 * all_loss.pop("patch_loss")
+        loss = (all_loss.pop("loss") * self.loss_coeff.tile +
+                all_loss.pop("patch_loss") * self.loss_coeff.patch)
         #loss = all_loss.pop("patch_loss")
+
         self.train_loss.update(loss.detach().item(),
                                weight=batched_regions.shape[0])
 
         self.log(f"train/combined_loss",
-                     loss.detach().item(),
-                     on_step=True,
-                     on_epoch=True,
-                     batch_size=batched_regions.shape[0],
-                     rank_zero_only=True)
+                 loss.detach().item(),
+                 on_step=True,
+                 on_epoch=True,
+                 batch_size=batched_regions.shape[0],
+                 rank_zero_only=True)
         return loss
 
     @torch.inference_mode()
@@ -1103,3 +1074,239 @@ class MCMSystem(EvalBaseSystem):
             }
         else:
             return [opt]
+
+class CellIBOTSystem(EvalBaseSystem):
+
+    def __init__(self,
+                 model_hyperparams,
+                 opt_cf: Optional[Dict] = None,
+                 schd_cf: Optional[Dict] = None,
+                 training_params: Optional[Dict] = None):
+        super().__init__()
+
+        self.opt_cf_ = opt_cf
+        self.schd_cf_ = schd_cf
+
+        self.training_params_ = training_params
+        print(training_params)
+
+        if training_params:
+            # tile level encoder
+            self.student_tile_encoder = vit_small(
+                **model_hyperparams.student_tile_encoder)
+
+            self.teacher_tile_encoder = vit_small(
+                **model_hyperparams.teacher_tile_encoder)
+
+            self.student_tile_encoder = MultiCropWrapper(
+                self.student_tile_encoder,
+                iBOTHead(**model_hyperparams.student_tile_ibot_head))
+
+            self.teacher_tile_encoder = MultiCropWrapper(
+                self.teacher_tile_encoder,
+                iBOTHead(**model_hyperparams.teacher_tile_ibot_head))
+
+            # teacher and student start with the same weights
+            self.teacher_tile_encoder.load_state_dict(
+                self.student_tile_encoder.state_dict(), strict=False)
+            # there is no backpropagation through the teacher, so no need for gradients
+            for p in self.teacher_tile_encoder.parameters():
+                p.requires_grad = False
+        else:
+            self.teacher_tile_encoder = vit_small(
+                **model_hyperparams.teacher_tile_encoder)
+
+            self.teacher_tile_encoder = MultiCropWrapper(
+                self.teacher_tile_encoder)
+
+        if training_params:
+            self.criterion = iBOTLoss(
+                **model_hyperparams.tile_ibot_loss,
+                warmup_teacher_temp_epochs=int(
+                    training_params["num_ep_total"] *
+                    0.3),  #args.warmup_teacher_temp_epochs
+                nepochs=training_params["num_ep_total"]  # TODO #args.epochs
+            )
+
+            self.train_loss = torchmetrics.MeanMetric()
+            self.val_loss = torchmetrics.MeanMetric()
+            #self.test_output = []
+
+            self.tile_xform = DataAugmentationiBOT(
+                **model_hyperparams.tile_xform)
+            self.tile_mask_generator = IBotMaskGenerator(
+                **model_hyperparams.tile_mask_generator)
+
+            self.momentum_scheduler = cosine_scheduler(
+                epochs=training_params["num_ep_total"],
+                niter_per_ep=self.training_params_["num_it_per_ep"],
+                **model_hyperparams.momentum_scheduler)
+        else:
+            self.criterion = None
+
+    def training_step(self, batch, _):
+
+        with torch.no_grad():
+            self.tile_mask_generator.set_epoch(self.current_epoch)
+
+            region_crops = self.tile_xform(batch["image"].squeeze(dim=1))
+
+            tile_masks = [
+                self.tile_mask_generator.get_mask(i).to(batch["image"].device)
+                for i in region_crops[:2]
+            ]
+        
+        #torch.save({"region_crops": region_crops, "tile_masks": tile_masks}, "test_aug_smpt.pt")
+
+        student_global_bb_emb, student_global_emb = self.student_tile_encoder(
+            region_crops[:2], mask=tile_masks, return_backbone_feat=True)
+
+        with torch.no_grad():
+            teacher_bb_emb, teacher_emb = self.teacher_tile_encoder(
+                region_crops[:2], return_backbone_feat=True)
+
+        self.student_tile_encoder.backbone.masked_im_modeling = False
+        student_local_bb_emb, student_local_emb = self.student_tile_encoder(
+            region_crops[2:], return_backbone_feat=True)
+        self.student_tile_encoder.backbone.masked_im_modeling = True
+
+        all_loss = self.criterion(student_global_emb, teacher_emb,
+                                  student_local_emb[0], tile_masks,
+                                  self.current_epoch)
+
+        for l in all_loss:
+            self.log(f"train/{l}",
+                     all_loss[l].detach().item(),
+                     on_step=True,
+                     on_epoch=True,
+                     batch_size=batch["image"].shape[0],
+                     rank_zero_only=True)
+
+        loss = all_loss.pop("loss")
+
+        self.train_loss.update(loss.detach().item(),
+                               weight=batch["image"].shape[0])
+
+        return loss
+
+    @torch.inference_mode()
+    def validation_step(self, batch, _):
+        return
+
+        batched_regions = einops.rearrange(
+            batch["image"],
+            "b a c (nh rh) (nw rw) -> (b a nh nw) c rh rw",
+            rh=48,
+            rw=48)
+        batched_emb = self.encoder(batched_regions)
+        emb = einops.rearrange(batched_emb,
+                               "(b a nh nw) d -> b a d nh nw",
+                               b=batch["image"].shape[0],
+                               nh=6,
+                               nw=6)
+
+        import pdb
+        pdb.set_trace()
+        imgs, masks_enc, masks_pred = batch
+        imgs = imgs['image'].squeeze()
+
+        def forward_target():
+            with torch.no_grad():
+                h = self.model.target_encoder(imgs)
+                h = F.layer_norm(h, (h.size(-1), ))
+                B = len(h)
+                # -- create targets (masked regions of h)
+                h = apply_masks(h, masks_pred)
+                h = repeat_interleave_batch(h, B, repeat=len(masks_enc))
+                return h
+
+        def forward_context():
+            z = self.model.encoder(imgs, masks_enc)
+            z = self.model.predictor(z, masks_enc, masks_pred)
+            return z
+
+        def loss_fn(z, h):
+            loss = self.criterion(z, h)
+            return loss
+
+        h = forward_target()
+        z = forward_context()
+        loss = loss_fn(z, h)
+        self.val_loss.update(loss, weight=imgs.shape[0])
+        return loss
+
+    @torch.inference_mode()
+    def predict_step(self, batch, batch_idx, dataloader_idx=0):
+        emb = self.teacher_tile_encoder.backbone(batch["image"][:, 0,
+                                                                ...])[:, 0, :]
+        results = {
+            "path": batch["path"],
+            "label": batch["label"],
+            "embeddings": emb
+        }
+
+        return results
+
+    def on_train_epoch_end(self):
+        train_loss = self.train_loss.compute()
+        self.log("train/contrastive_manualepoch",
+                 train_loss,
+                 on_epoch=True,
+                 sync_dist=True,
+                 rank_zero_only=True)
+        logging.info(f"train/contrastive_manualepoch {train_loss}")
+        self.train_loss.reset()
+        gc.collect()
+
+    def on_validation_epoch_end(self):
+        return
+        val_loss = self.val_loss.compute()
+        self.log("val/contrastive_manualepoch",
+                 val_loss,
+                 on_epoch=True,
+                 sync_dist=True,
+                 rank_zero_only=True)
+        logging.info(f"val/contrastive_manualepoch {val_loss}")
+        self.val_loss.reset()
+        gc.collect()
+
+    def on_before_zero_grad(self, _):
+        names_q, params_q, names_k, params_k = [], [], [], []
+        for name_q, param_q in self.student_tile_encoder.named_parameters():
+            names_q.append(name_q)
+            params_q.append(param_q)
+        for name_k, param_k in self.teacher_tile_encoder.named_parameters():
+            names_k.append(name_k)
+            params_k.append(param_k)
+        names_common = list(set(names_q) & set(names_k))
+        params_q = [
+            param_q for name_q, param_q in zip(names_q, params_q)
+            if name_q in names_common
+        ]
+        params_k = [
+            param_k for name_k, param_k in zip(names_k, params_k)
+            if name_k in names_common
+        ]
+
+        with torch.no_grad():
+            m = self.momentum_scheduler[self.trainer.global_step]
+            for param_q, param_k in zip(params_q, params_k):
+                param_k.data.mul_(m).add_((1 - m) * param_q.detach().data)
+
+    def configure_optimizers(self):
+        if not self.training_params_: return None  # Not training
+
+        opt, sch = get_optimizer_scheduler(self,
+                                           opt_cf=self.opt_cf_,
+                                           schd_cf=self.schd_cf_,
+                                           **self.training_params_)
+
+        if sch:
+            return [opt], {
+                "scheduler": sch,
+                "interval": "step",
+                "frequency": 1,
+                "name": "lr"
+            }
+        else:
+            r

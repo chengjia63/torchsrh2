@@ -127,7 +127,7 @@ class SCSRHBaseTransform(torch.nn.Module):
 class SRHBaseTransform(torch.nn.Module):
     """Base transformations for SRH training."""
 
-    def __init__(self, laser_noise_config=None, get_third_channel_params=None):
+    def __init__(self, laser_noise_config=None, get_third_channel_params={}):
         super().__init__()
         u16_min = (0, 0)
         u16_max = (65536, 65536)  # 2^16

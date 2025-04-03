@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/scsrh_ibot
+  exp_name: ts2/hibot_tile
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -11,8 +11,10 @@ data:
     which: CachedCSVParser
     params:
       cached_parser_file:
-        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_all
-        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_toy
+        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srhum/bf99b89c_slide_all
+        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srhum/bf99b89c_slide_toy
+        #train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_all
+        #trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_toy
         #test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_train
         #test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_test
   transform:
@@ -26,29 +28,29 @@ data:
             subtracted_base: 0.07629394531
         strong_aug_params:
           aug_list:
-          - which: resize_always_apply
+          - which: center_crop_always_apply
             params:
               size: 288
-          - which: random_horiz_flip
-            params: {}
-          - which: random_vert_flip
-            params: {}
-          - which: color_jitter
-            params:
-              brightness: 0.4
-              contrast: 0.4
-              saturation: 0.4
-              hue: 0.2
-          - which: gaussian_blur
-            params:
-              kernel_size: 29
-              sigma: 1
-          - which: gaussian_noise
-            params: {}
-          - which: random_resized_crop
-            params:
-              size: 288
-          aug_prob: 0.3
+          #- which: random_horiz_flip
+          #  params: {}
+          #- which: random_vert_flip
+          #  params: {}
+          #- which: color_jitter
+          #  params:
+          #    brightness: 0.4
+          #    contrast: 0.4
+          #    saturation: 0.4
+          #    hue: 0.2
+          #- which: gaussian_blur
+          #  params:
+          #    kernel_size: 29
+          #    sigma: 1
+          #- which: gaussian_noise
+          #  params: {}
+          #- which: random_resized_crop
+          #  params:
+          #    size: 288
+          aug_prob: 1
     trainval: ${.train}
     #test:
     #  which: HistologyTransform
@@ -105,20 +107,100 @@ lightning_module:
   which: MCMSystem
   params:
     model_hyperparams:
-      backbone_cf:
-        which: vit_small
-        params:
-          img_size: 48
-          patch_size: 4
-          global_pool: "token"
-          class_token: True
-      proj_params:
-        hidden_layers: [384]
-        n_out: 384
-        activation: relu
-        drop: 0
-        bias: True
-    loss_params: {}
+      student_tile_encoder:
+        img_size: [48]
+        patch_size: 4
+        masked_im_modeling: true
+        return_all_tokens: true
+      teacher_tile_encoder:
+        img_size: [48]
+        patch_size: 4
+        return_all_tokens: true
+      student_tile_ibot_head:
+        in_dim: 384           #embed_dim,
+        out_dim: 1024         #args.out_dim,
+        patch_out_dim: 1024   #args.patch_out_dim,
+        norm: null            #args.norm_in_head,
+        act: gelu             #args.act_in_head,
+        norm_last_layer: True #args.norm_last_layer,
+        shared_head: False    #args.shared_he
+      teacher_tile_ibot_head:
+        in_dim: 384           #embed_dim,
+        out_dim: 1024         #args.out_dim,
+        patch_out_dim: 1024   #args.patch_out_dim,
+        norm: null            #args.norm_in_head,
+        act: gelu             #args.act_in_head,
+        shared_head: true     #args
+      student_patch_encoder:
+        img_size: [6]
+        patch_size: 1
+        in_chans: 384
+        masked_im_modeling: true
+        return_all_tokens: true
+      teacher_patch_encoder:
+        img_size: [6]
+        patch_size: 1
+        in_chans: 384
+        return_all_tokens: true
+      student_patch_ibot_head:
+        in_dim: 384           #embed_dim,
+        out_dim: 1024         #args.out_dim,
+        patch_out_dim: 1024   #args.patch_out_dim,
+        norm: null            #args.norm_in_head,
+        act: gelu             #args.act_in_head,
+        norm_last_layer: True #args.norm_last_layer,
+        shared_head: False    #args.shared_he
+      teacher_patch_ibot_head:
+        in_dim: 384           #embed_dim,
+        out_dim: 1024         #args.out_dim,
+        patch_out_dim: 1024   #args.patch_out_dim,
+        norm: null            #args.norm_in_head,
+        act: gelu             #args.act_in_head,
+        shared_head: true     #args
+      tile_ibot_loss:
+        out_dim: 1024               #args.out_dim
+        patch_out_dim: 1024         #args.out_dim if same_dim else args.patch_out_dim
+        ngcrops: 2                  #args.global_crops_number
+        nlcrops: 8                  #args.local_crops_number
+        warmup_teacher_temp: 0.04   #args.warmup_teacher_temp
+        teacher_temp: 0.04          #args.teacher_temp
+        warmup_teacher_temp2: 0.07  #args.warmup_teacher_patch_temp
+        teacher_temp2: 0.07         #args.teacher_patch_temp
+        lambda1: 1.0                #args.lambda1
+        lambda2: 1.0                #args.lambda2
+        mim_start_epoch: 0          #args.pred_start_epoch
+      patch_ibot_loss:
+        out_dim: 1024               #args.out_dim
+        patch_out_dim: 1024         #args.out_dim if same_dim else args.patch_out_dim
+        ngcrops: 2                  #args.global_crops_number
+        nlcrops: 8                  #args.local_crops_number
+        warmup_teacher_temp: 0.04   #args.warmup_teacher_temp
+        teacher_temp: 0.04          #args.teacher_temp
+        warmup_teacher_temp2: 0.07  #args.warmup_teacher_patch_temp
+        teacher_temp2: 0.07         #args.teacher_patch_temp
+        lambda1: 1.0                #args.lambda1
+        lambda2: 1.0                #args.lambda2
+        mim_start_epoch: 0          #args.pred_start_epoch
+      loss_coeff:
+        tile: 1
+        patch: 0.5
+      tile_xform:
+        global_crops_number: 2
+        local_crops_number: 8
+      patch_cropping:
+        sample_min: 0
+        sample_max: 2
+        global_size: 5
+        local_size: 3
+        global_crops_number: 2
+        local_crops_number: 8
+      tile_mask_generator:
+        patch_size: 4
+      patch_mask_generator:
+        patch_size: 1
+      momentum_scheduler:
+        base_value: 0.9995
+        final_value: 1
     opt_cf:
       which: adamw
       scale_lr: True
@@ -128,14 +210,6 @@ lightning_module:
         eps: 1.0e-8
         weight_decay: 0.01
         amsgrad: False
-    #opt_cf:
-    #  which: lars
-    #  scale_lr: True
-    #  params:
-    #    lr: 0.001
-    #    weight_decay: 1.0e-4
-    #    momentum: 0.9
-    #    #eta: 0.001
     schd_cf:
       which: cos_linear_warmup
       params:
@@ -144,14 +218,14 @@ lightning_module:
 training:
   resume_checkpoint: null
   trainer_params:
-    max_epochs: 200
+    max_epochs: 10
     gradient_clip_val: 0.5
     enable_progress_bar: True
     precision: 'bf16-mixed'
     deterministic: False
   trainval:
     freq:
-      interval: 5
+      interval: 1
       unit: "epoch"
 #testing:
 #  eval_mode: patch_knn
@@ -176,7 +250,25 @@ tune:
   params:
     lightning_module/params/opt_cf/params/lr:
     - 0.001
-    - 0.0005
+    - 0.001
+    - 0.001
+    - 0.001
+    - 0.001
     infra/comment:
-    - ibot_mcm_patch_1_0.5_1000_lr0.001
-    - ibot_mcm_patch_1_0.5_1000_lr0.0005
+    - ibot_mcm_patch_64_1000_lr0.001
+    - ibot_mcm_patch_73_1000_lr0.001
+    - ibot_mcm_patch_82_1000_lr0.001
+    - ibot_mcm_patch_91_1000_lr0.001
+    - ibot_mcm_patch_100_1000_lr0.001
+    lightning_module/params/model_hyperparams/loss_coeff/tile:
+    - 0.6
+    - 0.7
+    - 0.8
+    - 0.9
+    - 1
+    lightning_module/params/model_hyperparams/loss_coeff/patch:
+    - 0.4
+    - 0.3
+    - 0.2
+    - 0.1
+    - 0

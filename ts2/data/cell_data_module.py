@@ -16,7 +16,7 @@ from ts2.data.cell_meta_parser import CellCSVParser
 from ts2.data.meta_parser import CachedCSVParser
 from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
-from ts2.data.cell_dataset import CellDataset, CellDatasetDINOv2
+from ts2.data.cell_dataset import CellDataset, CellBagDataset, CellPatchDataset, CellDatasetDINOv2
 from ts2.data.histology_data_module import get_num_replicate
 from ts2.data.utils import get_collate_fn
 
@@ -86,6 +86,8 @@ class CellDataModule(pl.LightningDataModule):
     def setup(self, stage: str):
         datasets = {
             "CellDataset": CellDataset,
+            "CellBagDataset": CellBagDataset,
+            "CellPatchDataset": CellPatchDataset,
             "CellDatasetDINOv2": CellDatasetDINOv2
         }
 
@@ -135,14 +137,23 @@ class CellDataModule(pl.LightningDataModule):
             prf = instantiate_process_read(
                 which=self.test_dset_config_.which_process_read,
                 which_set=self.set_)
-
+            
             test_inst, test_tsm = CachedCSVParser(
                 cache_dir=self.instance_cache_fname_["test"])()
+            
+            test_xform = transforms[self.xform_config_.test.which](
+                    which_set=self.set_, **self.xform_config_.test.params)
+
+            if check_collate_fn_which(self.loader_config_.params,
+                                      "test") == "SingleCellBlendedCollator":
+                self.test_strong_xform = test_xform.strong_aug
+                test_xform.strong_aug = torch.nn.Identity()
+
+
             test_dataset = datasets[self.test_dset_config_.which](
                 instances=test_inst,
                 tensor_shape_map=test_tsm,
-                transform=transforms[self.xform_config_.test.which](
-                    which_set=self.set_, **self.xform_config_.test.params),
+                transform=test_xform,
                 process_read_im=prf,
                 **self.test_dset_config_.params)
 
@@ -235,6 +246,14 @@ class CellDataModule(pl.LightningDataModule):
         loader_params.update(self.loader_config_.params.common)
         if loader_params.get("num_workers") == "auto":
             loader_params["num_workers"] = get_num_worker()
+
+        if "collate_fn" in loader_params:
+            if loader_params["collate_fn"]["which"] == "SingleCellBlendedCollator":
+                loader_params["collate_fn"]["params"].update(
+                    {"strong_transforms": self.test_strong_xform})
+
+            loader_params["collate_fn"] = get_collate_fn(
+                **loader_params['collate_fn'])
         return [DataLoader(ds, **loader_params) for ds in self.test_dataset_]
 
 

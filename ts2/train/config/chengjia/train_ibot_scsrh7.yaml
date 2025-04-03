@@ -1,0 +1,188 @@
+infra:
+  exp_name: ts2/scsrh_ibot_cell_centric
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
+  comment: dev
+  log_gpu: True
+  seed: 1000
+  float32_matmul_precision: medium
+data:                                                                           
+  set: scsrh                                                                    
+  parser:                                                                       
+    which: CachedCSVParser                                                      
+    params:                                                                     
+      cached_parser_file:                                                       
+        train: ../data/tsmeta/srh7v1_sc/55e0deb2_cell_train                     
+        trainval: ../data/tsmeta/srh7v1_sc/55e0deb2_cell_trainval    
+  transform:                                                                    
+    train:                                                                      
+      which: HistologyTransform                                                 
+      params:                                                                   
+        base_aug_params:                                                        
+          laser_noise_config: null                                              
+          get_third_channel_params:                                             
+            mode: three_channels                                                
+            subtracted_base: 0.07629394531                                      
+          mask_params:                                                          
+            how_to_process: small_patch                          
+            bg_fill: [9957.5889, 10057.9795]    
+        strong_aug_params:
+          aug_list:
+          - which: center_crop_always_apply
+            params:
+              size: 48
+          aug_prob: 1
+    trainval: ${.train}
+    #test:
+    #  which: HistologyTransform
+    #  params:
+    #    base_aug_params: {}
+    #    strong_aug_params:
+    #      aug_list:
+    #      - which: resize_always_apply
+    #        params:
+    #          size: 224
+    #      aug_prob: 1
+  dataset:
+    which: CellDataset # SingleLevelHierarchicalDataset
+    which_process_read: cell_memmap
+    params:
+      common:
+        data_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root2/
+        num_transforms: 1
+        #num_samples: 1
+        #num_instance_self_replicate: 1
+        #max_hierarchical_replicate: 1
+        balance_instance_class: False
+      train: {}
+      trainval:
+        num_sample_wo_replacement: 64
+  #test_dataset:
+  #    which: PatchDataset
+  #    which_process_read: memmap
+  #    params:
+  #        data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/srh
+  #        num_transforms: 1
+  #        balance_instance_class: False
+  #    negative_class_index: 1
+  #    classes_reorder: [2,0,1]
+  #    camera_ready_classes: [Astro, GBM, Oligo]
+  loader:
+    params:
+      common:
+        pin_memory: False
+        persistent_workers: True
+        prefetch_factor: 12
+        num_workers: 7
+      train:
+        batch_size: 288
+        drop_last: True
+        shuffle: True
+      trainval:
+        batch_size: 8
+        drop_last: False
+        shuffle: False
+      #test:
+      #  batch_size: 64
+      #  drop_last: False
+      #  shuffle: False
+lightning_module:
+  which: CellIBOTSystem
+  params:
+    model_hyperparams:
+      student_tile_encoder:
+        img_size: [48]
+        patch_size: 4
+        masked_im_modeling: true
+        return_all_tokens: true
+      teacher_tile_encoder:
+        img_size: [48]
+        patch_size: 4
+        return_all_tokens: true
+      student_tile_ibot_head:
+        in_dim: 384           #embed_dim,
+        out_dim: 1024         #args.out_dim,
+        patch_out_dim: 1024   #args.patch_out_dim,
+        norm: null            #args.norm_in_head,
+        act: gelu             #args.act_in_head,
+        norm_last_layer: True #args.norm_last_layer,
+        shared_head: False    #args.shared_he
+      teacher_tile_ibot_head:
+        in_dim: 384           #embed_dim,
+        out_dim: 1024         #args.out_dim,
+        patch_out_dim: 1024   #args.patch_out_dim,
+        norm: null            #args.norm_in_head,
+        act: gelu             #args.act_in_head,
+        shared_head: true     #args
+      tile_ibot_loss:
+        out_dim: 1024               #args.out_dim
+        patch_out_dim: 1024         #args.out_dim if same_dim else args.patch_out_dim
+        ngcrops: 2                  #args.global_crops_number
+        nlcrops: 8                  #args.local_crops_number
+        warmup_teacher_temp: 0.04   #args.warmup_teacher_temp
+        teacher_temp: 0.04          #args.teacher_temp
+        warmup_teacher_temp2: 0.07  #args.warmup_teacher_patch_temp
+        teacher_temp2: 0.07         #args.teacher_patch_temp
+        lambda1: 1.0                #args.lambda1
+        lambda2: 1.0                #args.lambda2
+        mim_start_epoch: 0          #args.pred_start_epoch
+      tile_xform:
+        global_crops_number: 2
+        local_crops_number: 8
+      tile_mask_generator:
+        patch_size: 4
+      momentum_scheduler:
+        base_value: 0.9995
+        final_value: 1
+    opt_cf:
+      which: adamw
+      scale_lr: True
+      params:
+        lr: 0.001
+        betas: [0.9, 0.999]
+        eps: 1.0e-8
+        weight_decay: 0.01
+        amsgrad: False
+    schd_cf:
+      which: cos_linear_warmup
+      params:
+        num_warmup_steps: 0.1
+        num_cycles: 0.5
+training:
+  resume_checkpoint: null
+  trainer_params:
+    max_epochs: 20
+    gradient_clip_val: 0.5
+    enable_progress_bar: True
+    precision: 'bf16-mixed'
+    deterministic: False
+  trainval:
+    freq:
+      interval: 1
+      unit: "epoch"
+#testing:
+#  eval_mode: patch_knn
+#  save_train_pred: true
+#  knn:
+#    do_knn: True
+#    knn_params:
+#      batch_size: 1536
+#      k: 200
+#      t: 0.07
+#  tsne:
+#    interactive: False
+#    num_patches: [8192]
+#    which_set: [val]
+#    embed_images: true
+#    class_params:
+#      perplexity: 50
+#      learning_rate: auto
+#      init : pca
+tune:
+  diagonal_items: true
+  params:
+    lightning_module/params/opt_cf/params/lr:
+    - 0.001
+    - 0.0005
+    infra/comment:
+    - ibot_cellcentric_1000_lr0.001
+    - ibot_cellcentric_1000_lr0.0005

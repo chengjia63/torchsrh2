@@ -41,7 +41,7 @@
 #SBATCH --gres=gpu:2
 #SBATCH --ntasks-per-node=2
 #------------------------------------------------------------------------------
-#SBATCH --array=0-1
+#SBATCH --array=0-4
 #------------------------------------------------------------------------------
 
 set -x
@@ -64,3 +64,4 @@ set -e
 
 #srun python main.py -c=config/chengjia/train_supcon_scsrh7_debug.yaml
 srun python main.py -c=config/chengjia/train_mcm_srh7.yaml 
+#srun python main.py -c=config/chengjia/train_ibot_scsrh7.yaml

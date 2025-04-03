@@ -12,12 +12,12 @@ data:
         seg_model: 03207B00
         slide_patch_thres: null #400
         which_patch_path_func: make_slide_memmap_path
-        use_patch_code_as_label: True
+        use_patch_code_as_label: False
         primary_label_idx: 0
       train:
-        df: /nfs/turbo/umms-tocho/data/data_splits/srh7v1/srh7v1_all.csv
+        df: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/data/umich_slides.csv
       trainval:
-        df: /nfs/turbo/umms-tocho/data/data_splits/srh7v1/srh7v1_toy.csv
+        df: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/data/umich_slides_toy.csv
   transform: null
   dataset: null
   loader: null

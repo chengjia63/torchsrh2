@@ -1,0 +1,173 @@
+infra:
+  exp_name: ts2/scsrh_mil/
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
+  comment: SE
+  log_gpu: True
+  seed: 1000
+  float32_matmul_precision: medium
+
+data:
+  set: scsrh
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+        test: ../data/tsmeta/srh7v1_sc/55e0deb2_cell_trainval
+  transform:
+    test:
+      which: HistologyTransform
+      params:
+        base_aug_params:
+          laser_noise_config: null
+          get_third_channel_params:
+            mode: three_channels
+            subtracted_base: 0.07629394531
+          mask_params:
+            how_to_process: small_patch #rm_background #
+            bg_fill: [9957.5889, 10057.9795]
+          #to_uint8: True
+        strong_aug_params:
+          aug_list:
+          - which: center_crop_always_apply
+            params:
+              size: 48
+          aug_prob: 1
+  test_dataset:
+    which: CellPatchDataset # SingleLevelHierarchicalDataset
+    which_process_read: cell_memmap
+    params:
+      data_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root2/
+      num_transforms: 1
+    classes_reorder: [0, 1]
+    camera_ready_classes: [Normal, Tumor]
+  loader:
+    params:
+      common: 
+        collate_fn:
+          which: CellMILCollator
+          params: {}
+        pin_memory: False
+        persistent_workers: False
+        prefetch_factor: 8
+        num_workers: 7
+      test:
+        batch_size: 256
+        drop_last: False
+        shuffle: False
+lightning_module:
+  which: CellABMILSystem
+  params:
+    model_hyperparams:
+      backbone:
+        img_size: [48]                                                          
+        patch_size: 4                                                           
+        return_all_tokens: true 
+    loss_params: {}
+    opt_cf:
+      which: adamw
+      scale_lr: False #True
+      params:
+        lr: 0.001
+        betas: [0.9, 0.999]
+        eps: 1.0e-8
+        weight_decay: 0.01
+        amsgrad: False
+    schd_cf:
+      which: cos_linear_warmup
+      params:
+        num_warmup_steps: 0.1
+        num_cycles: 0.5
+testing: {}
+  #eval_mode: knn
+  #save_train_pred: True
+  #eval_predictions: 4cf5a93d_Oct14-23-29-19_sd1000_standaloneeval_37
+  #knn:
+  #  do_knn: True
+  #  knn_params:
+  #    batch_size: 1536
+  #    k: 20
+  #    t: 0.07
+  #tsne:
+  #  interactive: True
+  #  num_patches: [4096]
+  #  which_set: [val]
+  #  embed_images: true
+  #  class_params:
+  #    perplexity: 50
+  #    learning_rate: auto
+  #    init : pca
+  #nn_viz:
+  #  query_set: val
+  #  n_sample: 32
+  #  target_set: val
+  #  exclude_same_patient: True
+  #  k: 40
+tune:
+  diagonal_items: true
+  params:
+    data/transform/test/params/base_aug_params/mask_params/how_to_process:
+    - small_patch
+    - small_patch
+    - rm_background
+    - rm_background
+    infra/comment:
+    - smpt_SE
+    - smpt_SE
+    - rmbg_SE
+    - rmbg_SE
+    testing/ckpt_path:
+    - 15208d39_Mar23-16-27-17_sd1000_smpt_1000_ep10_lr0.001_tune0/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    - 0b2cb504_Mar24-00-48-42_sd1000_rmbg_1000_ep10_lr0.001_tune1/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    - 15208d39_Mar23-16-27-17_sd1000_smpt_1000_ep10_lr0.001_tune0/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    - 0b2cb504_Mar24-00-48-42_sd1000_rmbg_1000_ep10_lr0.001_tune1/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #data/transform/test/params/base_aug_params/mask_params/how_to_process:
+    #- small_patch
+    #- small_patch
+    #- small_patch
+    #- small_patch
+    #- small_patch
+    #- small_patch
+    #- small_patch
+    #- small_patch
+    #- rm_background
+    #- rm_background
+    #- rm_background
+    #- rm_background
+    #- rm_background
+    #- rm_background
+    #- rm_background
+    #- rm_background
+    #infra/comment:
+    #- smpt_SE
+    #- smpt_SE
+    #- smpt_SE
+    #- smpt_SE
+    #- smpt_SE
+    #- smpt_SE
+    #- smpt_SE
+    #- smpt_SE
+    #- rmbg_SE
+    #- rmbg_SE
+    #- rmbg_SE
+    #- rmbg_SE
+    #- rmbg_SE
+    #- rmbg_SE
+    #- rmbg_SE
+    #- rmbg_SE
+    #testing/ckpt_path:
+    #- 0a40494f_Mar24-00-48-42_sd1000_rmbg_1000_ep10_lr0.0001_tune3/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 0b2cb504_Mar24-00-48-42_sd1000_rmbg_1000_ep10_lr0.001_tune1/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 11a4be39_Mar24-00-48-42_sd1000_rmbg_1000_ep10_lr0.0005_tune2/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 15208d39_Mar23-16-27-17_sd1000_smpt_1000_ep10_lr0.001_tune0/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 2dd3d0d0_Mar23-16-27-17_sd1000_smpt_1000_ep10_lr0.0005_tune1/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 49bcd67d_Mar23-16-27-17_sd1000_smpt_1000_ep10_lr0.0001_tune2/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 73af59ef_Mar24-00-48-42_sd1000_rmbg_1000_ep10_lr0.01_tune0/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- ea6e7c3b_Mar24-00-48-42_sd1000_rmbg_1000_ep10_lr0.00001_tune4/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 0a40494f_Mar24-00-48-42_sd1000_rmbg_1000_ep10_lr0.0001_tune3/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 0b2cb504_Mar24-00-48-42_sd1000_rmbg_1000_ep10_lr0.001_tune1/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 11a4be39_Mar24-00-48-42_sd1000_rmbg_1000_ep10_lr0.0005_tune2/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 15208d39_Mar23-16-27-17_sd1000_smpt_1000_ep10_lr0.001_tune0/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 2dd3d0d0_Mar23-16-27-17_sd1000_smpt_1000_ep10_lr0.0005_tune1/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 49bcd67d_Mar23-16-27-17_sd1000_smpt_1000_ep10_lr0.0001_tune2/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- 73af59ef_Mar24-00-48-42_sd1000_rmbg_1000_ep10_lr0.01_tune0/models/ckpt-epoch9-step1280-loss0.00.ckpt
+    #- ea6e7c3b_Mar24-00-48-42_sd1000_rmbg_1000_ep10_lr0.00001_tune4/models/ckpt-epoch9-step1280-loss0.00.ckpt

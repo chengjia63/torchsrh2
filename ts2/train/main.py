@@ -6,9 +6,10 @@ import torch
 import pytorch_lightning as pl
 from omegaconf import OmegaConf
 from typing import Dict, Any
-
+import itertools
 from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
-from ts2.lm.mcm_systems import MCMSystem
+from ts2.lm.mcm_systems import MCMSystem, CellIBOTSystem
+from ts2.lm.cell_mil_system import CellABMILSystem
 from ts2.lm.ssl_systems import (FlattenSystem, SimCLRSystem, SupConSystem, VICRegSystem,
                                 IJEPASystem, InterPatchJEPASystem)
 from ts2.lm.dinov2_eval_system import Dinov2EvalSystem
@@ -29,8 +30,10 @@ from ts2.train.infra import (parse_args, read_process_cf, setup_infra_training,
 
 from ts2.eval.common import get_knn_logits, load_prediction
 from ts2.eval.eval_modules import do_eval
+from ts2.eval.cell_mil_eval_modules import do_cell_mil_eval
 
 lms = {
+    "CellIBOTSystem": CellIBOTSystem,
     "MCMSystem": MCMSystem,
     "SupConSystem": SupConSystem,
     "SimCLRSystem": SimCLRSystem,
@@ -48,7 +51,8 @@ lms = {
     "GigapathEvalSystem": GigapathEvalSystem,
     "PLIPEvalSystem": PLIPEvalSystem,
     "Dinov2EvalSystem": Dinov2EvalSystem,
-    "FlattenSystem": FlattenSystem
+    "FlattenSystem": FlattenSystem,
+    "CellABMILSystem": CellABMILSystem
 }
 
 
@@ -234,7 +238,7 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
         # inference
         pred_raw = pred_trainer.predict(con_exp, datamodule=dm)
 
-        def process_predictions(predictions):
+        def concat_all_tensors(predictions):
             pred = {}
             for k in predictions[0].keys():
                 if k == "path":
@@ -242,6 +246,23 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
                 else:
                     pred[k] = torch.cat([p[k] for p in predictions])
             return pred
+
+        def concat_exclude_attn(predictions):
+            out =  {
+                "cls": list(itertools.chain(*[p["cls"] for p in predictions])),
+                "logits": torch.cat([p["logits"] for p in predictions]),
+                "attn": list(itertools.chain(*[p["attn"] for p in predictions])),
+                "embs": list(itertools.chain(*[p["embs"] for p in predictions])),
+                "label": torch.cat([p["label"] for p in predictions]),
+                "path": list(itertools.chain(*[p["path"] for p in predictions]))
+            }
+            return out
+
+
+        if isinstance(con_exp, CellABMILSystem):
+            process_predictions = concat_exclude_attn
+        else:
+            process_predictions = concat_all_tensors
 
         if do_knn:
             pred = {
@@ -276,9 +297,11 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
         with gzip.open(val_pred_fname, "w") as fd:
             torch.save(pred["val"], fd)
 
-    # metrics reporting
-    do_eval(cf, results_dir, pred, do_softmax=not do_knn)
-
+    if isinstance(con_exp, CellABMILSystem):
+        do_cell_mil_eval(cf, results_dir, pred, do_softmax=True)
+    else:
+        # metrics reporting
+        do_eval(cf, results_dir, pred, do_softmax=not do_knn)
 
 def main():
     cf = read_process_cf(parse_args())

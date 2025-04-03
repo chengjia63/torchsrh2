@@ -126,11 +126,24 @@ class SingleCellBlendedCollator():
             "path": [i["path"] for i in raw_batch]
         }
 
+class CellMILCollator(object):
+    def __init__(self):
+        super(CellMILCollator, self).__init__()
+
+
+    def __call__(self, batch):
+        return {
+            "path": [inst["path"] for inst in batch],
+            "pixels": [inst["pixels"] for inst in batch],
+            "label": torch.stack([i["label"] for i in batch])
+        }
+
 
 def get_collate_fn(which, params):
     collate_list = {
         "MBMaskCollator": MBMaskCollator,
-        "SingleCellBlendedCollator": SingleCellBlendedCollator
+        "SingleCellBlendedCollator": SingleCellBlendedCollator,
+        "CellMILCollator": CellMILCollator
     }
     return collate_list[which](**params)
 

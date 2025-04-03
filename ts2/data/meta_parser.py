@@ -431,8 +431,12 @@ class PatchMetaParser(SRHMetaParser):
         meta_file = os.path.join(self.data_root_, inst_name, patient_id,
                                  f"{patient_id}_meta.json")
         logging.info("Opening %s", meta_file)
-        with open(meta_file) as fd:
-            self.p_meta_ = json.load(fd)
+        try:
+            with open(meta_file) as fd:
+                self.p_meta_ = json.load(fd)
+        except:
+            logging.error("DNE %s", meta_file)
+            self.p_meta_ = {"slides": {}}
 
         self.patch_path_func_ = {
             "make_slide_emb_path": self.make_slide_emb_path,
