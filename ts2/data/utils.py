@@ -5,7 +5,6 @@ from typing import List, Tuple
 from ts2.data.mask_collator import MBMaskCollator
 import time
 
-
 class SingleCellBlendedCollator():
 
     def __init__(self, kernel_size, sigma, min_val_sigma, strong_transforms):
@@ -143,7 +142,7 @@ def get_collate_fn(which, params):
     collate_list = {
         "MBMaskCollator": MBMaskCollator,
         "SingleCellBlendedCollator": SingleCellBlendedCollator,
-        "CellMILCollator": CellMILCollator
+        "CellMILCollator": CellMILCollator,
     }
     return collate_list[which](**params)
 

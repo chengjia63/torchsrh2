@@ -9,7 +9,7 @@ import torch
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader, RandomSampler
 from omegaconf import OmegaConf
-
+from functools import partial
 from torchsrh.train.common import get_num_worker
 from ts2.data.meta_parser import PatchCSVParser, CachedCSVParser
 from ts2.data.patch_dataset import PatchDataset
@@ -17,10 +17,14 @@ from ts2.data.slide_dataset import (SingleLevelHierarchicalDataset,
                                     SLHDatasetWithFMEmbeddings,
                                     HierarchicalDataset, InterPatchJEPADataset,
                                     SingleLevelHierarchicalDatasetDINOV2,
+                                    SLHTileSVDatasetDINOv2,
                                     SingleLevelHierarchicalDatasetMultipleViewDINOV2)
 from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
 from ts2.data.utils import get_collate_fn
+
+from ts2.models.dinov2.data.collate import collate_data_and_cast, collate_tile_data
+from ts2.models.dinov2.data.masking import MaskingGenerator
 
 def get_num_replicate(num_instance_self_replicate, max_hierarchical_replicate,
                       num_samples):
@@ -96,7 +100,8 @@ class PatchDataModule(pl.LightningDataModule):
             "SingleLevelHierarchicalDatasetDINOV2":
             SingleLevelHierarchicalDatasetDINOV2,
             "SingleLevelHierarchicalDatasetMultipleViewDINOV2":
-            SingleLevelHierarchicalDatasetMultipleViewDINOV2
+            SingleLevelHierarchicalDatasetMultipleViewDINOV2,
+            "SLHTileSVDatasetDINOv2": SLHTileSVDatasetDINOv2,
         }
         transforms = {"HistologyTransform": HistologyTransform}
         if stage == "fit":
@@ -169,6 +174,7 @@ class PatchDataModule(pl.LightningDataModule):
         g.manual_seed(seed)
         return {"worker_init_fn": seed_worker, "generator": g}
 
+
     def train_dataloader(self):
         loader_params = OmegaConf.to_container(
             self.loader_config_.params.train)
@@ -176,13 +182,33 @@ class PatchDataModule(pl.LightningDataModule):
         loader_params.update(self.loader_config_.params.common)
         if loader_params.get("num_workers") == "auto":
             loader_params["num_workers"] = get_num_worker()
-        if loader_params.get("collate_fn", False):
-            loader_params["collate_fn"] = get_collate_fn(
-                **loader_params['collate_fn'])
 
-        #if config["data"]["which"] == "slide_emb":
-        #    train_loader_params["collate_fn"] = emb_collate_fn
-        #    val_loader_params["collate_fn"] = emb_collate_fn
+        if loader_params.get("collate_fn"):
+            collate_cf = loader_params["collate_fn"]
+            
+            dinov2_family_collate = {
+                "collate_tile_data": collate_tile_data,
+                "collate_data_and_cast": collate_data_and_cast
+            }
+            if collate_cf["which"] in dinov2_family_collate.keys():
+                img_size = collate_cf["params"]["img_size"]
+                patch_size = collate_cf["params"]["patch_size"]
+                nt_side = (img_size // patch_size)
+                n_tokens = nt_side ** 2
+                mask_generator = MaskingGenerator(
+                    input_size=(nt_side, nt_side),
+                    max_num_patches=0.5 * n_tokens
+                )
+
+                loader_params["collate_fn"] = partial(
+                    dinov2_family_collate[collate_cf["which"]],
+                    n_tokens=n_tokens,
+                    mask_generator=mask_generator,
+                    **collate_cf["params"]["masking"])
+            else:
+                loader_params["collate_fn"] = get_collate_fn(
+                    **collate_cf)
+
 
         logging.info(loader_params)
         return DataLoader(self.train_dataset_, **loader_params)
@@ -194,10 +220,32 @@ class PatchDataModule(pl.LightningDataModule):
         loader_params.update(self.loader_config_.params.common)
         if loader_params.get("num_workers") == "auto":
             loader_params["num_workers"] = get_num_worker()
-        if loader_params.get("collate_fn", False):
-            loader_params["collate_fn"] = get_collate_fn(
-                **loader_params['collate_fn'])
 
+        if loader_params.get("collate_fn"):
+            collate_cf = loader_params["collate_fn"]
+            
+            dinov2_family_collate = {
+                "collate_tile_data": collate_tile_data,
+                "collate_data_and_cast": collate_data_and_cast
+            }
+            if collate_cf["which"] in dinov2_family_collate.keys():
+                img_size = collate_cf["params"]["img_size"]
+                patch_size = collate_cf["params"]["patch_size"]
+                nt_side = (img_size // patch_size)
+                n_tokens = nt_side ** 2
+                mask_generator = MaskingGenerator(
+                    input_size=(nt_side, nt_side),
+                    max_num_patches=0.5 * n_tokens
+                )
+
+                loader_params["collate_fn"] = partial(
+                    dinov2_family_collate[collate_cf["which"]],
+                    n_tokens=n_tokens,
+                    mask_generator=mask_generator,
+                    **collate_cf["params"]["masking"])
+            else:
+                loader_params["collate_fn"] = get_collate_fn(
+                    **collate_cf)
 
         if ("trainval_sampler" in self.loader_config_):
             raise ValueError(

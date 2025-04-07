@@ -26,7 +26,7 @@ from torch import Tensor
 from dinov2.data.augmentations import (DataAugmentationDINO,
                                        DataAugmentationHiDiscDINO)
 from dinov2.data.transforms import (make_normalize_transform)
-
+from ts2.models.dinov2.data.augmentations import TileDataAugmentationDINO
 
 class HistologyTransform(torch.nn.Module):
     """Transformation module for histology data training"""
@@ -103,15 +103,10 @@ class SCSRHBaseTransform(torch.nn.Module):
         layers += [GetThirdChannel(**get_third_channel_params), MinMaxChop()]
 
         if proc_mask.num_channel_out == 2:
-
-            def to_uint8_func(x):
-                return (adjust_brightness(adjust_contrast(x, 2), 3) * 255).to(
-                    torch.uint8)
+            to_uint8_func = srh_to_uint8_func
         else:
-
             def to_uint8_func(x):
-                im = (adjust_brightness(adjust_contrast(x[:3, ...], 2), 3) *
-                      255).to(torch.uint8)
+                im = srh_to_uint8_func(x[:3, ...])
                 mask = (x[[3], ...] * 255).to(torch.uint8)
                 return torch.cat((im, mask))
 
@@ -123,11 +118,14 @@ class SCSRHBaseTransform(torch.nn.Module):
     def forward(self, x: Tensor):  # pylint: disable=missing-function-docstring
         return self.model(x)
 
+def srh_to_uint8_func(x):
+    return (adjust_brightness(adjust_contrast(x, 2), 3) * 255).to(torch.uint8)
 
 class SRHBaseTransform(torch.nn.Module):
     """Base transformations for SRH training."""
 
-    def __init__(self, laser_noise_config=None, get_third_channel_params={}):
+    def __init__(self, laser_noise_config=None,
+                 get_third_channel_params={},to_uint8=False):
         super().__init__()
         u16_min = (0, 0)
         u16_max = (65536, 65536)  # 2^16
@@ -141,6 +139,10 @@ class SRHBaseTransform(torch.nn.Module):
                     laser_noise_config.prob))
 
         layers += [GetThirdChannel(**get_third_channel_params), MinMaxChop()]
+        
+        if to_uint8:
+            layers.append(srh_to_uint8_func)
+        
         self.model = Compose(layers)
 
     def forward(self, x: Tensor):  # pylint: disable=missing-function-docstring
@@ -232,6 +234,7 @@ class StrongTransform(torch.nn.Module):
             "fft_low_pass_filter": partial(rand_apply_p, FFTLowPassFilter),
             "fft_high_pass_filter": partial(rand_apply_p, FFTHighPassFilter),
             "fft_band_pass_filter": partial(rand_apply_p, FFTBandPassFilter),
+            "tile_dinov2_always_apply": TileDataAugmentationDINO,
         }
 
         self.transforms_ = Compose(

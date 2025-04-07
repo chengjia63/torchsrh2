@@ -184,35 +184,39 @@ tune:
     - remove_background
     - small_patch
     - remove_background
+    - small_patch
+    - remove_background
     infra/comment:
+    - smpt_SE_epoch8-step160038
+    - rmbg_SE_epoch8-step160038
+    - smpt_SE_epoch7-step142256
+    - rmbg_SE_epoch7-step142256
+    - smpt_SE_epoch9-step177820
+    - rmbg_SE_epoch9-step177820
+    - smpt_SE_epoch8-step160038
+    - rmbg_SE_epoch8-step160038
+    - smpt_SE_epoch7-step142256
+    - rmbg_SE_epoch7-step142256
+    - smpt_SE_epoch9-step177820
+    - rmbg_SE_epoch9-step177820
     - smpt_SE_epoch1-step35564
     - rmbg_SE_epoch1-step35564
     - smpt_SE_epoch3-step71128
     - rmbg_SE_epoch3-step71128
-    - smpt_SE_epoch0-step17782
-    - rmbg_SE_epoch0-step17782
     - smpt_SE_epoch2-step53346
     - rmbg_SE_epoch2-step53346
+    - smpt_SE_epoch8-step160038
+    - rmbg_SE_epoch8-step160038
+    - smpt_SE_epoch7-step142256
+    - rmbg_SE_epoch7-step142256
+    - smpt_SE_epoch9-step177820
+    - rmbg_SE_epoch9-step177820
     - smpt_SE_epoch1-step35564
     - rmbg_SE_epoch1-step35564
     - smpt_SE_epoch3-step71128
     - rmbg_SE_epoch3-step71128
-    - smpt_SE_epoch0-step17782
-    - rmbg_SE_epoch0-step17782
     - smpt_SE_epoch2-step53346
     - rmbg_SE_epoch2-step53346
-    - smpt_SE_epoch3-step70880
-    - rmbg_SE_epoch3-step70880
-    - smpt_SE_epoch1-step35564
-    - rmbg_SE_epoch1-step35564
-    - smpt_SE_epoch3-step71128
-    - rmbg_SE_epoch3-step71128
-    - smpt_SE_epoch0-step17782
-    - rmbg_SE_epoch0-step17782
-    - smpt_SE_epoch2-step53346
-    - rmbg_SE_epoch2-step53346
-    - smpt_SE_epoch3-step70880
-    - rmbg_SE_epoch3-step70880
     infra/exp_root:
     - ts2/hibot_tile
     - ts2/hibot_tile
@@ -242,32 +246,37 @@ tune:
     - ts2/hibot_tile
     - ts2/hibot_tile
     - ts2/hibot_tile
+    - ts2/hibot_tile
+    - ts2/hibot_tile
     testing/ckpt_path:
-    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch1-step35564-loss0.00.ckpt
-    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch1-step35564-loss0.00.ckpt
-    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch3-step71128-loss0.00.ckpt
-    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch3-step71128-loss0.00.ckpt
-    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch0-step17782-loss0.00.ckpt
-    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch0-step17782-loss0.00.ckpt
-    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch2-step53346-loss0.00.ckpt
-    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch2-step53346-loss0.00.ckpt
-    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch1-step35564-loss0.00.ckpt
-    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch1-step35564-loss0.00.ckpt
-    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch3-step71128-loss0.00.ckpt
-    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch3-step71128-loss0.00.ckpt
-    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch0-step17782-loss0.00.ckpt
-    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch0-step17782-loss0.00.ckpt
-    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch2-step53346-loss0.00.ckpt
-    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch2-step53346-loss0.00.ckpt
-    - 3e51ec0d_Apr02-00-45-02_sd1000_ibot_mcm_patch_1_0.5_1000_lr0.0005_tune1/models/ckpt-epoch3-step70880-loss0.00.ckpt
-    - 3e51ec0d_Apr02-00-45-02_sd1000_ibot_mcm_patch_1_0.5_1000_lr0.0005_tune1/models/ckpt-epoch3-step70880-loss0.00.ckpt
-    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch1-step35564-loss0.00.ckpt
-    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch1-step35564-loss0.00.ckpt
-    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch3-step71128-loss0.00.ckpt
-    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch3-step71128-loss0.00.ckpt
-    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch0-step17782-loss0.00.ckpt
-    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch0-step17782-loss0.00.ckpt
-    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch2-step53346-loss0.00.ckpt
-    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch2-step53346-loss0.00.ckpt
-    - ca769ce0_Apr02-00-45-01_sd1000_ibot_mcm_patch_1_0.5_1000_lr0.001_tune0/models/ckpt-epoch3-step70880-loss0.00.ckpt
-    - ca769ce0_Apr02-00-45-01_sd1000_ibot_mcm_patch_1_0.5_1000_lr0.001_tune0/models/ckpt-epoch3-step70880-loss0.00.ckpt
+    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch8-step160038-loss0.00.ckpt
+    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch8-step160038-loss0.00.ckpt
+    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch7-step142256-loss0.00.ckpt
+    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch7-step142256-loss0.00.ckpt
+    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch9-step177820-loss0.00.ckpt
+    - ad786077_Apr02-17-52-23_sd1000_ibot_mcm_patch_82_1000_lr0.001_tune2/models/ckpt-epoch9-step177820-loss0.00.ckpt
+    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch8-step160038-loss0.00.ckpt
+    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch8-step160038-loss0.00.ckpt
+    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch7-step142256-loss0.00.ckpt
+    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch7-step142256-loss0.00.ckpt
+    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch9-step177820-loss0.00.ckpt
+    - 8a37b2a3_Apr02-17-52-05_sd1000_ibot_mcm_patch_64_1000_lr0.001_tune0/models/ckpt-epoch9-step177820-loss0.00.ckpt
+    - 44614549_Apr03-16-21-25_sd1000_ibot_mcm_patch_91_1000_lr0.001_tune3/models/ckpt-epoch1-step35564-loss0.00.ckpt
+    - 44614549_Apr03-16-21-25_sd1000_ibot_mcm_patch_91_1000_lr0.001_tune3/models/ckpt-epoch1-step35564-loss0.00.ckpt
+    - 44614549_Apr03-16-21-25_sd1000_ibot_mcm_patch_91_1000_lr0.001_tune3/models/ckpt-epoch3-step71128-loss0.00.ckpt
+    - 44614549_Apr03-16-21-25_sd1000_ibot_mcm_patch_91_1000_lr0.001_tune3/models/ckpt-epoch3-step71128-loss0.00.ckpt
+    - 44614549_Apr03-16-21-25_sd1000_ibot_mcm_patch_91_1000_lr0.001_tune3/models/ckpt-epoch2-step53346-loss0.00.ckpt
+    - 44614549_Apr03-16-21-25_sd1000_ibot_mcm_patch_91_1000_lr0.001_tune3/models/ckpt-epoch2-step53346-loss0.00.ckpt
+    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch8-step160038-loss0.00.ckpt
+    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch8-step160038-loss0.00.ckpt
+    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch7-step142256-loss0.00.ckpt
+    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch7-step142256-loss0.00.ckpt
+    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch9-step177820-loss0.00.ckpt
+    - 00fc7bfe_Apr02-17-52-05_sd1000_ibot_mcm_patch_73_1000_lr0.001_tune1/models/ckpt-epoch9-step177820-loss0.00.ckpt
+    - a214019f_Apr03-16-21-25_sd1000_ibot_mcm_patch_100_1000_lr0.001_tune4/models/ckpt-epoch1-step35564-loss0.00.ckpt
+    - a214019f_Apr03-16-21-25_sd1000_ibot_mcm_patch_100_1000_lr0.001_tune4/models/ckpt-epoch1-step35564-loss0.00.ckpt
+    - a214019f_Apr03-16-21-25_sd1000_ibot_mcm_patch_100_1000_lr0.001_tune4/models/ckpt-epoch3-step71128-loss0.00.ckpt
+    - a214019f_Apr03-16-21-25_sd1000_ibot_mcm_patch_100_1000_lr0.001_tune4/models/ckpt-epoch3-step71128-loss0.00.ckpt
+    - a214019f_Apr03-16-21-25_sd1000_ibot_mcm_patch_100_1000_lr0.001_tune4/models/ckpt-epoch2-step53346-loss0.00.ckpt
+    - a214019f_Apr03-16-21-25_sd1000_ibot_mcm_patch_100_1000_lr0.001_tune4/models/ckpt-epoch2-step53346-loss0.00.ckpt
+

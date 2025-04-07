@@ -9,17 +9,19 @@ from typing import Dict, Any
 import itertools
 from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
 from ts2.lm.mcm_systems import MCMSystem, CellIBOTSystem
+from ts2.lm.mcm_dinov2_systems import MCMDinov2System
 from ts2.lm.cell_mil_system import CellABMILSystem
-from ts2.lm.ssl_systems import (FlattenSystem, SimCLRSystem, SupConSystem, VICRegSystem,
-                                IJEPASystem, InterPatchJEPASystem)
+from ts2.lm.ssl_systems import (FlattenSystem, SimCLRSystem, SupConSystem,
+                                VICRegSystem, IJEPASystem,
+                                InterPatchJEPASystem)
 from ts2.lm.dinov2_eval_system import Dinov2EvalSystem
 from ts2.lm.distillation_systems import (CommitteeDistillationSystem,
                                          CRDDistillationSystem)
-from ts2.alignment.compute_foundation_embeddings import (UNIEvalSystem,
-                                                         ConchEvalSystem,
-                                                         VirchowEvalSystem,
-                                                         GigapathEvalSystem,
-                                                         PLIPEvalSystem)
+#from ts2.alignment.compute_foundation_embeddings import (UNIEvalSystem,
+#                                                         ConchEvalSystem,
+#                                                         VirchowEvalSystem,
+#                                                         GigapathEvalSystem,
+#                                                         PLIPEvalSystem)
 
 from ts2.data.histology_data_module import PatchDataModule
 from ts2.data.cell_data_module import CellDataModule
@@ -45,14 +47,15 @@ lms = {
     "InterPatchJEPASystem": InterPatchJEPASystem,
     "CommitteeDistillationNetwork": CommitteeDistillationSystem,
     "CRDDistillationSystem": CRDDistillationSystem,
-    "UNIEvalSystem": UNIEvalSystem,
-    "ConchEvalSystem": ConchEvalSystem,
-    "VirchowEvalSystem": VirchowEvalSystem,
-    "GigapathEvalSystem": GigapathEvalSystem,
-    "PLIPEvalSystem": PLIPEvalSystem,
+#    "UNIEvalSystem": UNIEvalSystem,
+#    "ConchEvalSystem": ConchEvalSystem,
+#    "VirchowEvalSystem": VirchowEvalSystem,
+#    "GigapathEvalSystem": GigapathEvalSystem,
+#    "PLIPEvalSystem": PLIPEvalSystem,
     "Dinov2EvalSystem": Dinov2EvalSystem,
     "FlattenSystem": FlattenSystem,
-    "CellABMILSystem": CellABMILSystem
+    "CellABMILSystem": CellABMILSystem,
+    "MCMDinov2System": MCMDinov2System
 }
 
 
@@ -248,16 +251,18 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
             return pred
 
         def concat_exclude_attn(predictions):
-            out =  {
+            out = {
                 "cls": list(itertools.chain(*[p["cls"] for p in predictions])),
                 "logits": torch.cat([p["logits"] for p in predictions]),
-                "attn": list(itertools.chain(*[p["attn"] for p in predictions])),
-                "embs": list(itertools.chain(*[p["embs"] for p in predictions])),
+                "attn":
+                list(itertools.chain(*[p["attn"] for p in predictions])),
+                "embs":
+                list(itertools.chain(*[p["embs"] for p in predictions])),
                 "label": torch.cat([p["label"] for p in predictions]),
-                "path": list(itertools.chain(*[p["path"] for p in predictions]))
+                "path": list(itertools.chain(*[p["path"]
+                                               for p in predictions]))
             }
             return out
-
 
         if isinstance(con_exp, CellABMILSystem):
             process_predictions = concat_exclude_attn
@@ -302,6 +307,7 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
     else:
         # metrics reporting
         do_eval(cf, results_dir, pred, do_softmax=not do_knn)
+
 
 def main():
     cf = read_process_cf(parse_args())

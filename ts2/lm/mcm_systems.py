@@ -811,7 +811,6 @@ class MCMSystem(EvalBaseSystem):
             self.criterion = None
 
     def training_step(self, batch, _):
-
         with torch.no_grad():
             self.tile_mask_generator.set_epoch(self.current_epoch)
             self.patch_mask_generator.set_epoch(self.current_epoch)

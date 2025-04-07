@@ -133,6 +133,8 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
         return {"image": im, "label": target}
 
 
+
+
 class SingleLevelHierarchicalDatasetSingleViewDINOV2(
         SingleLevelHierarchicalDataset):
 
@@ -213,6 +215,38 @@ class SingleLevelHierarchicalDatasetMultipleViewDINOV2(
             target = self.target_transform_(target)
 
         return im, target
+
+
+
+class SLHTileSVDatasetDINOv2(SingleLevelHierarchicalDatasetSingleViewDINOV2):
+
+    def __init__(self, num_samples: int = 1, **kwargs):
+
+        super().__init__(**kwargs)
+        #self.instances_ = tuple([(i["name"], i["label"],
+        #                          tuple([(p["patch_name"], p["patch_idx"])
+        #                                 for p in i["patches"]]))
+        #                         for i in self.instances_])
+        assert self.num_samples_ == 1  # This version only work with 1 xform
+
+
+    
+    def __getitem__(self, idx: int):
+        """Retrieve a list of patches, from the wholeslide specified by idx"""
+        idx = idx % len(self.instances_)
+        instance = self.instances_[idx]
+        target = self.class_to_idx_[instance["label"]]
+        im = self.read_images(instance)
+
+        if self.target_transform_ is not None:
+            target = self.target_transform_(target)
+ 
+        im.update({"name": instance["name"]})
+
+        return im, target
+
+
+# ===========
 
 
 class SLHDatasetWithFMEmbeddings(SingleLevelHierarchicalDataset):

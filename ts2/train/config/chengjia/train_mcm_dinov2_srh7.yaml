@@ -1,0 +1,300 @@
+infra:
+  exp_name: ts2/hdinov2_tile
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
+  comment: dev
+  log_gpu: True
+  seed: 1000
+  float32_matmul_precision: medium
+data:
+  set: srh
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+        train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srhum/bf99b89c_slide_all
+        trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srhum/bf99b89c_slide_toy
+        #train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_all
+        #trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_toy
+        #test_databank: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_train
+        #test: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_test
+  transform:
+    train:
+      which: HistologyTransform
+      params:
+        base_aug_params:
+          laser_noise_config: null
+          get_third_channel_params:
+            mode: three_channels
+            subtracted_base: 0.07629394531
+          to_uint8: False #True
+        strong_aug_params:
+          aug_list:
+          - which: center_crop_always_apply
+            params:
+              size: 288
+          - which: tile_dinov2_always_apply
+            params:
+              tile_height: 48
+              tile_width: 48
+              global_crops_scale: [0.14, 1.]
+              local_crops_scale: [0.05, 0.4]
+              local_crops_number: 8
+              global_crops_size: 48
+              local_crops_size: 20
+          aug_prob: 1
+    trainval: ${.train}
+    #test:
+    #  which: HistologyTransform
+    #  params:
+    #    base_aug_params: {}
+    #    strong_aug_params:
+    #      aug_list:
+    #      - which: resize_always_apply
+    #        params:
+    #          size: 224
+    #      aug_prob: 1
+  dataset:
+      which: SLHTileSVDatasetDINOv2
+      which_process_read: memmap_multi
+      params:
+        common:
+          data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/srh
+          num_transforms: 0
+          num_samples: 1
+          balance_instance_class: False
+        train:
+          num_instance_self_replicate: 30
+        trainval: {}
+  #test_dataset:
+  #    which: PatchDataset
+  #    which_process_read: memmap
+  #    params:
+  #        data_root: /nfs/mm-isilon/brainscans/dropbox/data/root_histology_db/srh
+  #        num_transforms: 1
+  #        balance_instance_class: False
+  #    negative_class_index: 1
+  #    classes_reorder: [2,0,1]
+  #    camera_ready_classes: [Astro, GBM, Oligo]
+  loader:
+    params:
+      common:
+        pin_memory: False
+        persistent_workers: True
+        prefetch_factor: 12
+        num_workers: 7
+        collate_fn:
+          which: collate_tile_data
+          params:
+            img_size: 48
+            patch_size: 4
+            masking:
+              mask_ratio_tuple: [0.1, 0.5]
+              mask_probability: 0.5
+      train:
+        batch_size: 8
+        drop_last: True
+        shuffle: True
+      trainval:
+        batch_size: 2
+        drop_last: False
+        shuffle: False
+      #test:
+      #  batch_size: 64
+      #  drop_last: False
+      #  shuffle: False
+lightning_module:
+  which: MCMDinov2System
+  params:
+    model_hyperparams:
+      tile_encoder:
+        student:
+          arch: vit_small
+          patch_size: 4
+          drop_path_rate: 0.1
+          layerscale: 1.0e-05
+          drop_path_uniform: true
+          pretrained_weights: ''
+          ffn_layer: "mlp"
+          block_chunks: 0
+          qkv_bias: true
+          proj_bias: true
+          ffn_bias: true
+          num_register_tokens: 0
+          interpolate_antialias: false
+          interpolate_offset: 0.1
+        teacher:
+          momentum_teacher: 0.9995
+          final_momentum_teacher: 1
+          warmup_teacher_temp: 0.04
+          teacher_temp: 0.07
+          warmup_teacher_temp_epochs: 30
+        dino:
+          loss_weight: 1.0
+          head_n_prototypes: 65536
+          head_bottleneck_dim: 256
+          head_nlayers: 3
+          head_hidden_dim: 2048
+          koleo_loss_weight: 0.1
+        ibot:
+          loss_weight: 1.0
+          mask_sample_probability: 0.5
+          mask_ratio_min_max: [0.1, 0.5]
+          separate_head: false
+          head_n_prototypes: 65536
+          head_bottleneck_dim: 256
+          head_nlayers: 3
+          head_hidden_dim: 2048
+        train:
+          centering: "centering" # or "sinkhorn_knopp"
+        crops:
+          global_crops_size: 48
+          local_crops_number: 8
+        optim:
+          patch_embed_lr_mult: 1.0 #0.2
+          layerwise_decay: 1.0 #0.9
+      patch_encoder:
+        student:
+          arch: vit_small
+          patch_size: 1
+          drop_path_rate: 0.1
+          layerscale: 1.0e-05
+          drop_path_uniform: true
+          pretrained_weights: ''
+          ffn_layer: "mlp"
+          block_chunks: 0
+          qkv_bias: true
+          proj_bias: true
+          ffn_bias: true
+          num_register_tokens: 0
+          interpolate_antialias: false
+          interpolate_offset: 0.1
+        teacher:
+          #momentum_teacher: 0.992
+          momentum_teacher: 0.9995
+          final_momentum_teacher: 1
+          warmup_teacher_temp: 0.04
+          teacher_temp: 0.07
+          warmup_teacher_temp_epochs: 30
+        dino:
+          loss_weight: 1.0
+          head_n_prototypes: 65536
+          head_bottleneck_dim: 256
+          head_nlayers: 3
+          head_hidden_dim: 2048
+          koleo_loss_weight: 0.1
+        ibot:
+          loss_weight: 1.0
+          mask_sample_probability: 0.5
+          mask_ratio_min_max: [0.1, 0.5]
+          separate_head: false
+          head_n_prototypes: 65536
+          head_bottleneck_dim: 256
+          head_nlayers: 3
+          head_hidden_dim: 2048
+        train:
+          centering: "centering" # or "sinkhorn_knopp"
+        crops:
+          global_crops_size: 5
+          local_crops_number: 8
+        optim:
+          patch_embed_lr_mult: 1.0 # 0.2
+          layerwise_decay: 1.0 #0.9
+
+      optim:
+        weight_decay: 0.04
+        weight_decay_end: 0.4
+        base_lr: 0.004  # learning rate for a batch size of 1024
+        lr: 0.  # will be set after applying scaling rule
+        min_lr: 1.0e-06
+        warmup_epochs: 1
+        freeze_last_layer_epochs: 1
+        scaling_rule: sqrt_wrt_1024
+        #patch_embed_lr_mult: 0.2
+        #layerwise_decay: 0.9
+        adamw_beta1: 0.9
+        adamw_beta2: 0.999
+
+      loss_coeff:
+        tile: 1
+        patch: 0.5
+
+      patch_cropping:
+        sample_min: 0
+        sample_max: 2
+        global_size: 5
+        local_size: 3
+        global_crops_number: 2
+        local_crops_number: 8
+      tile_mask_generator:
+        patch_size: 4
+      patch_mask_generator:
+        patch_size: 1
+    #opt_cf:
+    #  which: adamw
+    #  scale_lr: True
+    #  params:
+    #    lr: 0.001
+    #    betas: [0.9, 0.999]
+    #    eps: 1.0e-8
+    #    weight_decay: 0.01
+    #    amsgrad: False
+    #schd_cf:
+    #  which: cos_linear_warmup
+    #  params:
+    #    num_warmup_steps: 0.1
+    #    num_cycles: 0.5
+training:
+  resume_checkpoint: null
+  trainer_params:
+    max_epochs: 10
+    gradient_clip_val: 0.5
+    enable_progress_bar: True
+    precision: 'bf16-mixed'
+    deterministic: False
+    accumulate_grad_batches: 1
+  trainval:
+    freq:
+      interval: 1
+      unit: "epoch"
+#testing:
+#  eval_mode: patch_knn
+#  save_train_pred: true
+#  knn:
+#    do_knn: True
+#    knn_params:
+#      batch_size: 1536
+#      k: 200
+#      t: 0.07
+#  tsne:
+#    interactive: False
+#    num_patches: [8192]
+#    which_set: [val]
+#    embed_images: true
+#    class_params:
+#      perplexity: 50
+#      learning_rate: auto
+#      init : pca
+tune:
+  diagonal_items: true
+  params:
+    infra/comment:
+    - dv2_mcm_tile_1000_lr0.001
+    #- dv2_mcm_tile_1000_lr0.0005
+    lightning_module/params/model_hyperparams/optim/base_lr:
+    - 0.001
+    #- 0.0005
+    #lightning_module/params/model_hyperparams/loss_coeff/tile:
+    #- 0.6
+    #- 0.7
+    #- 0.8
+    #- 0.9
+    #- 1
+    #lightning_module/params/model_hyperparams/loss_coeff/patch:
+    #- 0.4
+    #- 0.3
+    #- 0.2
+    #- 0.1
+    #- 0
+    #lightning_module/params/opt_cf/params/lr:
+    #- 0.001
+    #- 0.0005
