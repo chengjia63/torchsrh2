@@ -14,6 +14,7 @@ import torch
 
 from dinov2.data import SamplerType, make_data_loader
 from dinov2.data import collate_data_and_cast, MaskingGenerator
+from dinov2.data.collate import collate_tile_data_and_cast_fmi
 import dinov2.distributed as distributed
 from dinov2.fsdp import FSDPCheckpointer
 from dinov2.logging import MetricLogger
@@ -191,6 +192,7 @@ def do_train(cfg, model, dataset, tb_writer, resume=False):
     )
 
     collate_fn = partial(
+        #collate_tile_data_and_cast_fmi, #collate_data_and_cast,
         collate_data_and_cast,
         mask_ratio_tuple=cfg.ibot.mask_ratio_min_max,
         mask_probability=cfg.ibot.mask_sample_probability,
@@ -230,6 +232,7 @@ def do_train(cfg, model, dataset, tb_writer, resume=False):
             max_iter,
             start_iter,
     ):
+
         current_batch_size = data["collated_global_crops"].shape[0] / 2
         if iteration > max_iter:
             return

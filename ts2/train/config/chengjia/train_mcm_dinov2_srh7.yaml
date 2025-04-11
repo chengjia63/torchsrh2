@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/hdinov2_tile
+  exp_name: ts2/hdinov2_tile_v2
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -110,7 +110,7 @@ lightning_module:
         student:
           arch: vit_small
           patch_size: 4
-          drop_path_rate: 0.1
+          drop_path_rate: 0.2
           layerscale: 1.0e-05
           drop_path_uniform: true
           pretrained_weights: ''
@@ -123,14 +123,14 @@ lightning_module:
           interpolate_antialias: false
           interpolate_offset: 0.1
         teacher:
-          momentum_teacher: 0.9995
+          momentum_teacher: 0.996
           final_momentum_teacher: 1
           warmup_teacher_temp: 0.04
-          teacher_temp: 0.07
-          warmup_teacher_temp_epochs: 30
+          teacher_temp: 0.1 #0.07
+          warmup_teacher_temp_epochs: 3
         dino:
           loss_weight: 1.0
-          head_n_prototypes: 65536
+          head_n_prototypes: 1024
           head_bottleneck_dim: 256
           head_nlayers: 3
           head_hidden_dim: 2048
@@ -140,18 +140,18 @@ lightning_module:
           mask_sample_probability: 0.5
           mask_ratio_min_max: [0.1, 0.5]
           separate_head: false
-          head_n_prototypes: 65536
+          head_n_prototypes: 1024
           head_bottleneck_dim: 256
           head_nlayers: 3
           head_hidden_dim: 2048
         train:
-          centering: "centering" # or "sinkhorn_knopp"
+          centering: "sinkhorn_knopp"
         crops:
           global_crops_size: 48
           local_crops_number: 8
         optim:
-          patch_embed_lr_mult: 1.0 #0.2
-          layerwise_decay: 1.0 #0.9
+          patch_embed_lr_mult: 0.2
+          layerwise_decay: 1.0
       patch_encoder:
         student:
           arch: vit_small
@@ -174,7 +174,7 @@ lightning_module:
           final_momentum_teacher: 1
           warmup_teacher_temp: 0.04
           teacher_temp: 0.07
-          warmup_teacher_temp_epochs: 30
+          warmup_teacher_temp_epochs: 3
         dino:
           loss_weight: 1.0
           head_n_prototypes: 65536
@@ -209,14 +209,12 @@ lightning_module:
         warmup_epochs: 1
         freeze_last_layer_epochs: 1
         scaling_rule: sqrt_wrt_1024
-        #patch_embed_lr_mult: 0.2
-        #layerwise_decay: 0.9
         adamw_beta1: 0.9
         adamw_beta2: 0.999
 
       loss_coeff:
         tile: 1
-        patch: 0.5
+        patch: 0 #0.5
 
       patch_cropping:
         sample_min: 0
@@ -278,10 +276,10 @@ tune:
   diagonal_items: true
   params:
     infra/comment:
-    - dv2_mcm_tile_1000_lr0.001
+    - dv2_mcm_tile_1000_lr2.4
     #- dv2_mcm_tile_1000_lr0.0005
     lightning_module/params/model_hyperparams/optim/base_lr:
-    - 0.001
+    - 2.0e-4
     #- 0.0005
     #lightning_module/params/model_hyperparams/loss_coeff/tile:
     #- 0.6

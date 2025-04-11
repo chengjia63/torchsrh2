@@ -463,7 +463,7 @@ class EvalBaseModule(ABC):
 
         if self.cf_.testing.tsne.interactive:
             bind_range = alt.binding_range(min=4, max=256, name='Size ')
-            param_size = alt.param(bind=bind_range)
+            param_size = alt.param(name='point_size', bind=bind_range, value=64)
 
             patient_list = sorted(list(set(smpl_data_["patient"])))
             patient_bind = alt.binding_select(options=[None] + patient_list,
@@ -482,7 +482,11 @@ class EvalBaseModule(ABC):
             class_selection = alt.selection_point(fields=[color_key],
                                                   bind='legend')
 
-            chart_i = chart.encode(
+            chart_i = alt.Chart(smpl_data_).mark_point(filled=True,
+                size=param_size
+            ).encode(
+                x=alt.X("x", scale=alt.Scale(domain=[-1, 1]), axis=tsne_unit_axis),
+                y=alt.Y("y", scale=alt.Scale(domain=[-1, 1]), axis=tsne_unit_axis),
                 tooltip=['image', "path"],
                 color=alt.condition(
                     patient_selection & slide_selection & class_selection,
@@ -495,7 +499,6 @@ class EvalBaseModule(ABC):
                     alt.value(0.1)
                 ),
                 stroke=alt.value("#000000"),
-                size=param_size,
                 **chart_encode_params
             ).add_params(
                 param_size,

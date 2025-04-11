@@ -104,16 +104,17 @@ class CellDataModule(pl.LightningDataModule):
             trainval_xform = transforms[self.xform_config_.trainval.which](
                 which_set=self.set_, **self.xform_config_.trainval.params)
 
-            if check_collate_fn_which(self.loader_config_.params,
-                                      "train") == "SingleCellBlendedCollator":
-                self.train_strong_xform = train_xform.strong_aug
-                train_xform.strong_aug = torch.nn.Identity()
+            if self.loader_config_:
+                if check_collate_fn_which(self.loader_config_.params,
+                                          "train") == "SingleCellBlendedCollator":
+                    self.train_strong_xform = train_xform.strong_aug
+                    train_xform.strong_aug = torch.nn.Identity()
 
-            if check_collate_fn_which(
-                    self.loader_config_.params,
-                    "trainval") == "SingleCellBlendedCollator":
-                self.trainval_strong_xform = trainval_xform.strong_aug
-                trainval_xform.strong_aug = torch.nn.Identity()
+                if check_collate_fn_which(
+                        self.loader_config_.params,
+                        "trainval") == "SingleCellBlendedCollator":
+                    self.trainval_strong_xform = trainval_xform.strong_aug
+                    trainval_xform.strong_aug = torch.nn.Identity()
 
             self.train_dataset_ = datasets[self.dset_config_.which](
                 instances=train_inst,
@@ -144,10 +145,11 @@ class CellDataModule(pl.LightningDataModule):
             test_xform = transforms[self.xform_config_.test.which](
                     which_set=self.set_, **self.xform_config_.test.params)
 
-            if check_collate_fn_which(self.loader_config_.params,
-                                      "test") == "SingleCellBlendedCollator":
-                self.test_strong_xform = test_xform.strong_aug
-                test_xform.strong_aug = torch.nn.Identity()
+            if self.loader_config_:
+                if check_collate_fn_which(self.loader_config_.params,
+                                          "test") == "SingleCellBlendedCollator":
+                    self.test_strong_xform = test_xform.strong_aug
+                    test_xform.strong_aug = torch.nn.Identity()
 
 
             test_dataset = datasets[self.test_dset_config_.which](
