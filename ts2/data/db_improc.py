@@ -13,6 +13,8 @@ def instantiate_process_read(which: str, which_set: Optional[str] = "srh"):
     """Returns the proper process read function"""
     if which == "memmap":
         return MemmapReader(which_set=which_set)
+    elif which == "memmap_tile":
+        return MemmapTileReader(which_set=which_set)
     elif which == "memmap_multi":
         return MemmapMultiReader(which_set=which_set)
     elif which == "memmap_multi_fm":
@@ -73,6 +75,32 @@ class MemmapReader():
             "h w c -> c h w").contiguous()
 
 
+class MemmapTileReader(MemmapReader):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def __call__(self, mm_path, tensor_shape, patch_idx, rc_idx, tile_size):
+        """Read in two channel image
+
+        Returns:
+            A 2 channel torch Tensor in the shape 2 * H * W
+        """
+        fd = np.memmap(mm_path,
+                       dtype=self.dtype_,
+                       mode="r",
+                       shape=tensor_shape)
+        im = np.array(fd[patch_idx, 
+                         rc_idx[0]:rc_idx[0]+tile_size,
+                         rc_idx[1]:rc_idx[1]+tile_size, 
+                         :])
+        fd._mmap.close()
+        del fd
+        return einops.rearrange(
+            torch.from_numpy(im).to(torch.float32),
+            "b h w c -> b c h w").contiguous()
+    
+
 class MemmapMultiReader(MemmapReader):
 
     def __init__(self, **kwargs):
@@ -94,7 +122,6 @@ class MemmapMultiReader(MemmapReader):
         return einops.rearrange(
             torch.from_numpy(im).to(torch.float32),
             "b h w c -> b c h w").contiguous()
-
 
 class MemmapMultiReaderWithFoundation(MemmapMultiReader):
 

@@ -5,6 +5,7 @@
 
 from functools import partial
 import logging
+import collections
 
 import torch
 from torch import nn
@@ -28,6 +29,47 @@ except ImportError:
 logger = logging.getLogger("dinov2")
 
 
+@torch.no_grad()
+def load_uni_one_bbone(backbone, ckpt):
+    backbone.cls_token.copy_(ckpt["cls_token"])
+    backbone.pos_embed.copy_(ckpt["pos_embed"])
+    backbone.patch_embed.load_state_dict(
+        collections.OrderedDict([(k.removeprefix("patch_embed."), ckpt[k])
+                                 for k in ckpt.keys()
+                                 if k.startswith("patch_embed.")]))
+    backbone.norm.load_state_dict(
+        collections.OrderedDict([(k.removeprefix("norm."), ckpt[k])
+                                 for k in ckpt.keys()
+                                 if k.startswith("norm.")]))
+    for b in backbone.blocks:
+        expected_keys = b.state_dict().keys()
+        b.load_state_dict(
+            collections.OrderedDict([(k, ckpt[f"blocks.{k}"])
+                                     for k in expected_keys]))
+
+@torch.no_grad()
+def load_dinov2_blocks_cls_only(backbone, ckpt):
+    backbone.cls_token.copy_(ckpt["cls_token"])
+    backbone.mask_token.copy_(ckpt["mask_token"])
+    #backbone.pos_embed.copy_(ckpt["embeddings.position_embeddings"])
+    #backbone.patch_embed.load_state_dict(
+    #    collections.OrderedDict([(k.removeprefix("embeddings.patch_embeddings.").replace("projection", "proj"), ckpt[k])
+    #                             for k in ckpt.keys()
+    #                             if k.startswith("embeddings.patch_embeddings.")]))
+
+    backbone.norm.load_state_dict(
+        collections.OrderedDict([
+        ("weight", ckpt["norm.weight"]),
+        ("bias", ckpt["norm.bias"])]))
+
+    for b in backbone.blocks:
+        expected_keys = b.state_dict().keys()
+        b.load_state_dict(
+            collections.OrderedDict([(k, ckpt[f"blocks.{k}"])
+                                     for k in expected_keys]))
+
+
+
 class SSLMetaArch(nn.Module):
     def __init__(self, cfg):
         super().__init__()
@@ -43,9 +85,24 @@ class SSLMetaArch(nn.Module):
         logger.info(f"OPTIONS -- architecture : embed_dim: {embed_dim}")
 
         if cfg.student.pretrained_weights:
-            chkpt = torch.load(cfg.student.pretrained_weights)
-            logger.info(f"OPTIONS -- pretrained weights: loading from {cfg.student.pretrained_weights}")
-            student_backbone.load_state_dict(chkpt["model"], strict=False)
+            if type(cfg.student.pretrained_weights) is str:
+                chkpt = torch.load(cfg.student.pretrained_weights)
+                logger.info(f"OPTIONS -- pretrained weights: loading from {cfg.student.pretrained_weights}")
+                student_backbone.load_state_dict(chkpt["model"], strict=False)
+
+            elif cfg.student.pretrained_weights.how == "dinov2_blocks_cls_only":
+                ckpt = torch.load(cfg.student.pretrained_weights.path,
+                                      map_location="cpu")
+                load_dinov2_blocks_cls_only(student_model_dict["backbone"], ckpt)
+                load_dinov2_blocks_cls_only(teacher_model_dict["backbone"], ckpt)
+
+            elif cfg.student.pretrained_weights.how == "uni":
+                uni_ckpt = torch.load(cfg.student.pretrained_weights.path,
+                                      map_location="cpu")
+                load_uni_one_bbone(student_model_dict["backbone"], uni_ckpt)
+                load_uni_one_bbone(teacher_model_dict["backbone"], uni_ckpt)
+            else:
+                raise ValueError()
 
         self.embed_dim = embed_dim
         self.dino_out_dim = cfg.dino.head_n_prototypes

@@ -106,14 +106,8 @@ def main():
     cf.dinov2_fair_config.crops.local_crops_number *= dm.train_dataset_.num_samples_
     model = SSLMetaArch(cf.dinov2_fair_config)
 
-    if cf.ts_wrap_config.get("load_uni_ckpt", {}).get("do", False):
-        uni_ckpt = torch.load(cf.ts_wrap_config.load_uni_ckpt.ckpt_path,
-                              map_location="cpu")
-        load_uni_one_bbone(model.teacher.backbone, uni_ckpt)
-        load_uni_one_bbone(model.student.backbone, uni_ckpt)
+    assert ("load_uni_ckpt" not in cf.ts_wrap_config), "use cfg.student.pretrained_weights"
 
-        #load_dinov2_one_bbone(model.teacher.backbone, uni_ckpt)
-        #load_dinov2_one_bbone(model.student.backbone, uni_ckpt)
     model = model.to(torch.device("cuda"))
     model.prepare_for_distributed_training()
 

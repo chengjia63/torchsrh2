@@ -26,11 +26,11 @@ data:
           mask_params:
             how_to_process: small_patch # rm_background #small_patch
             bg_fill: [9957.5889, 10057.9795]
-          #to_uint8: True
+          to_uint8: True
         strong_aug_params:
           aug_list:
-          #- which: dinov2_normalize_always_apply
-          #  params: {}
+          - which: dinov2_normalize_always_apply
+            params: {}
           - which: center_crop_always_apply
             params:
               size: 48
@@ -66,7 +66,7 @@ lightning_module:
         #class_token: True
         block_chunks: 4
         ffn_bias: true
-        ffn_layer: swiglufused
+        ffn_layer: mlp
         num_register_tokens: 0
         interpolate_antialias: false
         interpolate_offset: 0.1
@@ -106,20 +106,12 @@ tune:
     data/transform/test/params/base_aug_params/mask_params/how_to_process:
     - small_patch
     - remove_background
-    - small_patch
-    - remove_background
     infra/comment:
-    - smpt_SE_epoch0-step4999
-    - rmbg_SE_epoch0-step4999
     - smpt_SE_epoch0-step9999
     - rmbg_SE_epoch0-step9999
     infra/exp_root:
     - ts2/fmi_hdinov2_tile
     - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
     lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/7bb4ed40_Apr11-13-33-51_sd1000_dev_tune0/models/eval/training_4999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/7bb4ed40_Apr11-13-33-51_sd1000_dev_tune0/models/eval/training_4999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/7bb4ed40_Apr11-13-33-51_sd1000_dev_tune0/models/eval/training_9999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/7bb4ed40_Apr11-13-33-51_sd1000_dev_tune0/models/eval/training_9999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/c02bc35b_Apr14-12-20-06_sd1000_dev_tune0/models/eval/training_9999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/c02bc35b_Apr14-12-20-06_sd1000_dev_tune0/models/eval/training_9999/teacher_checkpoint.pth

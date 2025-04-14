@@ -1,0 +1,125 @@
+infra:
+  exp_name: ts2/scsrh_uni
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia 
+  comment: SE
+  log_gpu: True
+  seed: 1000
+  float32_matmul_precision: medium
+
+data:
+  set: scsrh
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+        test_databank: ../data/tsmeta/srh7v1_sc/c191d6d5_cell40_train
+        test: ../data/tsmeta/srh7v1_sc/c191d6d5_cell40_trainval
+  transform:
+    test:
+      which: HistologyTransform
+      params:
+        base_aug_params:
+          laser_noise_config: null
+          get_third_channel_params:
+            mode: three_channels
+            subtracted_base: 0.07629394531
+          mask_params:
+            how_to_process: small_patch # rm_background #small_patch
+            bg_fill: [9957.5889, 10057.9795]
+          to_uint8: True
+        strong_aug_params:
+          aug_list:
+          - which: dinov2_normalize_always_apply
+            params: {}
+          - which: center_crop_always_apply
+            params:
+              size: 48
+          aug_prob: 1
+  test_dataset:
+    which: CellDataset # SingleLevelHierarchicalDataset
+    which_process_read: cell_memmap
+    params:
+      data_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root2/
+      num_transforms: 1
+      balance_instance_class: False
+    classes_reorder: [0, 1, 2, 3, 5, 6, 4]
+    camera_ready_classes: [HGG, LGG, Mening, Mets, Normal, Pit, Schwan]
+  loader:
+    params:
+      common:
+        pin_memory: False
+        persistent_workers: False
+        prefetch_factor: 8
+        num_workers: 7
+      test:
+        batch_size: 256
+        drop_last: False
+        shuffle: False
+lightning_module:
+  which: Dinov2EvalSystem
+  params:
+    model_hyperparams:
+        arch: vit_small
+        img_size: 48
+        patch_size: 4
+        #global_pool: "token"
+        #class_token: True
+        block_chunks: 4
+        ffn_bias: true
+        ffn_layer: swiglufused
+        num_register_tokens: 0
+        interpolate_antialias: false
+        interpolate_offset: 0.1
+        layerscale: 1.0e-05
+        proj_bias: true
+        qkv_bias: true
+    pretrained_weights: TODO
+
+testing:
+  eval_mode: knn
+  save_train_pred: True
+  #eval_predictions: 4cf5a93d_Oct14-23-29-19_sd1000_standaloneeval_37
+  knn:
+    do_knn: True
+    knn_params:
+      batch_size: 1536
+      k: 20
+      t: 0.07
+  tsne:
+    interactive: True
+    num_patches: [4096]
+    which_set: [val]
+    embed_images: true
+    class_params:
+      perplexity: 50
+      learning_rate: auto
+      init : pca
+  nn_viz:
+    query_set: val
+    n_sample: 32
+    target_set: val
+    exclude_same_patient: True
+    k: 40
+tune:
+  diagonal_items: True
+  params:
+    data/transform/test/params/base_aug_params/mask_params/how_to_process:
+    - small_patch
+    - remove_background
+    - small_patch
+    - remove_background
+    infra/comment:
+    - smpt_SE_epoch0-step119999
+    - rmbg_SE_epoch0-step119999
+    - smpt_SE_epoch0-step109999
+    - rmbg_SE_epoch0-step109999
+    infra/exp_root:
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    lightning_module/params/pretrained_weights:
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/8048d9e9_Apr08-23-38-48_sd1000_dev_tune0/models/eval/training_119999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/8048d9e9_Apr08-23-38-48_sd1000_dev_tune0/models/eval/training_119999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/8048d9e9_Apr08-23-38-48_sd1000_dev_tune0/models/eval/training_109999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/8048d9e9_Apr08-23-38-48_sd1000_dev_tune0/models/eval/training_109999/teacher_checkpoint.pth

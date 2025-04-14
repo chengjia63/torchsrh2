@@ -9,7 +9,7 @@ import torch
 from tqdm import tqdm
 import einops
 import math
-from ts2.data.db_improc import MemmapReader
+from ts2.data.db_improc import MemmapReader, MemmapTileReader
 from ts2.data.balanceable_dataset import BalanceableBaseDataset
 from itertools import chain
 import random
@@ -175,6 +175,49 @@ class SingleLevelHierarchicalDatasetSingleViewDINOV2(
 
 SingleLevelHierarchicalDatasetDINOV2 = SingleLevelHierarchicalDatasetSingleViewDINOV2
 
+class SLHSVSingleTileDatasetDINOV2(
+        SingleLevelHierarchicalDatasetDINOV2):
+
+    def __init__(self, tile_size,
+                 process_read_im: callable = MemmapTileReader(which_set="srh"),
+                 **kwargs):
+        super().__init__(process_read_im=process_read_im, **kwargs)
+        self.tile_size = tile_size
+        assert self.num_samples_ == 1  # This version only work with 1 xform
+        assert self.num_transforms_ == 0
+
+    @torch.no_grad()
+    def read_images(self, inst: Dict):
+        """Read in a list of patches, different patches and transformations"""
+
+        #patches_list = inst["patches"]
+        im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
+        #mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
+
+        tensor_shape = tuple(self.tensor_shape_map[inst["name"]]["shape"])
+        rc_idx = (np.random.randint(tensor_shape[1]-self.tile_size),
+                  np.random.randint(tensor_shape[2]-self.tile_size))
+        
+        images = self.process_read_im_(
+            self.make_im_path(self.tensor_shape_map[inst["name"]]["path"]),
+            tensor_shape, im_id, rc_idx, self.tile_size)
+        
+        im_id = None
+        assert self.transform_ is not None
+        images = self.transform_(images.squeeze())
+        return images
+
+    def __getitem__(self, idx: int):
+        """Retrieve a list of patches, from the wholeslide specified by idx"""
+        idx = idx % len(self.instances_)
+        instance = self.instances_[idx]
+        target = self.class_to_idx_[instance["label"]]
+        im = self.read_images(instance)
+
+        if self.target_transform_ is not None:
+            target = self.target_transform_(target)
+
+        return im, target
 
 class SingleLevelHierarchicalDatasetMultipleViewDINOV2(
         SingleLevelHierarchicalDataset):

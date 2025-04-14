@@ -16,7 +16,7 @@ from ts2.data.patch_dataset import PatchDataset
 from ts2.data.slide_dataset import (SingleLevelHierarchicalDataset,
                                     SLHDatasetWithFMEmbeddings,
                                     HierarchicalDataset, InterPatchJEPADataset,
-                                    SingleLevelHierarchicalDatasetDINOV2,
+                                    SingleLevelHierarchicalDatasetDINOV2, SLHSVSingleTileDatasetDINOV2,
                                     SLHTileSVDatasetDINOv2,
                                     SingleLevelHierarchicalDatasetMultipleViewDINOV2)
 from ts2.data.db_improc import instantiate_process_read
@@ -93,6 +93,7 @@ class PatchDataModule(pl.LightningDataModule):
             PatchDataset,
             "SingleLevelHierarchicalDataset":
             SingleLevelHierarchicalDataset,
+            "SLHSVSingleTileDatasetDINOV2": SLHSVSingleTileDatasetDINOV2,
             "InterPatchJEPADataset":
             InterPatchJEPADataset,
             "SLHDatasetWithFMEmbeddings":

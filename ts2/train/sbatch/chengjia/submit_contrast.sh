@@ -30,8 +30,8 @@
 # SBATCH --account=precisionhealth_owned1
 #SBATCH --account=tocho_owned1
 #------------------------------------------------------------------------------
-# SBATCH --nodelist=armis26001
-#SBATCH --exclude=armis26001
+# SBATCH --nodelist=armis26004
+# SBATCH --exclude=armis26001
 #------------------------------------------------------------------------------
 #SBATCH --time=14-00:00:00
 # SBATCH --time=27:00:00
@@ -69,4 +69,6 @@ set -e
 #srun python main.py -c=config/chengjia/train_mcm_dinov2_srh7.yaml
 
 #srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmi.yaml
-srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmi_nonorm.yaml
+#srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmi_nonorm.yaml
+
+srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmitds_touint8.yaml
