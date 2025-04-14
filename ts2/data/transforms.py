@@ -27,7 +27,6 @@ from dinov2.data.augmentations import (DataAugmentationDINO, DataAugmentationDIN
                                        DataAugmentationHiDiscDINO)
 from dinov2.data.transforms import (make_normalize_transform)
 
-from ts2.models.dinov2.data.augmentations import TileDataAugmentationDINO
 
 class HistologyTransform(torch.nn.Module):
     """Transformation module for histology data training"""
@@ -236,7 +235,6 @@ class StrongTransform(torch.nn.Module):
             "fft_low_pass_filter": partial(rand_apply_p, FFTLowPassFilter),
             "fft_high_pass_filter": partial(rand_apply_p, FFTHighPassFilter),
             "fft_band_pass_filter": partial(rand_apply_p, FFTBandPassFilter),
-            "tile_dinov2_always_apply": TileDataAugmentationDINO,
         }
 
         self.transforms_ = Compose(

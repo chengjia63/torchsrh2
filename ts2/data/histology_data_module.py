@@ -23,8 +23,8 @@ from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
 from ts2.data.utils import get_collate_fn
 
-from ts2.models.dinov2.data.collate import collate_data_and_cast, collate_tile_data
-from ts2.models.dinov2.data.masking import MaskingGenerator
+#from ts2.models.dinov2.data.collate import collate_data_and_cast, collate_tile_data
+#from ts2.models.dinov2.data.masking import MaskingGenerator
 
 def get_num_replicate(num_instance_self_replicate, max_hierarchical_replicate,
                       num_samples):
@@ -187,27 +187,27 @@ class PatchDataModule(pl.LightningDataModule):
         if loader_params.get("collate_fn"):
             collate_cf = loader_params["collate_fn"]
             
-            dinov2_family_collate = {
-                "collate_tile_data": collate_tile_data,
-                "collate_data_and_cast": collate_data_and_cast
-            }
-            if collate_cf["which"] in dinov2_family_collate.keys():
-                img_size = collate_cf["params"]["img_size"]
-                patch_size = collate_cf["params"]["patch_size"]
-                nt_side = (img_size // patch_size)
-                n_tokens = nt_side ** 2
-                mask_generator = MaskingGenerator(
-                    input_size=(nt_side, nt_side),
-                    max_num_patches=0.5 * n_tokens
-                )
-
-                loader_params["collate_fn"] = partial(
-                    dinov2_family_collate[collate_cf["which"]],
-                    n_tokens=n_tokens,
-                    mask_generator=mask_generator,
-                    **collate_cf["params"]["masking"])
-            else:
-                loader_params["collate_fn"] = get_collate_fn(
+            #dinov2_family_collate = {
+            #    "collate_tile_data": collate_tile_data,
+            #    "collate_data_and_cast": collate_data_and_cast
+            #}
+            #if collate_cf["which"] in dinov2_family_collate.keys():
+            #    img_size = collate_cf["params"]["img_size"]
+            #    patch_size = collate_cf["params"]["patch_size"]
+            #    nt_side = (img_size // patch_size)
+            #    n_tokens = nt_side ** 2
+            #    mask_generator = MaskingGenerator(
+            #        input_size=(nt_side, nt_side),
+            #        max_num_patches=0.5 * n_tokens
+            #    )
+#
+            #    loader_params["collate_fn"] = partial(
+            #        dinov2_family_collate[collate_cf["which"]],
+            #        n_tokens=n_tokens,
+            #        mask_generator=mask_generator,
+            #        **collate_cf["params"]["masking"])
+            #else:
+            loader_params["collate_fn"] = get_collate_fn(
                     **collate_cf)
 
 
@@ -225,27 +225,27 @@ class PatchDataModule(pl.LightningDataModule):
         if loader_params.get("collate_fn"):
             collate_cf = loader_params["collate_fn"]
             
-            dinov2_family_collate = {
-                "collate_tile_data": collate_tile_data,
-                "collate_data_and_cast": collate_data_and_cast
-            }
-            if collate_cf["which"] in dinov2_family_collate.keys():
-                img_size = collate_cf["params"]["img_size"]
-                patch_size = collate_cf["params"]["patch_size"]
-                nt_side = (img_size // patch_size)
-                n_tokens = nt_side ** 2
-                mask_generator = MaskingGenerator(
-                    input_size=(nt_side, nt_side),
-                    max_num_patches=0.5 * n_tokens
-                )
-
-                loader_params["collate_fn"] = partial(
-                    dinov2_family_collate[collate_cf["which"]],
-                    n_tokens=n_tokens,
-                    mask_generator=mask_generator,
-                    **collate_cf["params"]["masking"])
-            else:
-                loader_params["collate_fn"] = get_collate_fn(
+            #dinov2_family_collate = {
+            #    "collate_tile_data": collate_tile_data,
+            #    "collate_data_and_cast": collate_data_and_cast
+            #}
+            #if collate_cf["which"] in dinov2_family_collate.keys():
+            #    img_size = collate_cf["params"]["img_size"]
+            #    patch_size = collate_cf["params"]["patch_size"]
+            #    nt_side = (img_size // patch_size)
+            #    n_tokens = nt_side ** 2
+            #    mask_generator = MaskingGenerator(
+            #        input_size=(nt_side, nt_side),
+            #        max_num_patches=0.5 * n_tokens
+            #    )
+            #
+            #    loader_params["collate_fn"] = partial(
+            #        dinov2_family_collate[collate_cf["which"]],
+            #        n_tokens=n_tokens,
+            #        mask_generator=mask_generator,
+            #        **collate_cf["params"]["masking"])
+            #else:
+            loader_params["collate_fn"] = get_collate_fn(
                     **collate_cf)
 
         if ("trainval_sampler" in self.loader_config_):

@@ -9,7 +9,7 @@ from typing import Dict, Any
 import itertools
 from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
 from ts2.lm.mcm_systems import MCMSystem, CellIBOTSystem
-from ts2.lm.mcm_dinov2_systems import MCMDinov2System
+#from ts2.lm.mcm_dinov2_systems import MCMDinov2System
 from ts2.lm.cell_mil_system import CellABMILSystem
 from ts2.lm.ssl_systems import (FlattenSystem, SimCLRSystem, SupConSystem,
                                 VICRegSystem, IJEPASystem,
@@ -55,7 +55,7 @@ lms = {
     "Dinov2EvalSystem": Dinov2EvalSystem,
     "FlattenSystem": FlattenSystem,
     "CellABMILSystem": CellABMILSystem,
-    "MCMDinov2System": MCMDinov2System
+#    "MCMDinov2System": MCMDinov2System
 }
 
 
