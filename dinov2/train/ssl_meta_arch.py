@@ -86,21 +86,43 @@ class SSLMetaArch(nn.Module):
 
         if cfg.student.pretrained_weights:
             if type(cfg.student.pretrained_weights) is str:
-                chkpt = torch.load(cfg.student.pretrained_weights)
+                chkpt = torch.load(cfg.student.pretrained_weights, map_location="cpu")
                 logger.info(f"OPTIONS -- pretrained weights: loading from {cfg.student.pretrained_weights}")
-                student_backbone.load_state_dict(chkpt["model"], strict=False)
+                
+                if "model" in chkpt.keys():
+                    student_backbone.load_state_dict(chkpt["model"], strict=False)
+                elif "teacher" in chkpt.keys():
+
+                    dinohead_ckpt = {
+                        k.removeprefix("dino_head."):chkpt["teacher"][k]
+                        for k in chkpt["teacher"] if k.startswith("dino_head")}
+                    ibothead_ckpt = {
+                        k.removeprefix("ibot_head."):chkpt["teacher"][k]
+                        for k in chkpt["teacher"] if k.startswith("ibot_head")}
+                    
+                    bbonehead_ckpt = {
+                        k.removeprefix("backbone."):chkpt["teacher"][k]
+                        for k in chkpt["teacher"]
+                        if ((not k.startswith("ibot_head")) and 
+                            (not k.startswith("dino_head")))}
+                    student_backbone.load_state_dict(bbonehead_ckpt, strict=True)
+                else:
+                    raise ValueError()
 
             elif cfg.student.pretrained_weights.how == "dinov2_blocks_cls_only":
                 ckpt = torch.load(cfg.student.pretrained_weights.path,
                                       map_location="cpu")
                 load_dinov2_blocks_cls_only(student_model_dict["backbone"], ckpt)
                 load_dinov2_blocks_cls_only(teacher_model_dict["backbone"], ckpt)
+                logger.info(f"OPTIONS -- pretrained weights: loading from {cfg.student.pretrained_weights.path}")
 
             elif cfg.student.pretrained_weights.how == "uni":
                 uni_ckpt = torch.load(cfg.student.pretrained_weights.path,
                                       map_location="cpu")
                 load_uni_one_bbone(student_model_dict["backbone"], uni_ckpt)
                 load_uni_one_bbone(teacher_model_dict["backbone"], uni_ckpt)
+                logger.info(f"OPTIONS -- pretrained weights: loading from {cfg.student.pretrained_weights.path}")
+
             else:
                 raise ValueError()
 
@@ -167,6 +189,13 @@ class SSLMetaArch(nn.Module):
             else:
                 logger.info("OPTIONS -- IBOT -- head shared with DINO")
 
+
+        if cfg.student.pretrained_weights:
+            if type(cfg.student.pretrained_weights) is str:
+                if "teacher" in chkpt.keys():
+                    student_model_dict["ibot_head"].load_state_dict(ibothead_ckpt, strict=True)
+                    student_model_dict["dino_head"].load_state_dict(dinohead_ckpt, strict=True)
+
         self.need_to_synchronize_fsdp_streams = True
 
         self.student = nn.ModuleDict(student_model_dict)
@@ -186,7 +215,7 @@ class SSLMetaArch(nn.Module):
         else:
             loss.backward()
 
-    def forward_backward(self, images, teacher_temp):
+    def forward_(self, images, teacher_temp, return_student_emb=False):
         n_global_crops = 2
         assert n_global_crops == 2
         n_local_crops = self.cfg.crops.local_crops_number
@@ -281,9 +310,9 @@ class SSLMetaArch(nn.Module):
             else:
                 raise NotImplementedError
 
-            return teacher_dino_softmaxed_centered_list, masked_teacher_ibot_softmaxed_centered
+            return teacher_dino_softmaxed_centered_list, masked_teacher_ibot_softmaxed_centered, teacher_backbone_output_dict
 
-        teacher_dino_softmaxed_centered_list, masked_teacher_ibot_softmaxed_centered = get_teacher_output()
+        teacher_dino_softmaxed_centered_list, masked_teacher_ibot_softmaxed_centered, teacher_backbone_output_dict = get_teacher_output()
         reshard_fsdp_model(self.teacher)
 
         loss_dict = {}
@@ -396,8 +425,19 @@ class SSLMetaArch(nn.Module):
             # accumulate loss
             loss_accumulator += self.ibot_loss_weight * ibot_patch_loss
 
-        self.backprop_loss(loss_accumulator)
+            if return_student_emb:
+                return (loss_accumulator, 
+                        loss_dict, 
+                        student_global_backbone_output_dict["x_prenorm"], 
+                        student_local_backbone_output_dict["x_prenorm"],
+                        teacher_backbone_output_dict["x_prenorm"])
+            else:
+                return loss_accumulator, loss_dict
+    
+    def forward_backward(self, images, teacher_temp):
+        loss_accumulator, loss_dict = self.forward_(images, teacher_temp)
 
+        self.backprop_loss(loss_accumulator)
         self.fsdp_synchronize_streams()
 
         return loss_dict

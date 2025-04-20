@@ -6,6 +6,7 @@
 import logging
 import torch
 from torchvision import transforms
+import einops
 
 from .transforms import (
     GaussianBlur,
@@ -117,6 +118,20 @@ class DataAugmentationDINO(object):
 
         return output
 
+class TileDataAugmentationDINO(DataAugmentationDINO):
+    def __init__(self, tile_height, tile_width, **kwargs):
+        super().__init__(**kwargs)
+        self.rh = tile_height
+        self.rw = tile_width
+
+    def __call__(self, image):
+        batched_regions = einops.rearrange(
+                image,
+                "c (nh rh) (nw rw) -> (nh nw) c rh rw",
+                rh=self.rh,
+                rw=self.rw)
+        return super().__call__(batched_regions)
+
 class DataAugmentationDINONoNormalize(object):
 
     def __init__(
@@ -218,6 +233,7 @@ class DataAugmentationDINONoNormalize(object):
         output["offsets"] = ()
 
         return output
+
 class DataAugmentationHiDiscDINO(object):
 
     def __init__(

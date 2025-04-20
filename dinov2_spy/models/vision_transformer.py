@@ -43,11 +43,35 @@ def named_apply(fn: Callable,
 
 class BlockChunk(nn.ModuleList):
 
-    def forward(self, x):
-        for b in self:
-            x = b(x)
-        return x
+    def forward(self, x, return_attn=False):
 
+        if return_attn:
+            attn = []
+        
+            for b in self:
+                x, a = b(x, return_attn=return_attn)
+                attn.append(a)
+
+            return x, attn
+        
+        else:
+            for b in self:
+        
+                x = b(x)
+
+            return x
+
+class IdentityWithAttn(nn.Identity):
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x, return_attn=False):
+        if return_attn:
+            return x, None
+        
+        else:
+            return x
 
 class DinoVisionTransformer(nn.Module):
 
@@ -169,7 +193,7 @@ class DinoVisionTransformer(nn.Module):
             chunksize = depth // block_chunks
             for i in range(0, depth, chunksize):
                 # this is to keep the block index consistent if we chunk the block list
-                chunked_blocks.append([nn.Identity()] * i +
+                chunked_blocks.append([IdentityWithAttn()] * i +
                                       blocks_list[i:i + chunksize])
             self.blocks = nn.ModuleList(
                 [BlockChunk(p) for p in chunked_blocks])
@@ -250,7 +274,6 @@ class DinoVisionTransformer(nn.Module):
         return x
 
     def forward_features_list(self, x_list, masks_list):
-        #import pdb; pdb.set_trace()
         x = [
             self.prepare_tokens_with_masks(x, masks)
             for x, masks in zip(x_list, masks_list)
@@ -276,22 +299,33 @@ class DinoVisionTransformer(nn.Module):
             })
         return output
 
-    def forward_features(self, x, masks=None):
+    def forward_features(self, x, masks=None, return_attn=False):
         if isinstance(x, list):
+            assert not return_attn
             return self.forward_features_list(x, masks)
 
         x = self.prepare_tokens_with_masks(x, masks)
-
+        attns = []
+        
         for blk in self.blocks:
-            x = blk(x)
+            if return_attn:
+                x, a = blk(x, return_attn=return_attn)
+                attns.append(a)
+
+            else:
+                x = blk(x)
 
         x_norm = self.norm(x)
+
+        attns = [t  for tt in attns for t in tt if t is not None]
+        attns = torch.stack(attns).permute(1,0,2,3,4)
         return {
             "x_norm_clstoken": x_norm[:, 0],
             "x_norm_regtokens": x_norm[:, 1:self.num_register_tokens + 1],
             "x_norm_patchtokens": x_norm[:, self.num_register_tokens + 1:],
             "x_prenorm": x,
             "masks": masks,
+            "attns": attns
         }
 
     def _get_intermediate_layers_not_chunked(self, x, n=1):
@@ -358,7 +392,8 @@ class DinoVisionTransformer(nn.Module):
         if is_training:
             return ret
         else:
-            return self.head(ret["x_norm_clstoken"])
+            ret["x_norm_clstoken"] = self.head(ret["x_norm_clstoken"]) 
+            return ret
 
 
 def init_weights_vit_timm(module: nn.Module, name: str = ""):
@@ -369,49 +404,49 @@ def init_weights_vit_timm(module: nn.Module, name: str = ""):
             nn.init.zeros_(module.bias)
 
 
-def vit_small(patch_size=16, num_register_tokens=0, **kwargs):
+def vit_small(patch_size=16, num_register_tokens=0,block_fn=partial(Block, attn_class=MemEffAttention), **kwargs):
     model = DinoVisionTransformer(
         patch_size=patch_size,
         embed_dim=384,
         depth=12,
         num_heads=6,
         mlp_ratio=4,
-        block_fn=partial(Block, attn_class=MemEffAttention),
+        block_fn=block_fn,
         num_register_tokens=num_register_tokens,
         **kwargs,
     )
     return model
 
 
-def vit_base(patch_size=16, num_register_tokens=0, **kwargs):
+def vit_base(patch_size=16, num_register_tokens=0, block_fn=partial(Block, attn_class=MemEffAttention),**kwargs):
     model = DinoVisionTransformer(
         patch_size=patch_size,
         embed_dim=768,
         depth=12,
         num_heads=12,
         mlp_ratio=4,
-        block_fn=partial(Block, attn_class=MemEffAttention),
+        block_fn=block_fn,
         num_register_tokens=num_register_tokens,
         **kwargs,
     )
     return model
 
 
-def vit_large(patch_size=16, num_register_tokens=0, **kwargs):
+def vit_large(patch_size=16, num_register_tokens=0, block_fn=partial(Block, attn_class=MemEffAttention),**kwargs):
     model = DinoVisionTransformer(
         patch_size=patch_size,
         embed_dim=1024,
         depth=24,
         num_heads=16,
         mlp_ratio=4,
-        block_fn=partial(Block, attn_class=MemEffAttention),
+        block_fn=block_fn,
         num_register_tokens=num_register_tokens,
         **kwargs,
     )
     return model
 
 
-def vit_giant2(patch_size=16, num_register_tokens=0, **kwargs):
+def vit_giant2(patch_size=16, num_register_tokens=0, block_fn=partial(Block, attn_class=MemEffAttention), **kwargs):
     """
     Close to ViT-giant, with embed-dim 1536 and 24 heads => embed-dim per head 64
     """
@@ -421,7 +456,7 @@ def vit_giant2(patch_size=16, num_register_tokens=0, **kwargs):
         depth=40,
         num_heads=24,
         mlp_ratio=4,
-        block_fn=partial(Block, attn_class=MemEffAttention),
+        block_fn=block_fn,
         num_register_tokens=num_register_tokens,
         **kwargs,
     )

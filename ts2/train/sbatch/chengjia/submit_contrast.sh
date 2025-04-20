@@ -23,7 +23,8 @@
 # --------
 #SBATCH --partition=tocho
 #SBATCH --cpus-per-task=8
-#SBATCH --mem-per-cpu=7739m
+#SBATCH --mem-per-cpu=6g
+#7739m
 #------------------------------------------------------------------------------
 # SBATCH --account=tocho1
 # SBATCH --account=tocho0
@@ -71,4 +72,7 @@ set -e
 #srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmi.yaml
 #srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmi_nonorm.yaml
 
-srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmitds_touint8.yaml
+#srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmitds_touint8.yaml
+#srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmitds_finetuned.yaml
+
+srun python main_dinov2.py -c=config/chengjia/train_mcmmcm_dinov2_fmitds_finetuned.yaml

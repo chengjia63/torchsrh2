@@ -108,39 +108,19 @@ tune:
     - remove_background
     - small_patch
     - remove_background
-    - small_patch
-    - remove_background
-    - small_patch
-    - remove_background
-    - small_patch
-    - remove_background
-    - small_patch
-    - remove_background
     infra/comment:
-    - smpt_SE_epoch0-step89999
-    - rmbg_SE_epoch0-step89999
-    - smpt_SE_epoch0-step119999
-    - rmbg_SE_epoch0-step119999
-    - smpt_SE_epoch0-step109999
-    - rmbg_SE_epoch0-step109999
+    - smpt_SE_epoch0-step339999
+    - rmbg_SE_epoch0-step339999
+    - smpt_SE_epoch0-step329999
+    - rmbg_SE_epoch0-step329999
     infra/exp_root:
     - ts2/fmi_hdinov2_tile
     - ts2/fmi_hdinov2_tile
     - ts2/fmi_hdinov2_tile
     - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
     lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_89999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_89999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/7bb4ed40_Apr11-13-33-51_sd1000_dev_tune0/models/eval/training_119999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/7bb4ed40_Apr11-13-33-51_sd1000_dev_tune0/models/eval/training_119999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/7bb4ed40_Apr11-13-33-51_sd1000_dev_tune0/models/eval/training_109999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/7bb4ed40_Apr11-13-33-51_sd1000_dev_tune0/models/eval/training_109999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_339999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_339999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_329999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_329999/teacher_checkpoint.pth
 

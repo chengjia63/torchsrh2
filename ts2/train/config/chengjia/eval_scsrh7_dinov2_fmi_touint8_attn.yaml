@@ -42,6 +42,7 @@ data:
       data_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root2/
       num_transforms: 1
       balance_instance_class: False
+      num_sample_wo_replacement: 128
     classes_reorder: [0, 1, 2, 3, 5, 6, 4]
     camera_ready_classes: [HGG, LGG, Mening, Mets, Normal, Pit, Schwan]
   loader:
@@ -74,8 +75,7 @@ lightning_module:
         proj_bias: true
         qkv_bias: true
     pretrained_weights: TODO
-    ckpt_key: tile_teacher
-
+    get_image_attn: True
 testing:
   eval_mode: knn
   save_train_pred: True
@@ -105,14 +105,10 @@ tune:
   diagonal_items: True
   params:
     data/transform/test/params/base_aug_params/mask_params/how_to_process:
-    - small_patch
-    - remove_background
+    - rm_background
     infra/comment:
-    - smpt_SE_epoch0-step59999
-    - rmbg_SE_epoch0-step59999
+    - rmbg_SE_epoch0-step124999
     infra/exp_root:
     - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
     lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/9f10086c_Apr19-17-37-31_sd1000_dev_tune0/models/eval/training_59999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/9f10086c_Apr19-17-37-31_sd1000_dev_tune0/models/eval/training_59999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/789ec8bc_Apr13-01-37-13_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth 

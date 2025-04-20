@@ -6,7 +6,7 @@
 import torch
 import random
 import einops
-
+import logging
 def collate_data_and_cast(samples_list, mask_ratio_tuple, mask_probability, dtype, n_tokens=None, mask_generator=None):
     # dtype = torch.half  # TODO: Remove
 
@@ -48,19 +48,7 @@ def collate_data_and_cast(samples_list, mask_ratio_tuple, mask_probability, dtyp
         "n_masked_patches": torch.full((1,), fill_value=mask_indices_list.shape[0], dtype=torch.long),
     }
 
-def collate_tile_data_and_cast_fmi(samples_list, mask_ratio_tuple, mask_probability, dtype, n_tokens=None, mask_generator=None):
-    # dtype = torch.half  # TODO: Remove
-    n_global_crops = len(samples_list[0][0]["global_crops"])
-    n_local_crops = len(samples_list[0][0]["local_crops"])
-
-    collated_global_crops = torch.stack([torch.stack([s[0]["global_crops"][i] for i in range(n_global_crops)]) for s in samples_list])
-    collated_global_crops = einops.rearrange(collated_global_crops, "b v t c h w -> (v b t) c h w").contiguous()
-    
-    collated_local_crops = torch.stack([torch.stack([s[0]["local_crops"][i] for i in range(n_local_crops)]) for s in samples_list])
-    collated_local_crops = einops.rearrange(collated_local_crops, "b v t c h w -> (v b t) c h w").contiguous()
-
-    B = len(collated_global_crops)
-    N = n_tokens
+def create_mask(B,N, mask_ratio_tuple, mask_probability, mask_generator):
     n_samples_masked = int(B * mask_probability)
     probs = torch.linspace(*mask_ratio_tuple, n_samples_masked + 1)
     upperbound = 0
@@ -81,11 +69,57 @@ def collate_tile_data_and_cast_fmi(samples_list, mask_ratio_tuple, mask_probabil
     masks_weight = (1 / collated_masks.sum(-1).clamp(min=1.0)).unsqueeze(-1).expand_as(collated_masks)[collated_masks]
 
     return {
-        "collated_global_crops": collated_global_crops.to(dtype),
-        "collated_local_crops": collated_local_crops.to(dtype),
         "collated_masks": collated_masks,
         "mask_indices_list": mask_indices_list,
         "masks_weight": masks_weight,
         "upperbound": upperbound,
         "n_masked_patches": torch.full((1,), fill_value=mask_indices_list.shape[0], dtype=torch.long),
     }
+
+
+def collate_tile_data_and_cast_fmi(samples_list, mask_ratio_tuple, mask_probability, dtype, n_tokens=None, mask_generator=None):
+    # dtype = torch.half  # TODO: Remove
+    n_global_crops = len(samples_list[0][0]["global_crops"])
+    n_local_crops = len(samples_list[0][0]["local_crops"])
+
+    collated_global_crops = torch.stack([torch.stack([s[0]["global_crops"][i] for i in range(n_global_crops)]) for s in samples_list])
+    collated_global_crops = einops.rearrange(collated_global_crops, "b v t c h w -> (v b t) c h w").contiguous()
+    
+    collated_local_crops = torch.stack([torch.stack([s[0]["local_crops"][i] for i in range(n_local_crops)]) for s in samples_list])
+    collated_local_crops = einops.rearrange(collated_local_crops, "b v t c h w -> (v b t) c h w").contiguous()
+
+    images = {
+        "collated_global_crops": collated_global_crops.to(dtype),
+        "collated_local_crops": collated_local_crops.to(dtype),
+    }
+    B = len(collated_global_crops)
+    N = n_tokens
+
+    images.update(create_mask(B,N,mask_ratio_tuple, mask_probability, mask_generator))
+
+    return images
+
+
+
+def collate_tile_patch_data_and_cast_fmi(samples_list,
+                                         mask_ratio_tuple,
+                                         mask_probability,
+                                         dtype,
+                                         n_tokens=None,
+                                         mask_generator=None,
+                                         patch_n_tokens=None,
+                                         patch_mask_generator=None):
+
+    images = collate_tile_data_and_cast_fmi(samples_list,
+                                            mask_ratio_tuple,
+                                            mask_probability,
+                                            dtype,
+                                            n_tokens=n_tokens,
+                                            mask_generator=mask_generator)
+
+    images["patch_masks"] = create_mask(
+        len(samples_list) * len(samples_list[0][0]["global_crops"]),
+        patch_n_tokens, mask_ratio_tuple, mask_probability,
+        patch_mask_generator)
+
+    return images

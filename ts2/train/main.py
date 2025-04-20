@@ -284,7 +284,6 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
             val_pred_fname = opj(pred_dir, "val_predictions.pt.gz")
             with gzip.open(val_pred_fname, "w") as fd:
                 torch.save(pred["val"], fd)
-
     else:
         logging.info("loading predictions")
         pred = {

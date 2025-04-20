@@ -6,6 +6,9 @@
 import logging
 
 from . import vision_transformer as vits
+from ..layers.attention import Attention
+from ..layers.block import Block
+from functools import partial
 
 logger = logging.getLogger("dinov2")
 
@@ -15,7 +18,6 @@ def build_model(args, only_teacher=False, img_size=224):
     if "vit" in args.arch:
         vit_kwargs = dict(
             img_size=img_size,
-            in_chans = args.get("in_chans", 3),
             patch_size=args.patch_size,
             init_values=args.layerscale,
             ffn_layer=args.ffn_layer,
@@ -26,6 +28,7 @@ def build_model(args, only_teacher=False, img_size=224):
             num_register_tokens=args.num_register_tokens,
             interpolate_offset=args.interpolate_offset,
             interpolate_antialias=args.interpolate_antialias,
+            block_fn = partial(Block, attn_class=Attention)
         )
         teacher = vits.__dict__[args.arch](**vit_kwargs)
         if only_teacher:

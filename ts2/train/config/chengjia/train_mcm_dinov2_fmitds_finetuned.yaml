@@ -68,7 +68,7 @@ dinov2_fair_config:
     block_chunks: 4
     pretrained_weights:
       how: dinov2_blocks_cls_only
-      path: /nfs/mm-isilon/brainscans/dropbox/exp/models/dinov2_github/dinov2_vits14_pretrain.pth
+      path: /nfs/mm-isilon/brainscans/dropbox/exp/models/dinov2_github/dinov2_vits14_reg4_pretrain.pth
   teacher:
     momentum_teacher: 0.996
   optim:
@@ -76,7 +76,7 @@ dinov2_fair_config:
     weight_decay_end: 0.2
     base_lr: 2.0e-04  # learning rate for a batch size of 1024
     warmup_epochs: 10
-    patch_embed_lr_mult: 1.0
+    #patch_embed_lr_mult: 1.0
   crops:
     global_crops_size: 48
     local_crops_size: 20
