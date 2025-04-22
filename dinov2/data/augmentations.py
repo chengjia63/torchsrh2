@@ -115,7 +115,7 @@ class DataAugmentationDINO(object):
         ]
         output["local_crops"] = local_crops
         output["offsets"] = ()
-
+    
         return output
 
 class TileDataAugmentationDINO(DataAugmentationDINO):
@@ -132,6 +132,85 @@ class TileDataAugmentationDINO(DataAugmentationDINO):
                 rw=self.rw)
         return super().__call__(batched_regions)
 
+
+
+
+class TileDataAugmentationONEVIEWDINO(object):
+
+    def __init__(
+        self,
+        tile_height, tile_width,
+        global_crops_scale,
+        global_crops_size=224,
+    ):
+        self.rh = tile_height
+        self.rw = tile_width
+
+        self.global_crops_scale = global_crops_scale
+        self.global_crops_size = global_crops_size
+
+        logger.info("###################################")
+        logger.info("Using data augmentation parameters:")
+        logger.info(f"global_crops_scale: {global_crops_scale}")
+        logger.info(f"global_crops_size: {global_crops_size}")
+        logger.info("###################################")
+
+        # random resized crop and flip
+        self.geometric_augmentation_global = transforms.Compose([
+            transforms.RandomResizedCrop(
+                global_crops_size,
+                scale=global_crops_scale,
+                interpolation=transforms.InterpolationMode.BICUBIC),
+            transforms.RandomHorizontalFlip(p=0.5),
+        ])
+
+
+        # color distorsions / blurring
+        color_jittering = transforms.Compose([
+            transforms.RandomApply(
+                [
+                    transforms.ColorJitter(
+                        brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)
+                ],
+                p=0.8,
+            ),
+            transforms.RandomGrayscale(p=0.2),
+        ])
+
+        global_transfo2_extra = transforms.Compose([
+            GaussianBlur(p=0.1),
+            transforms.RandomSolarize(threshold=128, p=0.2),
+        ])
+
+
+        # normalization
+        self.normalize = transforms.Compose([
+            #transforms.ToTensor(),
+            transforms.ConvertImageDtype(dtype=float),
+            make_normalize_transform(),
+        ])
+
+        self.global_transfo = transforms.Compose(
+            [color_jittering, global_transfo2_extra, self.normalize])
+
+    def __call__(self, image):
+        output = {}
+        
+        batched_regions = einops.rearrange(
+                image,
+                "c (nh rh) (nw rw) -> (nh nw) c rh rw",
+                rh=self.rh,
+                rw=self.rw)
+        
+        # global crops:
+        im1_base = self.geometric_augmentation_global(batched_regions)
+        global_crop_1 = self.global_transfo(im1_base)
+
+        output["global_crops"] = [global_crop_1]
+
+        return output
+
+    
 class DataAugmentationDINONoNormalize(object):
 
     def __init__(

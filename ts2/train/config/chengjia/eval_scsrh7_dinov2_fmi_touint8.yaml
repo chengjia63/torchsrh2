@@ -74,7 +74,7 @@ lightning_module:
         proj_bias: true
         qkv_bias: true
     pretrained_weights: TODO
-    ckpt_key: tile_teacher
+    #ckpt_key: tile_teacher
 
 testing:
   eval_mode: knn
@@ -107,12 +107,20 @@ tune:
     data/transform/test/params/base_aug_params/mask_params/how_to_process:
     - small_patch
     - remove_background
+    - small_patch
+    - remove_background
     infra/comment:
-    - smpt_SE_epoch0-step59999
-    - rmbg_SE_epoch0-step59999
+    - smpt_SE_epoch0-step279999
+    - rmbg_SE_epoch0-step279999
+    - smpt_SE_epoch0-step269999
+    - rmbg_SE_epoch0-step269999
     infra/exp_root:
     - ts2/fmi_hdinov2_tile
     - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
     lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/9f10086c_Apr19-17-37-31_sd1000_dev_tune0/models/eval/training_59999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/9f10086c_Apr19-17-37-31_sd1000_dev_tune0/models/eval/training_59999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_279999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_279999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_269999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_269999/teacher_checkpoint.pth

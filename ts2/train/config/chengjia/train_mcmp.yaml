@@ -32,16 +32,13 @@ data:
           aug_list:
           - which: center_crop_always_apply
             params:
-              size: 144
-          - which: tile_dinov2_always_apply
+              size: 192
+          - which: tile_ONEVIEW_dinov2_always_apply
             params:
               tile_height: 48
               tile_width: 48
               global_crops_scale: [0.14, 1.]
-              local_crops_scale: [0.05, 0.4]
-              local_crops_number: 2 # same as ${........tile_dinov2_fair_config.crops.local_crops_number}
               global_crops_size: 48
-              local_crops_size: 20
           aug_prob: 1
     trainval: ${.train}
   dataset:
@@ -57,28 +54,8 @@ data:
       trainval: {}
 ts_wrap_config:
   no_resume: True
-  which: mcm
+  which: mcmp
 tile_dinov2_fair_config:
-  dino:
-    loss_weight: 1.0
-    head_n_prototypes: 1024
-    head_bottleneck_dim: 384
-    head_nlayers: 3
-    head_hidden_dim: 2048
-    koleo_loss_weight: 0.1
-  ibot:
-    loss_weight: 1.0
-    mask_sample_probability: 0.5
-    mask_ratio_min_max:
-    - 0.1
-    - 0.5
-    separate_head: true
-    head_n_prototypes: 1024
-    head_bottleneck_dim: 256
-    head_nlayers: 3
-    head_hidden_dim: 2048
-  train:
-    centering: sinkhorn_knopp
   student:
     arch: vit_small
     patch_size: 4
@@ -94,14 +71,9 @@ tile_dinov2_fair_config:
     num_register_tokens: 0
     interpolate_antialias: false
     interpolate_offset: 0.1
-    pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/789ec8bc_Apr13-01-37-13_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
-
-  optim:
-    patch_embed_lr_mult: 0.2
-    layerwise_decay: 1.0 #0.9
+  pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/789ec8bc_Apr13-01-37-13_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
   crops:
     global_crops_size: 48
-    local_crops_number: 2
 
 patch_dinov2_fair_config:
   dino:
@@ -145,13 +117,13 @@ patch_dinov2_fair_config:
     layerwise_decay: 1.0 #0.9
   crops:
     student_sample_min: 0
-    student_sample_max: 4
+    student_sample_max: 10
     teacher_sample_min: 0
     teacher_sample_max: 2
-    global_crops_size: 3
+    global_crops_size: 4
     local_crops_size: 2
     global_crops_number: 2
-    local_crops_number: 2
+    local_crops_number: 8
 
 dinov2_main_config:
   MODEL:
@@ -176,9 +148,9 @@ dinov2_main_config:
     output_dir: null # torchsrh insert
     saveckp_freq: 20
     seed: ${...infra.seed} # torchsrh2 + omegaconf handle outside
-    num_workers: 7
+    num_workers: 0
     OFFICIAL_EPOCH_LENGTH: 1250
-    grad_accum: 4
+    grad_accum: 2
     #cache_dataset: true
   teacher: # We are just going to assume the same scheduler for both
     momentum_teacher: 0.996
@@ -187,13 +159,13 @@ dinov2_main_config:
     teacher_temp: 0.07
     warmup_teacher_temp_epochs: 30
   crops:
-    global_crops_size: ${...tile_dinov2_fair_config.crops.global_crops_size}
+    global_crops_size: 48 #${...tile_dinov2_fair_config.crops.global_crops_size}
     patch: ${...patch_dinov2_fair_config.crops}
   student:
-    patch_size: ${...tile_dinov2_fair_config.student.patch_size}
+    patch_size: 4 #${...tile_dinov2_fair_config.student.patch_size}
   ibot:
-    mask_ratio_min_max: ${...tile_dinov2_fair_config.ibot.mask_ratio_min_max}
-    mask_sample_probability: ${...tile_dinov2_fair_config.ibot.mask_sample_probability}
+    mask_ratio_min_max: [0.1,0.5]
+    mask_sample_probability:  0.5
 tune:
   diagonal_items: true
   params:

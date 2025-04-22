@@ -91,7 +91,7 @@ class MCMMetaArch(nn.Module):
 
         self.n_global_crop = 2
         self.n_local_crop = tile_dinov2_fair_config.crops.local_crops_number
-        self.num_tile_per_patch = 288 // tile_dinov2_fair_config.crops.global_crops_size
+        self.num_tile_per_patch = 144 // tile_dinov2_fair_config.crops.global_crops_size # TODO
 
         self.student_sampler = partial(
             sample_view,
@@ -129,7 +129,7 @@ class MCMMetaArch(nn.Module):
         else:
             loss.backward()
 
-    def forward_backward(self, images, teacher_temp):
+    def forward_backward(self, images, teacher_temp, loss_scale=1.0):
         #TODO
 
         (tile_loss_accumulator, tile_loss_dict, student_global_out,
@@ -189,15 +189,17 @@ class MCMMetaArch(nn.Module):
         }
         patch_images.update(images["patch_masks"])
 
+
         patch_loss_accumulator, patch_loss_dict = self.patch.forward_(
             patch_images, teacher_temp)
 
         loss_dict = {f'patch_{k}': v for k, v in patch_loss_dict.items()}
         loss_dict.update({f'tile_{k}': v for k, v in tile_loss_dict.items()})
 
-        #loss_accumulator = 0.7 * tile_loss_accumulator + 0.3 * patch_loss_accumulator
-        loss_accumulator = patch_loss_accumulator
+        loss_accumulator = 0.7 * tile_loss_accumulator + 0.3 * patch_loss_accumulator
+        #loss_accumulator = patch_loss_accumulator
 
+        loss_accumulator *= loss_scale
         self.backprop_loss(loss_accumulator)
         self.fsdp_synchronize_streams()
 
