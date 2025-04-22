@@ -24,7 +24,7 @@ from torchvision.transforms.functional import adjust_contrast, adjust_brightness
 from torch import Tensor
 
 from dinov2.data.augmentations import (DataAugmentationDINO, DataAugmentationDINONoNormalize,
-                                       DataAugmentationHiDiscDINO, TileDataAugmentationDINO, TileDataAugmentationONEVIEWDINO)
+                                       DataAugmentationHiDiscDINO, TileDataAugmentationDINO)
 from dinov2.data.transforms import (make_normalize_transform)
 
 
@@ -213,7 +213,6 @@ class StrongTransform(torch.nn.Module):
             "hidisc_dinov2_always_apply": DataAugmentationHiDiscDINO,
             "dinov2_always_apply": DataAugmentationDINO,
             "tile_dinov2_always_apply": TileDataAugmentationDINO,
-            "tile_ONEVIEW_dinov2_always_apply": TileDataAugmentationONEVIEWDINO,
             "dinov2_nonorm_always_apply": DataAugmentationDINONoNormalize,
             "center_crop_always_apply": CenterCrop,
             "resize": Resize,

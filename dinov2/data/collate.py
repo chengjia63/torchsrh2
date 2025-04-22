@@ -125,29 +125,3 @@ def collate_tile_patch_data_and_cast_fmi(samples_list,
     return images
 
 
-
-def collate_mcmp_fmi(samples_list,
-                                         mask_ratio_tuple,
-                                         mask_probability,
-                                         dtype,
-                                         n_tokens=None,
-                                         mask_generator=None,
-                                         patch_n_tokens=None,
-                                         patch_mask_generator=None):
-
-
-    n_global_crops_tile = 1
-    n_global_crops_patch = 2
-    collated_global_crops = torch.stack([torch.stack([s[0]["global_crops"][i] for i in range(n_global_crops_tile)]) for s in samples_list])
-    collated_global_crops = einops.rearrange(collated_global_crops, "b v t c h w -> (v b t) c h w").contiguous()
-
-    images = {
-        "collated_global_crops": collated_global_crops.to(dtype),
-    }
-
-    images["patch_masks"] = create_mask(
-        len(samples_list) * n_global_crops_patch,
-        patch_n_tokens, mask_ratio_tuple, mask_probability,
-        patch_mask_generator)
-
-    return images

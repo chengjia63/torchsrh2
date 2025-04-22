@@ -14,7 +14,7 @@ import torch
 
 from dinov2.data import SamplerType, make_data_loader
 from dinov2.data import collate_data_and_cast, MaskingGenerator
-from dinov2.data.collate import collate_tile_patch_data_and_cast_fmi, collate_mcmp_fmi
+from dinov2.data.collate import collate_tile_patch_data_and_cast_fmi
 import dinov2.distributed as distributed
 from dinov2.fsdp import FSDPCheckpointer
 from dinov2.logging import MetricLogger
@@ -45,22 +45,6 @@ def do_test(cfg, model, iteration):
                 "patch_teacher": patch_state_dict
             }, teacher_ckp_path)
 
-# for mcmp (patch only)
-#def do_test(cfg, model, iteration):
-#    tile_state_dict = model.tile.student.state_dict()
-#    patch_state_dict = model.patch.teacher.state_dict()
-#
-#    if distributed.is_main_process():
-#        iterstring = str(iteration)
-#        eval_dir = os.path.join(cfg.train.output_dir, "eval", iterstring)
-#        os.makedirs(eval_dir, exist_ok=True)
-#        # save teacher checkpoint
-#        teacher_ckp_path = os.path.join(eval_dir, "teacher_checkpoint.pth")
-#        torch.save(
-#            {
-#                "tile_teacher": tile_state_dict,
-#                "patch_teacher": patch_state_dict
-#            }, teacher_ckp_path)
         
 def do_train(cfg, model, dataset, tb_writer, resume=False):
     model.train()
@@ -119,8 +103,7 @@ def do_train(cfg, model, dataset, tb_writer, resume=False):
                     patch_img_size // patch_patch_size),
         max_num_patches=0.5 * patch_n_tokens)
 
-    collate_fn = partial(#collate_mcmp_fmi,
-                         collate_tile_patch_data_and_cast_fmi,
+    collate_fn = partial(collate_tile_patch_data_and_cast_fmi,
                          mask_ratio_tuple=cfg.ibot.mask_ratio_min_max,
                          mask_probability=cfg.ibot.mask_sample_probability,
                          n_tokens=n_tokens,
