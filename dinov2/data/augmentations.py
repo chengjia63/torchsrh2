@@ -133,6 +133,18 @@ class TileDataAugmentationDINO(DataAugmentationDINO):
         return super().__call__(batched_regions)
 
 
+class TileContextMultiCropDataAugmentationDINO(DataAugmentationDINO):
+    def __init__(self, tile_size, context_size, **kwargs):
+        super().__init__(**kwargs)
+        self.tile_crop = transforms.RandomCrop(size=tile_size)
+        self.context_crop = transforms.RandomCrop(size=context_size)
+
+    def __call__(self, image):
+        aug_tile = super().__call__(self.tile_crop(image))
+        aug_tile["context"] = self.context_crop(image)
+        return aug_tile
+
+
 
 class DataAugmentationDINONoNormalize(object):
 
@@ -198,11 +210,11 @@ class DataAugmentationDINONoNormalize(object):
         local_transfo_extra = GaussianBlur(p=0.5)
 
         # normalization
-        self.normalize = transforms.Compose([
-            #transforms.ToTensor(),
-            transforms.ConvertImageDtype(dtype=float),
-            make_normalize_transform(),
-        ])
+        #self.normalize = transforms.Compose([
+        #    #transforms.ToTensor(),
+        #    transforms.ConvertImageDtype(dtype=float),
+        #    make_normalize_transform(),
+        #])
 
         self.global_transfo1 = transforms.Compose(
             [color_jittering, global_transfo1_extra]) #, self.normalize])
@@ -235,6 +247,19 @@ class DataAugmentationDINONoNormalize(object):
         output["offsets"] = ()
 
         return output
+
+
+class TileContextMultiCropDataAugmentationNoNormalizeDINO(DataAugmentationDINONoNormalize):
+    def __init__(self, tile_size, context_size, **kwargs):
+        super().__init__(**kwargs)
+        self.tile_crop = transforms.RandomCrop(size=tile_size)
+        self.context_crop = transforms.RandomCrop(size=context_size)
+
+
+    def __call__(self, image):
+        aug_tile = super().__call__(self.tile_crop(image))
+        aug_tile["context"] = self.context_crop(image)
+        return aug_tile
 
 class DataAugmentationHiDiscDINO(object):
 

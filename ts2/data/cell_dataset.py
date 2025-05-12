@@ -19,6 +19,117 @@ from ts2.data.db_improc import MemmapReader
 from ts2.data.balanceable_dataset import BalanceableBaseDataset
 
 
+class CellBenchDataset(BalanceableBaseDataset):
+    """Patch Base Dataset.
+
+    Patch datasets treats each patch to be independent
+
+    Attributes:
+        data_root_: str containing the root path of the dataset
+        transform_: transformations to be performed on the data
+        target_transform_: transformations to be performed on the labels
+        df_: data frame containing patch information
+        instances_: a list of Slide
+        classes_: a set of primary labels in the dataset (could be any
+            hashable object)
+        class_to_idx_: a mapping from the primary class label to a numeric
+            label [0 .. num classes - 1]
+        weights_: weights assigned to each class, inverse proportional to the
+            slide count in each class
+    """
+
+    def __init__(self,
+                 data_root: str,
+                 slides_file: List,
+                 transform: callable,
+                 target_transform: callable = torch.tensor,
+                 balance_instance_class=False,
+                 num_sample_wo_replacement=None,
+                 class_filter=None,
+                 **kwargs) -> None:
+
+        super().__init__(**kwargs)
+        self.data_root_ = data_root
+        self.transform_ = transform
+        self.target_transform_ = target_transform
+        self.classes_ = []
+        self.class_to_idx_ = {}
+        self.weights_ = []
+
+        
+        slides = pd.read_csv(slides_file)
+        all_meta = []
+        all_images = []
+        all_paths = []
+
+
+        def conditional_sample_indices(group, group_name):
+            #if False: 
+            if len(group) > 64:
+            #if group_name in ["glioma/tumor_cells", "metastatic/adenocarcinoma", "metastatic/melanoma", "metastatic/sarcoma", "metastatic/squamous_cell"] and len(group) > 8:
+                return group.sample(n=64, replace=False).index
+            return group.index
+
+
+        for _, s in slides.iterrows():
+            meta = pd.read_csv(f"{data_root}/scbench_processed/{s['mosaic']}.csv")
+
+            sampled_indices = meta.groupby('annot_labels').apply(lambda grp: conditional_sample_indices(grp, grp.name)).explode()
+
+            all_meta.append(meta.iloc[sampled_indices]["annot_labels"])
+            all_images.append(
+                torch.load(f"{data_root}/scbench_processed/{s['mosaic']}.pt")[sampled_indices].to(torch.float))
+            all_paths.extend([f"scbench.{s['ttype']}.{s['mosaic']}@{i}" for i in sampled_indices])
+
+        all_meta = pd.concat(all_meta)
+        all_images = torch.cat(all_images)
+
+        class_filter = all_meta.isin(class_filter)
+        all_meta = all_meta[class_filter]
+        all_images[class_filter.tolist()]
+        all_paths = [p for p,i in zip(all_paths, class_filter) if i]
+
+        self.instances_ = [{"label":i,"image":j, "path":k}
+                           for i,j,k in zip(all_meta, all_images, all_paths)]
+
+        if len(self.instances_) == 0:
+            logging.warning("dataset empty")
+
+        if balance_instance_class:
+            self.replicate_balance_instances()
+
+        if num_sample_wo_replacement:
+            self.sample_instances_wo_replacement(num_sample_wo_replacement)
+
+        self.get_weights()
+
+        logging.info(self.transform_)
+
+    def __len__(self):
+        return len(self.instances_)
+
+    def make_im_path(self, x):
+        return opj(self.data_root_, x)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+
+        inst = self.instances_[idx]
+        target = self.class_to_idx_[inst["label"]]
+
+        im = inst["image"]
+
+        im = torch.stack([self.transform_(im)])
+        
+        if self.target_transform_ is not None:
+            target = self.target_transform_(target)
+
+        return {
+            "image": im.contiguous(),
+            "label": target,
+            "path": [inst["path"]]
+        }
+
+
 class CellDataset(BalanceableBaseDataset):
     """Patch Base Dataset.
 

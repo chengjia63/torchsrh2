@@ -53,9 +53,13 @@ data:
         num_workers: 7
         batch_size: 256
         drop_last: False
-        shuffle: False
-      test: {}
+        shuffle: True
+        collate_fn:
+          which: SingleCellTokenBandShuffleCollator 
+          params:
+            band_width: 2
       test_databank: {}
+      test: {}
 lightning_module:
   which: Dinov2EvalSystem
   params:
@@ -108,15 +112,47 @@ tune:
     - small_patch
     - small_patch
     - small_patch
+    - small_patch
+    - small_patch
+    - small_patch
+    - small_patch
+    - small_patch
     infra/comment:
-    - smpt_SE_epoch0-step19999
-    - smpt_SE_epoch0-step19999
-    - smpt_SE_epoch0-step19999
+    - smpt_SEP_T0_epoch0-step39999
+    - smpt_SEP_T1_epoch0-step39999
+    - rmbg_SEP_T2_epoch0-step39999
+    - rmbg_SEP_T3_epoch0-step39999
+    - rmbg_SEP_T4_epoch0-step39999
+    - rmbg_SEP_T5_epoch0-step39999
+    - rmbg_SEP_T6_epoch0-step39999
     infra/exp_root:
     - ts2/fmi_hdinov2_tile
     - ts2/fmi_hdinov2_tile
     - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
     lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/216430e6_May10-13-03-25_sd1000_dev_tune0/models/eval/training_19999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/91b0acd7_May10-12-43-35_sd1000_dev_tune0/models/eval/training_19999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/6f51b8b5_May10-13-26-07_sd1000_dev_tune0/models/eval/training_19999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_624999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_624999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_624999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_624999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_624999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_624999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_624999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_624999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_624999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_624999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_624999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/3ecf68cd_Apr13-02-20-38_sd1000_dev_tune0/models/eval/training_624999/teacher_checkpoint.pth
+    data/loader/params/common/collate_fn/params/band_width:
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    - 7
+    - 8

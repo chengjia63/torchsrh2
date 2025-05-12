@@ -48,6 +48,17 @@ def collate_data_and_cast(samples_list, mask_ratio_tuple, mask_probability, dtyp
         "n_masked_patches": torch.full((1,), fill_value=mask_indices_list.shape[0], dtype=torch.long),
     }
 
+
+
+def collate_data_and_cast_with_context(samples_list, mask_ratio_tuple, mask_probability, dtype, n_tokens=None, mask_generator=None):
+    
+    data = collate_data_and_cast(samples_list, mask_ratio_tuple,
+        mask_probability, dtype, n_tokens=n_tokens,
+        mask_generator=mask_generator)
+    data["context"] = torch.stack([i[0]["context"] for i in samples_list])
+    return data
+
+
 def create_mask(B,N, mask_ratio_tuple, mask_probability, mask_generator):
     n_samples_masked = int(B * mask_probability)
     probs = torch.linspace(*mask_ratio_tuple, n_samples_masked + 1)

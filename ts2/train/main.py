@@ -17,7 +17,7 @@ from ts2.lm.ssl_systems import (FlattenSystem, SimCLRSystem, SupConSystem,
 from ts2.lm.dinov2_eval_system import Dinov2EvalSystem
 from ts2.lm.distillation_systems import (CommitteeDistillationSystem,
                                          CRDDistillationSystem)
-#from ts2.alignment.compute_foundation_embeddings import (UNIEvalSystem,
+from ts2.alignment.compute_foundation_embeddings import UNIEvalSystem
 #                                                         ConchEvalSystem,
 #                                                         VirchowEvalSystem,
 #                                                         GigapathEvalSystem,
@@ -25,6 +25,7 @@ from ts2.lm.distillation_systems import (CommitteeDistillationSystem,
 
 from ts2.data.histology_data_module import PatchDataModule
 from ts2.data.cell_data_module import CellDataModule
+from ts2.data.cell_bench_data_module import CellBenchDataModule
 
 from ts2.train.common import setup_checkpoints
 from ts2.train.infra import (parse_args, read_process_cf, setup_infra_training,
@@ -47,7 +48,7 @@ lms = {
     "InterPatchJEPASystem": InterPatchJEPASystem,
     "CommitteeDistillationNetwork": CommitteeDistillationSystem,
     "CRDDistillationSystem": CRDDistillationSystem,
-#    "UNIEvalSystem": UNIEvalSystem,
+    "UNIEvalSystem": UNIEvalSystem,
 #    "ConchEvalSystem": ConchEvalSystem,
 #    "VirchowEvalSystem": VirchowEvalSystem,
 #    "GigapathEvalSystem": GigapathEvalSystem,
@@ -224,6 +225,8 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
     if not dm:
         if cf.data.set == "scsrh":
             dm = CellDataModule(config=cf)
+        elif cf.data.set == "scsrh_bench":
+            dm = CellBenchDataModule(config=cf)
         else:
             dm = PatchDataModule(config=cf)
 
@@ -248,6 +251,7 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
                     pred[k] = [pk for p in predictions for pk in p[k][0]]
                 else:
                     pred[k] = torch.cat([p[k] for p in predictions])
+            
             return pred
 
         def concat_exclude_attn(predictions):

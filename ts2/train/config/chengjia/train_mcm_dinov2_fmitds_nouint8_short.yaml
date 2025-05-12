@@ -54,36 +54,27 @@ ts_wrap_config:
   #  do: True
   #  ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/dinov2/base/pytorch_model.bin
 dinov2_fair_config:
-  dino:
-    head_n_prototypes: 65536 #1024
-    head_bottleneck_dim: 384
-  ibot:
-    separate_head: true
-    head_n_prototypes: 65536 #1024
   train:
-    batch_size_per_gpu: 384 #704
-    centering: sinkhorn_knopp
+    batch_size_per_gpu: 64  #8
   student:
     arch: vit_small
     patch_size: 4
-    drop_path_rate: 0.4
-    ffn_layer: swiglufused
     block_chunks: 4
-  teacher:
-    momentum_teacher: 0.996
+  #teacher:
+  #  momentum_teacher: 0.996
   optim:
-    epochs: 100
-    weight_decay_end: 0.2
+  #  epochs: 500
+  #  weight_decay_end: 0.2
     base_lr: 2.0e-04  # learning rate for a batch size of 1024
-    warmup_epochs: 10
-    layerwise_decay: 1.0
+  #  warmup_epochs: 50
+  #  layerwise_decay: 1.0
   crops:
     global_crops_size: 48
     local_crops_size: 20
-  evaluation:                                                                   
-    eval_period_iterations: 5000 
+  #evaluation:                                                                   
+  #  eval_period_iterations: 5000 
 tune:
   diagonal_items: true
   params:
     dinov2_fair_config/optim/base_lr:
-    - 1.0e-3
+    - 2.0e-4

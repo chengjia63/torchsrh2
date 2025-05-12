@@ -5,6 +5,9 @@ from dinov2.models import build_model as build_model
 import dinov2.utils.utils as dinov2_utils
 
 
+import uuid
+
+
 class Dinov2EvalSystem(pl.LightningModule):
 
     def __init__(self, model_hyperparams, pretrained_weights, get_image_attn=False, ckpt_key="teacher"):
@@ -26,12 +29,14 @@ class Dinov2EvalSystem(pl.LightningModule):
 
     @torch.inference_mode()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        assert batch["image"].shape[1] == 1
+        #if batch_idx==5:
+        #    torch.save(batch, f"{uuid.uuid4().hex[:8]}.pt")
 
+        assert batch["image"].shape[1] == 1
         if self.get_image_attn:
             emb = self.teacher_backbone(batch["image"][:, 0, ...], return_attn=self.get_image_attn)
             results = {
-                "path": batch["path"],
+                "path": [i for i in batch["path"]],
                 "label": batch["label"],
                 "embeddings": emb["x_norm_clstoken"],
                 "attns": emb["attns"]

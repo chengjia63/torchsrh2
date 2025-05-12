@@ -16,10 +16,10 @@ from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
 from timm.layers import SwiGLUPacked
 
-from conch.open_clip_custom import create_model_from_pretrained as create_conch_model
+#from conch.open_clip_custom import create_model_from_pretrained as create_conch_model
 
 from ts2.models.ssl import instantiate_backbone
-from ts2.models.hipt.hipt_model_utils import get_vit256 as get_hipt_bbone
+#from ts2.models.hipt.hipt_model_utils import get_vit256 as get_hipt_bbone
 from ts2.data.histology_data_module import PatchDataModule
 from ts2.train.infra import (parse_args, read_process_cf, setup_infra_training,
                              setup_infra_testing, get_rank)
@@ -71,6 +71,7 @@ class UNIEvalSystem(pl.LightningModule):
         ])
 
     def forward(self, raw_im):
+        raw_im = raw_im.to(torch.float) / 255
         image = self.transform(raw_im)
         return self.model(image)
 
@@ -243,7 +244,6 @@ class DINOv2EvalSystem(pl.LightningModule):
 
     @torch.inference_mode()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        raw_im = (batch["image"].squeeze() * 255).to(torch.uint8)
         raw_im = [
             Image.fromarray(
                 einops.rearrange(i.detach().cpu().numpy(), "c h w -> h w c"))

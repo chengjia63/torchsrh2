@@ -22,9 +22,10 @@ from torchvision.transforms import functional as F
 from torchvision.transforms.functional import adjust_contrast, adjust_brightness
 
 from torch import Tensor
+from torchvision.transforms import InterpolationMode
 
 from dinov2.data.augmentations import (DataAugmentationDINO, DataAugmentationDINONoNormalize,
-                                       DataAugmentationHiDiscDINO, TileDataAugmentationDINO)
+                                       DataAugmentationHiDiscDINO, TileDataAugmentationDINO, TileContextMultiCropDataAugmentationDINO, TileContextMultiCropDataAugmentationNoNormalizeDINO)
 from dinov2.data.transforms import (make_normalize_transform)
 
 
@@ -35,6 +36,7 @@ class HistologyTransform(torch.nn.Module):
         super().__init__()
         base_augs = {
             "scsrh": SCSRHBaseTransform,
+            "scsrh_bench": SCSRHBaseTransform,
             "srh": SRHBaseTransform,
             "he": NoBaseTransform,
             "cifar": VisionBaseTransform
@@ -199,6 +201,7 @@ class Dinov2Normalization(torch.nn.Module):
         return self.normalize(x).to(torch.float)
 
 
+    
 class StrongTransform(torch.nn.Module):
     """Strong transformations for all image data."""
 
@@ -214,7 +217,10 @@ class StrongTransform(torch.nn.Module):
             "dinov2_always_apply": DataAugmentationDINO,
             "tile_dinov2_always_apply": TileDataAugmentationDINO,
             "dinov2_nonorm_always_apply": DataAugmentationDINONoNormalize,
+            "tile_n_context_mc_dinov2_always_apply": TileContextMultiCropDataAugmentationDINO,
+            "tile_n_context_mc_dinov2_nonorm_always_apply": TileContextMultiCropDataAugmentationNoNormalizeDINO,
             "center_crop_always_apply": CenterCrop,
+            "center_resized_crop_always_apply": CenterResizedCrop,
             "resize": Resize,
             "normalize_always_apply": Normalize,
             "dinov2_normalize_always_apply": Dinov2Normalization,
@@ -249,6 +255,46 @@ class StrongTransform(torch.nn.Module):
     def forward(self, x):  # pylint: disable=missing-function-docstring
         return self.transforms_(x)
 
+
+class CenterResizedCrop:
+    """
+    Center‐crop a square of size `crop_size` and then resize
+    back to the original H×W.
+    
+    Args:
+        crop_size (int): side length of the square crop in pixels.
+        interpolation (InterpolationMode): resize filter.
+    """
+    def __init__(self,
+                 crop_size: int,
+                 interpolation: InterpolationMode = InterpolationMode.BILINEAR):
+        self.crop_size = crop_size
+        self.interpolation = interpolation
+
+    def __call__(self, img):
+
+        assert isinstance(img, torch.Tensor)
+
+        if img.ndim != 3:
+            raise ValueError(f"Expected 3D tensor, got shape {tuple(img.shape)}")
+        C, H, W = img.shape
+        top = (H - self.crop_size) // 2
+        left = (W - self.crop_size) // 2
+
+        # vectorized slice
+        patch = img[:, top : top + self.crop_size, left : left + self.crop_size]  # C×S×S
+
+        # add batch dim and resize
+        patch = patch.unsqueeze(0)                         # 1×C×S×S
+        resized = torch.nn.functional.interpolate(
+            patch,
+            size=(H, W),
+            mode="bilinear",
+            align_corners=False,
+        )
+        return resized[0]  # back to C×H×W
+
+    
 
 # Base augmentation modules
 class GetThirdChannel(torch.nn.Module):

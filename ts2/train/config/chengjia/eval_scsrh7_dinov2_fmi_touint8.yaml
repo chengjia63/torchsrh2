@@ -51,10 +51,11 @@ data:
         persistent_workers: False
         prefetch_factor: 8
         num_workers: 7
-      test:
         batch_size: 256
         drop_last: False
         shuffle: False
+      test: {}
+      test_databank: {}
 lightning_module:
   which: Dinov2EvalSystem
   params:
@@ -107,12 +108,92 @@ tune:
     data/transform/test/params/base_aug_params/mask_params/how_to_process:
     - small_patch
     - remove_background
+    - small_patch
+    - remove_background
+    - small_patch
+    - remove_background
+    - small_patch
+    - remove_background
+    - small_patch
+    - remove_background
+    - small_patch
+    - remove_background
+    - small_patch
+    - remove_background
+    - small_patch
+    - remove_background
+    - small_patch
+    - remove_background
+    - small_patch
+    - remove_background
+    - small_patch
+    - remove_background
     infra/comment:
-    - smpt_SE_epoch0-step289999
-    - rmbg_SE_epoch0-step289999
+    - smpt_SE_epoch0-step579999
+    - rmbg_SE_epoch0-step579999
+    - smpt_SE_epoch0-step589999
+    - rmbg_SE_epoch0-step589999
+    - smpt_SE_epoch0-step559999
+    - rmbg_SE_epoch0-step559999
+    - smpt_SE_epoch0-step549999
+    - rmbg_SE_epoch0-step549999
+    - smpt_SE_epoch0-step569999
+    - rmbg_SE_epoch0-step569999
+    - smpt_SE_epoch0-step539999
+    - rmbg_SE_epoch0-step539999
+    - smpt_SE_epoch0-step499999
+    - rmbg_SE_epoch0-step499999
+    - smpt_SE_epoch0-step509999
+    - rmbg_SE_epoch0-step509999
+    - smpt_SE_epoch0-step489999
+    - rmbg_SE_epoch0-step489999
+    - smpt_SE_epoch0-step519999
+    - rmbg_SE_epoch0-step519999
+    - smpt_SE_epoch0-step529999
+    - rmbg_SE_epoch0-step529999
     infra/exp_root:
     - ts2/fmi_hdinov2_tile
     - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
+    - ts2/fmi_hdinov2_tile
     lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_289999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_289999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_579999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_579999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_589999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_589999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_559999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_559999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_549999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_549999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_569999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_569999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_539999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_539999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_499999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_499999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_509999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_509999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_489999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_489999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_519999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_519999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_529999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/b3cb25a0_Apr16-10-54-17_sd1000_dev_tune0/models/eval/training_529999/teacher_checkpoint.pth

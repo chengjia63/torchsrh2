@@ -4,8 +4,9 @@ import einops
 from typing import List, Tuple
 from ts2.data.mask_collator import MBMaskCollator
 import time
+import itertools
 
-class SingleCellBlendedCollator():
+class SingleCellBlendedCollator(): # augmentation at training time - early exp
 
     def __init__(self, kernel_size, sigma, min_val_sigma, strong_transforms):
         self.ks = kernel_size
@@ -125,6 +126,50 @@ class SingleCellBlendedCollator():
             "path": [i["path"] for i in raw_batch]
         }
 
+class SingleCellTokenBandShuffleCollator(): # used for pertubation evaluations
+
+    def __init__(self, band_width, strong_transforms, use_mean=False):
+        self.band_width = band_width
+        self.transform = strong_transforms
+        self.use_mean = use_mean
+
+    def blend_batch(self, fg_im, bg_im):
+
+        fg_mask = torch.zeros(fg_im.shape)
+        fg_mask[:,:,self.band_width * 4:-self.band_width * 4, self.band_width * 4:-self.band_width * 4] = 1
+
+        if self.use_mean:
+            return (fg_im * (fg_mask) + 
+                    bg_im.mean(dim=[2,3]).unsqueeze(2).unsqueeze(2) * (1-fg_mask))
+        else:
+            return fg_im * (fg_mask) + bg_im * (1-fg_mask)
+
+
+    def __call__(self, raw_batch):
+        all_images = torch.stack([i["image"]
+                                  for i in raw_batch])  # b aug c h w
+        assert all_images.shape[1] == 1
+        fg = all_images[:, 0, ...]
+        #fg_clean = torch.clone(all_images[:, 0, ...]) # for viz
+        bg = torch.clone(all_images[:, 0, ...])
+        bg = bg[torch.randperm(len(bg))]
+        fg = self.blend_batch(fg, bg)
+
+        fg = torch.stack([self.transform(i) for i in fg[:, :3, ...]])
+        bg = torch.stack([self.transform(i) for i in bg[:, :3, ...]])
+
+        #torch.save({
+        #        "alt_fg": fg,
+        #        "bg": bg,
+        #        "fg_clean": fg_clean,
+        #    }, "out.pt")
+
+        return {
+            "image": fg.unsqueeze(1),
+            "label": torch.stack([i["label"] for i in raw_batch]),
+            "path": [[i["path"][0] for i in raw_batch]]
+        }
+
 class CellMILCollator(object):
     def __init__(self):
         super(CellMILCollator, self).__init__()
@@ -143,6 +188,7 @@ def get_collate_fn(which, params):
         "MBMaskCollator": MBMaskCollator,
         "SingleCellBlendedCollator": SingleCellBlendedCollator,
         "CellMILCollator": CellMILCollator,
+        "SingleCellTokenBandShuffleCollator": SingleCellTokenBandShuffleCollator
     }
     return collate_list[which](**params)
 

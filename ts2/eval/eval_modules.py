@@ -309,7 +309,7 @@ class EvalBaseModule(ABC):
         if class_names is None: class_names = self.class_names_
 
         default_fontsize = plt.rcParams["font.size"]
-        plt.rcParams.update({'font.size': 18})
+        #plt.rcParams.update({'font.size': 18})
         fig, ax = plt.subplots(1, 1)
 
         confusion = np.array(confusion)
@@ -1063,6 +1063,45 @@ class SRHCellImageGetter():
                                 int(im_row["path"].split("@")[-1]))
         return einops.rearrange(self.transform_(im), "c h w -> h w c").numpy()
 
+class SCBenchImageGetter():
+
+    def __init__(self, cf):
+        super().__init__()
+        curr_base_aug_params = cf.data.transform.test.params.base_aug_params
+        curr_base_aug_params["to_uint8"] = True
+        curr_base_aug_params["mask_params"]["how_to_process"]="small_patch"
+        self.transform_ = HistologyTransform(
+            which_set="scsrh",
+            base_aug_params=curr_base_aug_params,
+            strong_aug_params={
+                "aug_list": [],
+                "aug_prob": 0
+            })
+
+        data_root = cf.data.test_dataset.params.data_root
+        slides = pd.read_csv(cf.data.test_dataset.params.slides_file)
+        all_meta = []
+        all_images = []
+        all_paths = []
+
+        for _, s in slides.iterrows():
+            meta = pd.read_csv(f"{data_root}/scbench_processed/{s['mosaic']}.csv")
+            all_meta.append(meta["annot_labels"])
+            all_images.append(
+                torch.load(f"{data_root}/scbench_processed/{s['mosaic']}.pt").to(torch.float))
+            all_paths.extend([f"scbench.{s['ttype']}.{s['mosaic']}@{i}" for i in range(len(meta))])
+
+        all_meta = pd.concat(all_meta)
+        all_images = torch.cat(all_images)
+
+        self.instances_ = {k:j
+                           for j,k in zip(all_images, all_paths)}
+
+
+    def get_im(self, im_row):
+
+        return einops.rearrange(self.transform_(self.instances_[im_row["path"]]),
+                                 "c h w -> h w c").numpy()
 
 class SRHCellEvalModule(EvalBaseModule):
 
@@ -1070,8 +1109,14 @@ class SRHCellEvalModule(EvalBaseModule):
         super(SRHCellEvalModule, self).__init__(**kwargs)
 
         if self.cf_.testing.tsne.interactive:
-            # unfortunately need to create a mini dataset here
-            self.im_getter_ = SRHCellImageGetter(self.cf_)
+            if self.cf_.data.set == "scsrh":
+                self.im_getter_ = SRHCellImageGetter(self.cf_)
+            elif self.cf_.data.set == "scsrh_bench":
+                self.im_getter_ = SCBenchImageGetter(self.cf_)
+            else:
+                raise ValueError()
+        else:
+            self.im_getter_ = None
 
     def compute_metrics(self, pred):
         if self.do_softmax_:
@@ -1226,7 +1271,7 @@ def do_eval(cf, out_root, predictions, do_softmax=False):
         SRHEvalModule(cf=cf, out_root=out_root,
                       do_softmax=do_softmax)(predictions)
 
-    elif cf["data"]["set"] == "scsrh":
+    elif cf["data"]["set"] in {"scsrh_bench", "scsrh"}:
         SRHCellEvalModule(cf=cf, out_root=out_root,
                           do_softmax=do_softmax)(predictions)
     else:

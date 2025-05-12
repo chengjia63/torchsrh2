@@ -20,6 +20,7 @@ from ts2.data.cell_dataset import CellDataset, CellBagDataset, CellPatchDataset,
 from ts2.data.histology_data_module import get_num_replicate
 from ts2.data.utils import get_collate_fn
 
+defer_sxf_collators = {"SingleCellBlendedCollator", "SingleCellTokenBandShuffleCollator"}
 
 def check_collate_fn_which(loader_params, which_split):
     if cfw := loader_params.common.get("collate_fn", {}).get("which"):
@@ -90,7 +91,9 @@ class CellDataModule(pl.LightningDataModule):
             "CellPatchDataset": CellPatchDataset,
             "CellDatasetDINOv2": CellDatasetDINOv2
         }
-
+        
+        
+        
         transforms = {"HistologyTransform": HistologyTransform}
         if stage == "fit":
             prf = instantiate_process_read(
@@ -105,14 +108,15 @@ class CellDataModule(pl.LightningDataModule):
                 which_set=self.set_, **self.xform_config_.trainval.params)
 
             if self.loader_config_:
+                
                 if check_collate_fn_which(self.loader_config_.params,
-                                          "train") == "SingleCellBlendedCollator":
+                                          "train") in defer_sxf_collators:
                     self.train_strong_xform = train_xform.strong_aug
                     train_xform.strong_aug = torch.nn.Identity()
 
                 if check_collate_fn_which(
                         self.loader_config_.params,
-                        "trainval") == "SingleCellBlendedCollator":
+                        "trainval") in defer_sxf_collators:
                     self.trainval_strong_xform = trainval_xform.strong_aug
                     trainval_xform.strong_aug = torch.nn.Identity()
 
@@ -147,7 +151,7 @@ class CellDataModule(pl.LightningDataModule):
 
             if self.loader_config_:
                 if check_collate_fn_which(self.loader_config_.params,
-                                          "test") == "SingleCellBlendedCollator":
+                                          "test") in defer_sxf_collators:
                     self.test_strong_xform = test_xform.strong_aug
                     test_xform.strong_aug = torch.nn.Identity()
 
@@ -160,13 +164,25 @@ class CellDataModule(pl.LightningDataModule):
                 **self.test_dset_config_.params)
 
             if self.test_get_train_:
+                if "test_databank" in self.xform_config_:
+                    testdb_xform = transforms[self.xform_config_.test_databank.which](
+                        which_set=self.set_, **self.xform_config_.test_databank.params)
+                else:
+                    testdb_xform =  transforms[self.xform_config_.test.which](
+                        which_set=self.set_, **self.xform_config_.test.params)
+                
+                if self.loader_config_:
+                    if check_collate_fn_which(self.loader_config_.params,
+                                              "test_databank") in defer_sxf_collators:
+                        self.testdb_strong_xform = testdb_xform.strong_aug
+                        testdb_xform.strong_aug = torch.nn.Identity()
+                
                 dbank_inst, dbank_tsm = CachedCSVParser(
                     cache_dir=self.instance_cache_fname_["test_databank"])()
                 dbank_dataset = datasets[self.test_dset_config_.which](
                     instances=dbank_inst,
                     tensor_shape_map=dbank_tsm,
-                    transform=transforms[self.xform_config_.test.which](
-                        which_set=self.set_, **self.xform_config_.test.params),
+                    transform=testdb_xform,
                     process_read_im=prf,
                     **self.test_dset_config_.params)
                 self.test_dataset_ = [dbank_dataset, test_dataset]
@@ -197,8 +213,7 @@ class CellDataModule(pl.LightningDataModule):
             loader_params["num_workers"] = get_num_worker()
 
         if "collate_fn" in loader_params:
-            if loader_params["collate_fn"][
-                    "which"] == "SingleCellBlendedCollator":
+            if loader_params["collate_fn"]["which"] in defer_sxf_collators:
                 loader_params["collate_fn"]["params"].update(
                     {"strong_transforms": self.train_strong_xform})
 
@@ -223,8 +238,7 @@ class CellDataModule(pl.LightningDataModule):
             loader_params["num_workers"] = get_num_worker()
 
         if "collate_fn" in loader_params:
-            if loader_params["collate_fn"][
-                    "which"] == "SingleCellBlendedCollator":
+            if loader_params["collate_fn"]["which"] in defer_sxf_collators:
                 loader_params["collate_fn"]["params"].update(
                     {"strong_transforms": self.trainval_strong_xform})
 
@@ -243,19 +257,44 @@ class CellDataModule(pl.LightningDataModule):
         raise NotImplementedError()
 
     def predict_dataloader(self):
-        loader_params = OmegaConf.to_container(self.loader_config_.params.test)
+        loader_params = OmegaConf.to_container(self.loader_config_.params.test, resolve=True)
         loader_params.update(self.get_seed_worker_and_generator(self.seed_))
-        loader_params.update(self.loader_config_.params.common)
+        loader_params.update(OmegaConf.to_container(self.loader_config_.params.common, resolve=True))
         if loader_params.get("num_workers") == "auto":
             loader_params["num_workers"] = get_num_worker()
 
         if "collate_fn" in loader_params:
-            if loader_params["collate_fn"]["which"] == "SingleCellBlendedCollator":
+            if loader_params["collate_fn"]["which"] in defer_sxf_collators:
                 loader_params["collate_fn"]["params"].update(
                     {"strong_transforms": self.test_strong_xform})
 
             loader_params["collate_fn"] = get_collate_fn(
                 **loader_params['collate_fn'])
+
+
+        if self.test_get_train_:
+            if "test_databank" in self.loader_config_.params:
+                db_loader_params = OmegaConf.to_container(self.loader_config_.params.test_databank, resolve=True)
+                db_loader_params.update(self.get_seed_worker_and_generator(self.seed_))
+                db_loader_params.update(OmegaConf.to_container(self.loader_config_.params.common, resolve=True))
+                if db_loader_params.get("num_workers") == "auto":
+                    db_loader_params["num_workers"] = get_num_worker()
+
+                if "collate_fn" in db_loader_params:
+                    if db_loader_params["collate_fn"]["which"] in defer_sxf_collators:
+                        db_loader_params["collate_fn"]["params"].update(
+                            {"strong_transforms": self.test_strong_xform})
+
+                    db_loader_params["collate_fn"] = get_collate_fn(
+                        **db_loader_params['collate_fn'])
+
+                #import pdb; pdb.set_trace()
+            else:
+                db_loader_params = OmegaConf.to_container(self.loader_config_.params.test, resolve=True)
+
+            return [DataLoader(self.test_dataset_[0], **db_loader_params),
+                DataLoader(self.test_dataset_[1], **loader_params)]
+
         return [DataLoader(ds, **loader_params) for ds in self.test_dataset_]
 
 

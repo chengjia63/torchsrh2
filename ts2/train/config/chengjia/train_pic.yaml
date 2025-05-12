@@ -30,17 +30,24 @@ data:
           to_uint8: False
         strong_aug_params:
           aug_list:
-          - which: dinov2_nonorm_always_apply
-            params: ${........dinov2_fair_config.crops}
+          - which: tile_n_context_mc_dinov2_nonorm_always_apply
+            params:
+              tile_size: 48
+              context_size: 300
+              global_crops_scale: ${.........dinov2_fair_config.crops.global_crops_scale}
+              local_crops_scale: ${.........dinov2_fair_config.crops.local_crops_scale}
+              local_crops_number: ${.........dinov2_fair_config.crops.local_crops_number}
+              global_crops_size: ${.........dinov2_fair_config.crops.global_crops_size}
+              local_crops_size: ${.........dinov2_fair_config.crops.local_crops_size}
           aug_prob: 1
     trainval: ${.train}
   dataset:
-    which: SLHSVSingleTileDatasetDINOV2
-    which_process_read: memmap_tile
+    which: SingleLevelHierarchicalDatasetDINOV2 #SLHSVSingleTileDatasetDINOV2
+    which_process_read: memmap_multi #_tile
     params:
       common:
         data_root: /nfs/turbo/umms-tocho-snr/data/root_histology_db/srh/
-        tile_size: 48
+        #tile_size: 48
         num_transforms: 0
         num_samples: 1
         num_instance_self_replicate: 1
@@ -50,38 +57,60 @@ data:
       trainval: {}
 ts_wrap_config:
   no_resume: True
-  #load_uni_ckpt:
-  #  do: True
-  #  ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/dinov2/base/pytorch_model.bin
+  which: pic
+
 dinov2_fair_config:
+  compute_precision:
+    student:
+      ctxor_head:
+        sharding_strategy: SHARD_GRAD_OP                                          
+        mixed_precision:                                                          
+          param_dtype: fp16                                                       
+          reduce_dtype: fp16                                                      
+          buffer_dtype: fp32  
+  ctxor:
+    loss_weight: 512
+    head_n_prototypes: 512
+    head_bottleneck_dim: 384 #256
+    head_nlayers: 3
+    head_hidden_dim: 2048
+    #koleo_loss_weight: 0.1
   dino:
-    head_n_prototypes: 65536 #1024
+    head_n_prototypes: 1024
     head_bottleneck_dim: 384
   ibot:
     separate_head: true
-    head_n_prototypes: 65536 #1024
+    head_n_prototypes: 1024
   train:
-    batch_size_per_gpu: 384 #704
+    batch_size_per_gpu: 704  #8
     centering: sinkhorn_knopp
+    num_workers: 8
   student:
     arch: vit_small
     patch_size: 4
-    drop_path_rate: 0.4
+    drop_path_rate: 0.2 #0.4
     ffn_layer: swiglufused
     block_chunks: 4
   teacher:
     momentum_teacher: 0.996
   optim:
-    epochs: 100
+    epochs: 100 #500
     weight_decay_end: 0.2
     base_lr: 2.0e-04  # learning rate for a batch size of 1024
-    warmup_epochs: 10
+    warmup_epochs: 10 #50
     layerwise_decay: 1.0
   crops:
     global_crops_size: 48
     local_crops_size: 20
+    global_crops_scale:
+    - 0.32
+    - 1.0
+    local_crops_number: 8
+    local_crops_scale:
+    - 0.05
+    - 0.32
   evaluation:                                                                   
-    eval_period_iterations: 5000 
+    eval_period_iterations: 5000
 tune:
   diagonal_items: true
   params:

@@ -32,7 +32,7 @@
 #SBATCH --account=tocho_owned1
 #------------------------------------------------------------------------------
 # SBATCH --nodelist=armis26004
-# SBATCH --exclude=armis26001
+#SBATCH --exclude=armis2600[0-1]
 #------------------------------------------------------------------------------
 #SBATCH --time=14-00:00:00
 # SBATCH --time=27:00:00
@@ -75,4 +75,6 @@ set -e
 #srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmitds_touint8.yaml
 #srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmitds_finetuned.yaml
 
-srun python main_dinov2.py -c=config/chengjia/train_mcmmcm_dinov2_fmitds_finetuned.yaml
+#srun python main_dinov2.py -c=config/chengjia/train_mcmmcm_dinov2_fmitds_finetuned.yaml
+srun python main_dinov2.py -c=config/chengjia/train_pic.yaml
+#srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmitds_nouint8.yaml

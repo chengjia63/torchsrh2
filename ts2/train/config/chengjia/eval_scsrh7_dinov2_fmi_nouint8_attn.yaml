@@ -42,6 +42,7 @@ data:
       data_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root2/
       num_transforms: 1
       balance_instance_class: False
+      num_sample_wo_replacement: 128
     classes_reorder: [0, 1, 2, 3, 5, 6, 4]
     camera_ready_classes: [HGG, LGG, Mening, Mets, Normal, Pit, Schwan]
   loader:
@@ -51,11 +52,10 @@ data:
         persistent_workers: False
         prefetch_factor: 8
         num_workers: 7
+      test:
         batch_size: 256
         drop_last: False
         shuffle: False
-      test: {}
-      test_databank: {}
 lightning_module:
   which: Dinov2EvalSystem
   params:
@@ -75,7 +75,7 @@ lightning_module:
         proj_bias: true
         qkv_bias: true
     pretrained_weights: TODO
-
+    get_image_attn: True
 testing:
   eval_mode: knn
   save_train_pred: True
@@ -106,17 +106,13 @@ tune:
   params:
     data/transform/test/params/base_aug_params/mask_params/how_to_process:
     - small_patch
-    - small_patch
-    - small_patch
+    - rm_background
     infra/comment:
-    - smpt_SE_epoch0-step19999
-    - smpt_SE_epoch0-step19999
-    - smpt_SE_epoch0-step19999
+    - smpt_AT_epoch0-step124999
+    - rmbg_AT_epoch0-step124999
     infra/exp_root:
     - ts2/fmi_hdinov2_tile
     - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
     lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/216430e6_May10-13-03-25_sd1000_dev_tune0/models/eval/training_19999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/91b0acd7_May10-12-43-35_sd1000_dev_tune0/models/eval/training_19999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/6f51b8b5_May10-13-26-07_sd1000_dev_tune0/models/eval/training_19999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/643515de_Apr24-13-21-52_sd1000_dev_tune0/models/eval/training_39999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/643515de_Apr24-13-21-52_sd1000_dev_tune0/models/eval/training_39999/teacher_checkpoint.pth

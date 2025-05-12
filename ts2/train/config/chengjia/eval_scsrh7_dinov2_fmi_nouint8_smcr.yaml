@@ -34,6 +34,9 @@ data:
           - which: center_crop_always_apply
             params:
               size: 48
+          - which: center_resized_crop_always_apply                                 
+            params:                                                                 
+              crop_size: 24    
           aug_prob: 1
   test_dataset:
     which: CellDataset # SingleLevelHierarchicalDataset
@@ -109,9 +112,9 @@ tune:
     - small_patch
     - small_patch
     infra/comment:
-    - smpt_SE_epoch0-step19999
-    - smpt_SE_epoch0-step19999
-    - smpt_SE_epoch0-step19999
+    - smcr24_SE_epoch0-step19999
+    - smcr24_SE_epoch0-step19999
+    - smcr24_SE_epoch0-step19999
     infra/exp_root:
     - ts2/fmi_hdinov2_tile
     - ts2/fmi_hdinov2_tile
