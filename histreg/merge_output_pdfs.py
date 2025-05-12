@@ -82,15 +82,16 @@ def merge_two_pdfs(file1, file2, output_file):
 def main():
 
     block_align_out_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_rigid_ransac" #"/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_affine_ransac"
+    block_align_out_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_affine_ransac"
     meta_root="/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/pixel_alignment/sections_annot2/meta/"
-    block_align_viz_root = "./viz_out_crop_affine_ransac_0227"
-    block_align_viz_root_bad = "./viz_out_crop_affine_ransac_0227_reject"
+    block_align_viz_root = "./viz_out_crop_affine_ransac_0423"
+    block_align_viz_root_bad = "./viz_out_crop_affine_ransac_0423_reject"
     align_finished = os.listdir(block_align_out_root)
 
     #im = set([i.removesuffix("_align.pkl") for i in align_finished if i.endswith("_align.pkl")])
     #to_review = sorted(im)
 
-    to_review = pd.read_csv("out/0227_re_viz1.csv")["block"].tolist()
+    to_review = pd.read_csv("data/to_reg_250320.csv")["block"].tolist()
 
     #previously_reviewed_root = "./viz_out_crop_affine"
     #if previously_reviewed_root:
@@ -112,29 +113,29 @@ def main():
 
     for tr in tqdm(to_review):
 
-        #try:
-        block_meta = pd.read_csv(opj(meta_root, f"{tr}_sections_annot_meta.csv"))
+        try:
+            block_meta = pd.read_csv(opj(meta_root, f"{tr}_sections_annot_meta.csv"))
 
-        stain_list = sorted(set(block_meta[~(block_meta["comment"]=="RM")]["Stain"].tolist()))
-        with open(opj(block_align_out_root, f"{tr}_align.pkl"), "rb") as fd:
-            align_results = pickle.load(fd)
+            stain_list = sorted(set(block_meta[~(block_meta["comment"]=="RM")]["Stain"].tolist()))
+            with open(opj(block_align_out_root, f"{tr}_align.pkl"), "rb") as fd:
+                align_results = pickle.load(fd)
 
-        decomposed_params = pd.DataFrame(decompose_affine_matrix_batched(einops.rearrange(align_results["matrices"], "he ihc mh mw -> (he ihc) mh mw")))
-        
-        reject = ((decomposed_params["shear"]>2).any() or
-            ((decomposed_params["scale_x"] - 1).abs() > 0.2).any() or
-            ((decomposed_params["scale_y"] - 1).abs() > 0.2).any() or
-            (align_results["num_matches"] <= 50).any())
+            decomposed_params = pd.DataFrame(decompose_affine_matrix_batched(einops.rearrange(align_results["matrices"], "he ihc mh mw -> (he ihc) mh mw")))
+            
+            reject = ((decomposed_params["shear"]>2).any() or
+                ((decomposed_params["scale_x"] - 1).abs() > 0.2).any() or
+                ((decomposed_params["scale_y"] - 1).abs() > 0.2).any() or
+                (align_results["num_matches"] <= 50).any())
 
-        if reject:
-            curr_out_dir = block_align_viz_root_bad
-        else:
-            curr_out_dir = block_align_viz_root
+            if reject:
+                curr_out_dir = block_align_viz_root_bad
+            else:
+                curr_out_dir = block_align_viz_root
 
-        first =  opj(block_align_out_root, f"{tr}_im_align.pdf")
-        second = opj(block_align_out_root, f"{tr}_mask_align.pdf")
-        merge_two_pdfs(first, second, opj(curr_out_dir, f"{tr}_mask_align.pdf"))
-        #except:
-        #    print(f"need to reviz - {tr}")
+            first =  opj(block_align_out_root, f"{tr}_im_align.pdf")
+            second = opj(block_align_out_root, f"{tr}_mask_align.pdf")
+            merge_two_pdfs(first, second, opj(curr_out_dir, f"{tr}_mask_align.pdf"))
+        except:
+            print(f"no viz - {tr}")
 
 if __name__=="__main__": main()

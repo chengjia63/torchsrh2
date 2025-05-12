@@ -32,8 +32,8 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem-per-cpu=5000m
 # ------------------------------------------------------------------------------
-# SBATCH --account=tocho1
-#SBATCH --account=tocho99
+#SBATCH --account=tocho1
+# SBATCH --account=tocho99
 # SBATCH --account=tocho0
 # SBATCH --account=precisionhealth_owned1
 # SBATCH --account=tocho_owned1
@@ -48,7 +48,7 @@
 # SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #------------------------------------------------------------------------------
-#SBATCH --array=0-47
+#SBATCH --array=0-928
 # SBATCH --array=300-599
 # SBATCH --array=600-869
 # SBATCH --array=0-28

@@ -160,9 +160,11 @@ def wrap_image(src_slide,
 
     # Normalize source coordinates to [-1, 1] for PyTorch grid_sample
     h_src, w_src = he1.shape[:2]
+    #coords_src[..., 0] = 2.0 * (coords_src[..., 0]+0.5) / (w_src) - 1.0 # for align_corners=False
+    #coords_src[..., 1] = 2.0 * (coords_src[..., 1]+0.5) / (h_src) - 1.0 # for align_corners=False
     coords_src[..., 0] = 2.0 * coords_src[..., 0] / (w_src - 1) - 1.0
     coords_src[..., 1] = 2.0 * coords_src[..., 1] / (h_src - 1) - 1.0
-
+    
     # Convert cropped region to PyTorch tensor and move to GPU
     cropped_tensor = einops.rearrange(
         torch.from_numpy(he1), "h w c -> c h w").unsqueeze(0).float()  #.cuda()
@@ -175,7 +177,8 @@ def wrap_image(src_slide,
     output_tile = torch.nn.functional.grid_sample(cropped_tensor,
                                                   grid,
                                                   mode="bilinear",
-                                                  align_corners=False)
+                                                  padding_mode = "border",
+                                                  align_corners=True) #False)
 
     return None, einops.rearrange(
         output_tile.detach().cpu().squeeze().to(torch.uint8),
@@ -231,6 +234,9 @@ def patch_one_block(su_b_df,
     #mask_annot_meta = mask_annot_meta.rename(
     #    columns={"Unnamed: 0": "main_idx"})
     
+    if len(mask_annot.shape) == 3:
+        mask_annot = np.expand_dims(mask_annot, 0)
+        
     if su_b_df["which"] == "one_section_only":
         pass
     else:
@@ -389,8 +395,7 @@ if __name__ == "__main__":
         handlers=[logging.StreamHandler()])
     logging.info("Block patching log")
 
-    accepted_blocks = pd.read_csv(
-        "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/out/accepted.csv")
+    accepted_blocks = pd.read_csv("data/to_patch_250423.csv")
     #accepted_blocks = pd.read_csv(
     #    "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/out/one_section.csv")
 
@@ -401,10 +406,10 @@ if __name__ == "__main__":
         taskid = 0
 
 
-    already_patched = glob("/nfs/turbo/umms-tocho-snr/exp/chengjia/mns_block_patch/*_coords_failed_256.pkl")
-    already_patched = set([p.split("/")[-1].removesuffix("_coords_failed_256.pkl") for p in already_patched])
+    #already_patched = glob("/nfs/turbo/umms-tocho-snr/exp/chengjia/mns_block_patch/*_coords_failed_256.pkl")
+    #already_patched = set([p.split("/")[-1].removesuffix("_coords_failed_256.pkl") for p in already_patched])
     #to_patch = {"SU-15-62441.A3"}
-    accepted_blocks = accepted_blocks[~ accepted_blocks["block"].isin(already_patched)]
+    #accepted_blocks = accepted_blocks[~ accepted_blocks["block"].isin(already_patched)]
 
     logging.info(f"GOT TASK ID {taskid}")
     patch_one_block(
