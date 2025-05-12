@@ -1,0 +1,120 @@
+infra:
+  exp_name: ts2/scbench_linear
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia 
+  comment: smpt_SEBENCH_smcr
+  log_gpu: True
+  seed: 1000
+  float32_matmul_precision: medium
+data:
+  train_dataset:
+    params:
+      embed_path: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/dc0bfcd4_May02-23-35-53_sd1000_dev_tune0/models/eval/training_119999/88945ba9_May12-13-08-46_sd1000_smpt24_SEBENCHv2_epoch0-step124999/predictions/train_predictions.pt.gz
+      balance_instance_class: True
+      #class_filter: ['glial/astrocytes', 'glial/neurons', 'glial/oligodendrocytes', 'glial/reactive_astrocytes', 'glioma/tumor_cells', 'immune/lymphocytes', 'immune/macrophages', 'metastatic/adenocarcinoma', 'metastatic/melanoma', 'metastatic/sarcoma', 'metastatic/squamous_cell']
+      ##class_filter: ['glial/astrocytes', 'glial/neurons', 'glial/oligodendrocytes', 'glial/reactive_astrocytes', 'glioma/giant_cell', 'glioma/tumor_cells', 'immune/lymphocytes', 'immune/macrophages', 'metastatic/adenocarcinoma', 'metastatic/melanoma', 'metastatic/sarcoma', 'metastatic/squamous_cell', 'proliferation/mitotic_figures']
+    classes_reorder: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] #,11,12]
+    camera_ready_classes: ['Astrocytes', 'Neurons', 'Oligodendrocytes', 'RAstrocytes', 'Glioma', 'Lymphocytes', 'Macrophages', 'Adeno', 'Melanoma', 'Sarcoma', 'Squamous']
+    #camera_ready_classes: ['Astrocytes', 'Neurons', 'Oligodendrocytes', 'RAstrocytes', 'Giant Cell', 'Glioma', 'Lymphocytes', 'Macrophages', 'Adeno', 'Melanoma', 'Sarcoma', 'Squamous', 'Mitotic']
+  val_dataset:
+    params:
+      embed_path: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/dc0bfcd4_May02-23-35-53_sd1000_dev_tune0/models/eval/training_119999/88945ba9_May12-13-08-46_sd1000_smpt24_SEBENCHv2_epoch0-step124999/predictions/val_predictions.pt.gz
+      balance_instance_class: False
+      #class_filter: ${...train_dataset.params.class_filter}
+    classes_reorder: ${..train_dataset.classes_reorder}
+    camera_ready_classes: ${..train_dataset.camera_ready_classes}
+  test_dataset: ${.val_dataset}
+  loader:
+    params:
+      common:
+        pin_memory: False
+        persistent_workers: False
+        prefetch_factor: 8
+        num_workers: 7
+      train:
+        batch_size: 256
+        drop_last: True
+        shuffle: True
+
+
+      val:
+        batch_size: 256
+        drop_last: False
+        shuffle: False
+
+      test:
+        batch_size: 256
+        drop_last: False
+        shuffle: False
+
+
+lm:
+  model_hyperparams:
+    in_dim: 384
+    out_dim: 11
+    use_bn: False
+    nlayers: 3
+    hidden_dim: 2048
+    bottleneck_dim: 2048
+    mlp_bias: True
+  loss_params: {}
+  opt_cf:
+    which: adamw
+    scale_lr: True
+    params:
+      lr: 0.001
+      betas: [0.9, 0.999]
+      eps: 1.0e-8
+      weight_decay: 0.01
+      amsgrad: False
+  schd_cf:
+    which: cos_linear_warmup
+    params:
+      num_warmup_steps: 0.1
+      num_cycles: 0.5
+training:
+  trainer_params:
+    max_epochs: 10
+    gradient_clip_val: 0.5
+    enable_progress_bar: True
+    precision: 'bf16-mixed'
+    deterministic: False
+    num_sanity_val_steps: 0
+  trainval:
+    freq:
+      interval: 1
+      unit: "epoch"
+testing:
+  eval_mode: knn
+  save_train_pred: True
+  #eval_predictions: 4cf5a93d_Oct14-23-29-19_sd1000_standaloneeval_37
+  knn:
+    do_knn: True
+    knn_params:
+      batch_size: 1536
+      k: 10
+      t: 0.07
+  tsne:
+    interactive: True
+    num_patches: [4096]
+    which_set: [val]
+    embed_images: True
+    class_params:
+      perplexity: 50
+      learning_rate: auto
+      init : pca
+  nn_viz:
+    query_set: val
+    n_sample: 32
+    target_set: val
+    exclude_same_patient: True
+    k: 40
+#tune:
+#  diagonal_items: True
+#  params:
+#    infra/comment:
+#    - smpt24_SEBENCHv2_epoch0-step124999
+#    infra/exp_root:
+#    - ts2/fmi_hdinov2_tile
+#    lightning_module/params/pretrained_weights:
+#    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/dc0bfcd4_May02-23-35-53_sd1000_dev_tune0/models/eval/training_119999/teacher_checkpoint.pth
+#    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/2e7833f0_Apr30-16-49-29_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth

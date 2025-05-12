@@ -68,7 +68,8 @@ def read_process_cf(cf_fd: TextIO) -> Tuple[OmegaConf, str]:
     cf = OmegaConf.create(cf)
 
     if "testing" in cf:
-        assert "test" in cf.data.transform
+        if "transform" in cf.data:
+            assert "test" in cf.data.transform
         assert "test_dataset" in cf.data
         assert "test" in cf.data.loader.params
 

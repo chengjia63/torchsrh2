@@ -25,13 +25,13 @@ data:
           aug_list:
           - which: center_crop_always_apply
             params:
-              size: 24 #48
+              size: 48
           aug_prob: 1
   test_dataset:
     which: CellBenchDataset
     params:
       data_root: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/scbench/
-      slides_file: ./mosaic_val.csv
+      slides_file: ../data/data/scbench/mosaic_val.csv
       balance_instance_class: False
       class_filter: ['glial/astrocytes', 'glial/neurons', 'glial/oligodendrocytes', 'glial/reactive_astrocytes', 'glioma/tumor_cells', 'immune/lymphocytes', 'immune/macrophages', 'metastatic/adenocarcinoma', 'metastatic/melanoma', 'metastatic/sarcoma', 'metastatic/squamous_cell']
       #class_filter: ['glial/astrocytes', 'glial/neurons', 'glial/oligodendrocytes', 'glial/reactive_astrocytes', 'glioma/giant_cell', 'glioma/tumor_cells', 'immune/lymphocytes', 'immune/macrophages', 'metastatic/adenocarcinoma', 'metastatic/melanoma', 'metastatic/sarcoma', 'metastatic/squamous_cell', 'proliferation/mitotic_figures']
@@ -42,7 +42,7 @@ data:
     which: CellBenchDataset
     params:
       data_root: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/scbench/
-      slides_file: ./mosaic_train.csv
+      slides_file: ../data/data/scbench/mosaic_train.csv
       balance_instance_class: False
       class_filter: ${...test_dataset.params.class_filter}
     classes_reorder: ${..test_dataset.classes_reorder}
@@ -107,7 +107,7 @@ tune:
   diagonal_items: True
   params:
     infra/comment:
-    - smpt24_SEBENCHv2_epoch0-step124999
+    - smpt_SEBENCHv2_epoch0-step124999
     infra/exp_root:
     - ts2/fmi_hdinov2_tile
     lightning_module/params/pretrained_weights:

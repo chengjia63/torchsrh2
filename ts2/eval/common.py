@@ -59,7 +59,6 @@ def get_knn_logits(cf, train_predictions, val_predictions):
         train_labels = train_predictions["label"].to(device)
         batch_size = cf["testing"]["knn"]["knn_params"]["batch_size"]
         all_scores = []
-
         for k in tqdm(range(val_embs.shape[0] // batch_size + 1)):
             # find current minibatch
             start_coeff = batch_size * k
@@ -79,11 +78,86 @@ def get_knn_logits(cf, train_predictions, val_predictions):
 
             # add to list
             all_scores.append(
-                torch.nn.functional.normalize(pred_scores, p=1, dim=1).cpu())
+                torch.nn.functional.normalize(pred_scores, p=1, dim=1).to("cpu"))
             torch.cuda.empty_cache()
 
     # add to predictions dict
     val_predictions["logits"] = torch.vstack(all_scores)
+    return val_predictions
+
+# centering, l2 norm
+def get_knn_logits_cl2n(cf, train_predictions, val_predictions):
+    if "logits" in val_predictions:
+        logging.warning("found existing logits. deleting for re-knn eval")
+        del val_predictions["logits"]
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    torch.cuda.empty_cache()
+    with torch.no_grad():
+
+        train_mean = train_predictions["embeddings"].mean(dim=0)
+        train_embs = train_predictions["embeddings"] - train_mean
+        train_embs = torch.nn.functional.normalize(
+            train_embs, p=2, dim=1).T.to(device)
+
+        val_embs =  val_predictions["embeddings"] - train_mean
+        val_embs = torch.nn.functional.normalize(val_embs, p=2, dim=1)
+
+        train_labels = train_predictions["label"].to(device)
+        batch_size = cf["testing"]["knn"]["knn_params"]["batch_size"]
+        all_scores = []
+        for k in tqdm(range(val_embs.shape[0] // batch_size + 1)):
+            # find current minibatch
+            start_coeff = batch_size * k
+            end_coeff = min(batch_size * (k + 1),
+                            val_embs.shape[0])  # leftover
+            val_embs_k = val_embs[start_coeff:end_coeff].to(
+                device)  # 1536 x 2048
+
+            # knn predict on the minibatch
+            _, pred_scores = knn_predict(
+                val_embs_k,
+                train_embs,
+                train_labels,
+                len(cf["data"]["test_dataset"]["classes_reorder"]),
+                knn_k=cf["testing"]["knn"]["knn_params"]["k"],
+                knn_t=cf["testing"]["knn"]["knn_params"]["t"])
+
+            # add to list
+            all_scores.append(
+                torch.nn.functional.normalize(pred_scores, p=1, dim=1).to("cpu"))
+            torch.cuda.empty_cache()
+
+    # add to predictions dict
+    val_predictions["logits"] = torch.vstack(all_scores)
+    return val_predictions
+
+
+def get_knn_logits_simpleshot(cf, train_predictions, val_predictions):
+    if "logits" in val_predictions:
+        logging.warning("found existing logits. deleting for re-knn eval")
+        del val_predictions["logits"]
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    torch.cuda.empty_cache()
+    with torch.no_grad():
+
+        train_mean = train_predictions["embeddings"].mean(dim=0)
+        train_embs = train_predictions["embeddings"] - train_mean
+        train_embs = torch.nn.functional.normalize(train_embs, p=2, dim=1).to(device)
+
+        val_embs =  val_predictions["embeddings"] - train_mean
+        val_embs = torch.nn.functional.normalize(val_embs,
+                                                 p=2,
+                                                 dim=1)
+
+        train_labels = train_predictions["label"].to(device)
+
+        classes = train_labels.unique(sorted=True)
+        centroids = torch.stack([
+            train_embs[train_labels == c].mean(dim=0) for c in classes
+        ])
+
+
+        val_predictions["logits"] = torch.nn.functional.softmax(val_embs.cuda() @ centroids.T, dim=1).cpu()
     return val_predictions
 
 
