@@ -31,13 +31,13 @@ data:
     which: CellBenchDataset
     params:
       data_root: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/scbench/
-      slides_file: ../data/data/scbench/mosaic_val.csv
+      slides_file: ../data/data/scbench/mosaic.csv
       balance_instance_class: False
-      class_filter: ['glial/astrocytes', 'glial/neurons', 'glial/oligodendrocytes', 'glial/reactive_astrocytes', 'glioma/tumor_cells', 'immune/lymphocytes', 'immune/macrophages', 'metastatic/adenocarcinoma', 'metastatic/melanoma', 'metastatic/sarcoma', 'metastatic/squamous_cell']
-      #class_filter: ['glial/astrocytes', 'glial/neurons', 'glial/oligodendrocytes', 'glial/reactive_astrocytes', 'glioma/giant_cell', 'glioma/tumor_cells', 'immune/lymphocytes', 'immune/macrophages', 'metastatic/adenocarcinoma', 'metastatic/melanoma', 'metastatic/sarcoma', 'metastatic/squamous_cell', 'proliferation/mitotic_figures']
-    classes_reorder: [0, 1, 2, 3,4,5,6,7,8,9,10] #,11,12]
-    camera_ready_classes: ['Astrocytes', 'Neurons', 'Oligodendrocytes', 'RAstrocytes', 'Glioma', 'Lymphocytes', 'Macrophages', 'Adeno', 'Melanoma', 'Sarcoma', 'Squamous']
-    #camera_ready_classes: ['Astrocytes', 'Neurons', 'Oligodendrocytes', 'RAstrocytes', 'Giant Cell', 'Glioma', 'Lymphocytes', 'Macrophages', 'Adeno', 'Melanoma', 'Sarcoma', 'Squamous', 'Mitotic']
+      #class_filter: ['glial/astrocytes', 'glial/neurons', 'glial/oligodendrocytes', 'glial/reactive_astrocytes', 'glioma/tumor_cells', 'immune/lymphocytes', 'immune/macrophages', 'metastatic/adenocarcinoma', 'metastatic/melanoma', 'metastatic/sarcoma', 'metastatic/squamous_cell']
+      class_filter: ['glial/astrocytes', 'glial/neurons', 'glial/oligodendrocytes', 'glial/reactive_astrocytes', 'glioma/giant_cell', 'glioma/tumor_cells', 'immune/lymphocytes', 'immune/macrophages', 'metastatic/adenocarcinoma', 'metastatic/melanoma', 'metastatic/sarcoma', 'metastatic/squamous_cell', 'proliferation/mitotic_figures']
+    classes_reorder: [0, 1, 2, 3,4,5,6,7,8,9,10,11,12]
+    #camera_ready_classes: ['Astrocytes', 'Neurons', 'Oligodendrocytes', 'RAstrocytes', 'Glioma', 'Lymphocytes', 'Macrophages', 'Adeno', 'Melanoma', 'Sarcoma', 'Squamous']
+    camera_ready_classes: ['Astrocytes', 'Neurons', 'Oligodendrocytes', 'RAstrocytes', 'Giant Cell', 'Glioma', 'Lymphocytes', 'Macrophages', 'Adeno', 'Melanoma', 'Sarcoma', 'Squamous', 'Mitotic']
   test_databank_dataset:
     which: CellBenchDataset
     params:
@@ -111,5 +111,5 @@ tune:
     infra/exp_root:
     - ts2/fmi_hdinov2_tile
     lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/dc0bfcd4_May02-23-35-53_sd1000_dev_tune0/models/eval/training_119999/teacher_checkpoint.pth
-    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/2e7833f0_Apr30-16-49-29_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/dc0bfcd4_May02-23-35-53_sd1000_dev_tune0/models/eval/training_119999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/2e7833f0_Apr30-16-49-29_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth

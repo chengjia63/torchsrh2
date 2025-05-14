@@ -11,7 +11,7 @@ from torchsrh.lightning_modules.hidisc_systems import HiDiscSystem
 from ts2.lm.mcm_systems import MCMSystem, CellIBOTSystem
 #from ts2.lm.mcm_dinov2_systems import MCMDinov2System
 from ts2.lm.cell_mil_system import CellABMILSystem
-from ts2.lm.ssl_systems import (FlattenSystem, SimCLRSystem, SupConSystem,
+from ts2.lm.ssl_systems import (FlattenSystem, SimCLRSystem, SupConSystem, SupConSystemOrig,
                                 VICRegSystem, IJEPASystem,
                                 InterPatchJEPASystem)
 from ts2.lm.dinov2_eval_system import Dinov2EvalSystem
@@ -39,6 +39,7 @@ lms = {
     "CellIBOTSystem": CellIBOTSystem,
     "MCMSystem": MCMSystem,
     "SupConSystem": SupConSystem,
+    "SupConSystemOrig": SupConSystemOrig,
     "SimCLRSystem": SimCLRSystem,
     #"SimSiamSystem": SimSiamSystem,
     #"BYOLSystem": BYOLSystem,

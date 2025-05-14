@@ -12,13 +12,15 @@ import pandas as pd
 from tqdm import tqdm
 from torchsrh.datasets.common import patch_code_to_list
 from ts2.data.meta_parser import GTParser, DiscriminationLevel
+from functools import partial
+import numpy as np
 
 
 class CellCSVParser():
 
-    def __init__(self, data_root: str, slide_cell_thres: int,
+    def __init__(self, data_root: str, patch_data_root:str, patch_seg_model:str,slide_cell_thres: int,
                  which_cell_filter: str, df: Union[pd.DataFrame, str],
-                 primary_label_idx: int):
+                 primary_label_idx: int, use_patch_code_as_label:bool=False):
 
         if type(df) is pd.DataFrame:
             self.df_name_ = "DataFrame"
@@ -29,7 +31,7 @@ class CellCSVParser():
 
         self.gt_parser_params_ = {
             "primary_label_idx": primary_label_idx,
-            "use_patch_code_as_label": False
+            "use_patch_code_as_label": use_patch_code_as_label
         }
         self.get_gt_ = GTParser(**self.gt_parser_params_)
 
@@ -39,6 +41,8 @@ class CellCSVParser():
 
         self.hyper_ = {
             "data_root": data_root,
+            "patch_data_root": patch_data_root,
+            "patch_seg_model": patch_seg_model,
             "slide_cell_thres": slide_cell_thres,
             "which_cell_filter": which_cell_filter
         }
@@ -124,7 +128,7 @@ class CellFilters():
 
     @staticmethod
     def exclude_lowconfidence(cell_meta: Dict) -> bool:
-        return cell_meta["score"] > 0.8
+        return cell_meta["score"] > 0.5
 
     @staticmethod
     def include_nuclei(cell_meta: Dict) -> bool:
@@ -160,12 +164,16 @@ class CellMetaParser():
             #inst_name: str,
             #patient_id: str,
             data_root: str,
+            patch_data_root: str,
+            patch_seg_model:str,
             which_cell_filter: str = "include_all_cells",
             slide_cell_thres: Optional[int] = None,
             get_patch_gt: Optional[Callable] = None):
         """Inits the SRH Metadata parser"""
 
         self.data_root_ = data_root
+        self.patch_data_root_ = patch_data_root
+        self.patch_seg_model_ = patch_seg_model
         self.slide_cell_thres_ = slide_cell_thres
         self.label_parser_ = get_patch_gt
         #self.patch_path_func_ = self.make_ts2_sc_memmap_path
@@ -183,6 +191,7 @@ class CellMetaParser():
 
         meta_fname = opj(self.data_root_, f"{slide_id_file}_meta.json")
         mmap_fname = opj(self.data_root_, f"{slide_id_file}_cells.dat")
+        patch_meta_fname = opj(self.patch_data_root_, slide_s["institution"], slide_s["patient"], f"{slide_s['patient']}_meta.json")
 
         if not (os.path.exists(meta_fname) and os.path.exists(mmap_fname)):
             logging.warning("Slide %s DNE", slide_id_train)
@@ -192,24 +201,42 @@ class CellMetaParser():
         with open(meta_fname) as fd:
             meta_s = json.load(fd)
 
-        # construct instance list
-        if keep_label and self.label_parser_:
-            label_c = {"label": self.label_parser_.get_gt(slide_s, None)}
-        elif keep_label:
-            label_c = {"label": None}
-        else:
-            label_c = {}
+        with open(patch_meta_fname) as fd: patch_meta = json.load(fd)
 
-        slide_instances = [{
-            "slide_id":
-            slide_id_train,
-            "patch_name":
-            curr_c["patch"].removeprefix(slide_id_train).removeprefix("-"),
-            "cell_idx":
-            i,
-            **label_c,
-        } for i, curr_c in enumerate(meta_s["cells"])
-                           if self.include_cell(curr_c)]
+        patch_seg_preds = patch_meta["slides"][slide_s["mosaic"]]["predictions"][self.patch_seg_model_]
+        patch_seg_preds = {item.removesuffix(".tif").removesuffix(".tiff"): key for key, values in patch_seg_preds.items() for item in values}
+
+        cells = pd.DataFrame(meta_s["cells"])
+        cells = cells[cells.apply(self.include_cell, axis=1)]
+
+        cells["patch_label"] = cells["patch"].apply(lambda x: patch_seg_preds[x])
+        cells = cells[cells["patch_label"].isin(patch_code_to_list(int(slide_s["patch_code"])))]
+
+
+        cells["slide_id"] = slide_id_train
+        cells["patch_name"] = cells["patch"].str.removeprefix(slide_id_train).str.removeprefix("-")
+        cells["cell_idx"] = np.arange(len(cells))
+
+        if keep_label and self.label_parser_:
+            cells["label"] = cells["patch_label"].apply(lambda i: self.label_parser_.get_gt(slide_s, i))
+        elif keep_label:
+            cells["label"] = None
+        else:
+            pass
+
+        cells = cells.drop(["patch", "celltype", "score", "bbox", "topleft", "is_edge", "patch_label"], axis=1)
+        slide_instances = list(cells.to_dict(orient="index").values())
+
+        # construct instance list
+        #slide_instances = [{
+        #    "slide_id":
+        #    slide_id_train,
+        #    "patch_name":
+        #    curr_c["patch"].removeprefix(slide_id_train).removeprefix("-"),
+        #    "cell_idx":
+        #    i,
+        #    cell_label
+        #} for i, curr_c in cells.iterrows()]
 
         # logging status
         if self.label_parser_:

@@ -107,16 +107,12 @@ tune:
     data/transform/test/params/base_aug_params/mask_params/how_to_process:
     - small_patch
     - small_patch
-    - small_patch
     infra/comment:
-    - smpt_SE_epoch0-step19999
-    - smpt_SE_epoch0-step19999
-    - smpt_SE_epoch0-step19999
+    - smpt_SE_epoch0-step119999
+    - smpt_SE_epoch0-step119999
     infra/exp_root:
     - ts2/fmi_hdinov2_tile
     - ts2/fmi_hdinov2_tile
-    - ts2/fmi_hdinov2_tile
     lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/216430e6_May10-13-03-25_sd1000_dev_tune0/models/eval/training_19999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/91b0acd7_May10-12-43-35_sd1000_dev_tune0/models/eval/training_19999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/6f51b8b5_May10-13-26-07_sd1000_dev_tune0/models/eval/training_19999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/91b0acd7_May10-12-43-35_sd1000_dev_tune0/models/eval/training_119999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/6f51b8b5_May10-13-26-07_sd1000_dev_tune0/models/eval/training_119999/teacher_checkpoint.pth

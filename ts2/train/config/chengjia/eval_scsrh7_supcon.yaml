@@ -1,0 +1,168 @@
+infra:
+  exp_name: ts2/hibot_tile #ts2/scsrh_ibot_fix_aug
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
+  comment: smpt_SE9
+  log_gpu: True
+  seed: 1000
+  float32_matmul_precision: medium
+#data:
+#  set: scsrh
+#  parser:
+#    which: CachedCSVParser
+#    params:
+#      cached_parser_file:
+#        test_databank: ../data/tsmeta/scsrh7_patchcode_label/9e8e36e4_cell40_train
+#        test: ../data/tsmeta/scsrh7_patchcode_label/9e8e36e4_cell40_trainval
+#        #train: ../data/tsmeta/srh7v1_sc/55e0deb2_cell_train
+#        #trainval: ../data/tsmeta/srh7v1_sc/55e0deb2_cell_trainval
+#  transform:
+#    test:
+#      which: HistologyTransform
+#      params:
+#        base_aug_params:
+#          laser_noise_config: null
+#          get_third_channel_params:
+#            mode: three_channels
+#            subtracted_base: 0.07629394531
+#          mask_params:
+#            how_to_process: small_patch #rm_background #
+#            bg_fill: [9957.5889, 10057.9795]
+#          #to_uint8: True
+#        strong_aug_params:
+#          aug_list:
+#          - which: center_crop_always_apply
+#            params:
+#              size: 48
+#          aug_prob: 1
+#  test_dataset:
+#    which: CellDataset # SingleLevelHierarchicalDataset
+#    which_process_read: cell_memmap
+#    params:
+#      data_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root2/
+#      num_transforms: 1
+#      balance_instance_class: False
+#      tumor_normal_only: True
+#    classes_reorder: [0, 1]
+#    camera_ready_classes: [Normal, Tumor]
+#  loader:
+#    params:
+#      common:
+#        pin_memory: False
+#        persistent_workers: False
+#        prefetch_factor: 8
+#        num_workers: 7
+#        batch_size: 256
+#        drop_last: False
+#        shuffle: False
+#      test: {}
+#      test_databank: {}
+
+
+data:
+  set: scsrh_bench
+  transform:
+    test:
+      which: HistologyTransform
+      params:
+        base_aug_params:
+          laser_noise_config: null
+          get_third_channel_params:
+            mode: three_channels
+            subtracted_base: 0.07629394531
+          mask_params:
+            how_to_process: small_patch # rm_background #small_patch
+            # bg_fill: [9957.5889, 10057.9795]
+          to_uint8: False
+        strong_aug_params:
+          aug_list:
+          - which: center_crop_always_apply
+            params:
+              size: 48
+          aug_prob: 1
+  test_dataset:
+    which: CellBenchDataset
+    params:
+      data_root: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/scbench/
+      slides_file: ../data/data/scbench/mosaic.csv
+      balance_instance_class: False
+      class_filter: ['glial/astrocytes', 'glial/neurons', 'glial/oligodendrocytes', 'glial/reactive_astrocytes', 'glioma/tumor_cells', 'immune/lymphocytes', 'immune/macrophages', 'metastatic/adenocarcinoma', 'metastatic/melanoma', 'metastatic/sarcoma', 'metastatic/squamous_cell']
+      #class_filter: ['glial/astrocytes', 'glial/neurons', 'glial/oligodendrocytes', 'glial/reactive_astrocytes', 'glioma/giant_cell', 'glioma/tumor_cells', 'immune/lymphocytes', 'immune/macrophages', 'metastatic/adenocarcinoma', 'metastatic/melanoma', 'metastatic/sarcoma', 'metastatic/squamous_cell', 'proliferation/mitotic_figures']
+    classes_reorder: [0, 1, 2, 3,4,5,6,7,8,9,10] #,11,12]
+    camera_ready_classes: ['Astrocytes', 'Neurons', 'Oligodendrocytes', 'RAstrocytes', 'Glioma', 'Lymphocytes', 'Macrophages', 'Adeno', 'Melanoma', 'Sarcoma', 'Squamous']
+    #camera_ready_classes: ['Astrocytes', 'Neurons', 'Oligodendrocytes', 'RAstrocytes', 'Giant Cell', 'Glioma', 'Lymphocytes', 'Macrophages', 'Adeno', 'Melanoma', 'Sarcoma', 'Squamous', 'Mitotic']
+  test_databank_dataset:
+    which: CellBenchDataset
+    params:
+      data_root: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/scbench/
+      slides_file: ../data/data/scbench/mosaic_train.csv
+      balance_instance_class: False
+      class_filter: ${...test_dataset.params.class_filter}
+    classes_reorder: ${..test_dataset.classes_reorder}
+    camera_ready_classes: ${..test_dataset.camera_ready_classes}
+  loader:
+    params:
+      common:
+        pin_memory: False
+        persistent_workers: False
+        prefetch_factor: 8
+        num_workers: 7
+        batch_size: 256
+        drop_last: False
+        shuffle: False
+      test: {}
+      test_databank: {}
+
+lightning_module:
+  which: SupConSystemOrig
+  params:
+    model_hyperparams:                                                          
+      backbone_cf:                                                              
+        which: vit_small
+        params:                                                                 
+          img_size: 48                                                          
+          patch_size: 4                                                         
+          global_pool: "token"                                                  
+          class_token: True                                                     
+          init_values: 1.0e-6                                                   
+      proj_params:                                                              
+        hidden_layers: [768, 768]                                               
+        n_out: 768                                                              
+        activation: relu                                                        
+        drop: 0                                                                 
+        bias: True
+testing:
+  eval_mode: knn
+  save_train_pred: True
+  #eval_predictions: 4cf5a93d_Oct14-23-29-19_sd1000_standaloneeval_37
+  knn:
+    do_knn: True
+    knn_params:
+      batch_size: 1536
+      k: 20
+      t: 0.07
+  tsne:
+    interactive: True
+    num_patches: [4096]
+    which_set: [val]
+    embed_images: true
+    class_params:
+      perplexity: 50
+      learning_rate: auto
+      init : pca
+  nn_viz:
+    query_set: val
+    n_sample: 32
+    target_set: val
+    exclude_same_patient: True
+    k: 40
+tune:
+  diagonal_items: true
+  params:
+    data/transform/test/params/base_aug_params/mask_params/how_to_process:
+    - small_patch
+    infra/comment:
+    - smpt_SEBENCH_epoch0-step7500
+    infra/exp_name:
+    - ts2/scsrh_ccft
+    testing/ckpt_path:
+    - 62eea157_May13-14-37-36_sd1000_smpt_1000_lr0.001_tune1/models/ckpt-epoch0-step7500-loss0.00.ckpt 

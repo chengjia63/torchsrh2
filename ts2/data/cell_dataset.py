@@ -64,8 +64,8 @@ class CellBenchDataset(BalanceableBaseDataset):
 
 
         def conditional_sample_indices(group, group_name):
-            #if False: 
-            if len(group) > 64:
+            if False: 
+            #if len(group) > 64:
             #if group_name in ["glioma/tumor_cells", "metastatic/adenocarcinoma", "metastatic/melanoma", "metastatic/sarcoma", "metastatic/squamous_cell"] and len(group) > 8:
                 return group.sample(n=64, replace=False).index
             return group.index
@@ -155,6 +155,7 @@ class CellDataset(BalanceableBaseDataset):
                  tensor_shape_map: Dict,
                  transform: callable,
                  target_transform: callable = torch.tensor,
+                 tumor_normal_only:bool = False,
                  num_transforms: int = 1,
                  process_read_im: callable = MemmapReader("srh"),
                  balance_instance_class=False,
@@ -174,6 +175,11 @@ class CellDataset(BalanceableBaseDataset):
 
         self.instances_ = instances
         self.tensor_shape_map = tensor_shape_map
+
+        if tumor_normal_only:
+            for i in self.instances_:
+                if not (i["label"] == "normal"):
+                    i["label"] = "tumor"
 
         if len(self.instances_) == 0:
             logging.warning("dataset empty")

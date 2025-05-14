@@ -9,13 +9,17 @@ data:
     params:
       common:
         data_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root2/
+        patch_data_root: /nfs/turbo/umms-tocho/root_srh_db/
+        patch_seg_model: 03207B00
         slide_cell_thres: null
         which_cell_filter: include_nuclei_exclude_edge_exclude_lowconfidence
         primary_label_idx: 0
+        use_patch_code_as_label: True
+        slide_cell_thres: 40
       train:
-        df: /nfs/turbo/umms-tocho/data/data_splits/srh7v1/srh7v1_train.csv
+        df: /nfs/turbo/umms-tocho/data/data_splits/srh7v1/srh7v1_diagnostic_train.csv
       trainval:
-        df: /nfs/turbo/umms-tocho/data/data_splits/srh7v1/srh7v1_test.csv
+        df: /nfs/turbo/umms-tocho/data/data_splits/srh7v1/srh7v1_diagnostic_test.csv
   transform: null
   dataset: null
   loader: null

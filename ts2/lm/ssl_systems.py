@@ -23,7 +23,8 @@ from ts2.models.pjepa import InterPatchJEPANetwork
 from ts2.models.ijepa import IJEPANetwork, apply_masks, repeat_interleave_batch
 from ts2.optim.utils import get_optimizer_scheduler
 
-
+from dinov2.models import build_model_from_cfg
+from dinov2.layers.dino_head import DINOHead
 class EvalBaseSystem(pl.LightningModule, ABC):
 
     @torch.inference_mode()
@@ -65,6 +66,119 @@ class FlattenSystem(pl.LightningModule, ABC):
     def test_step(self, batch, batch_idx, dataloader_idx):
         raise NotImplementedError()
 
+
+class SupConSystem(pl.LightningModule):
+    """Lightning system for SupCon experiment"""
+
+    def __init__(self,
+                 model_hyperparams,
+                 loss_params=None,
+                 opt_cf: Optional[Dict] = None,
+                 schd_cf: Optional[Dict] = None,
+                 training_params: Optional[Dict] = None):
+
+        super().__init__()
+
+        self.opt_cf_ = opt_cf
+        self.schd_cf_ = schd_cf
+        self.training_params_ = training_params
+
+        self.backbone, _, embed_dim = build_model_from_cfg(model_hyperparams.backbone)
+        self.head = DINOHead(in_dim=embed_dim, **model_hyperparams.head)
+        self.model = torch.nn.ModuleDict({"backbone": self.backbone, "head": self.head})
+
+        self.criterion = SupConLoss(**loss_params)
+
+        self.train_loss = torchmetrics.MeanMetric()
+        self.val_loss = torchmetrics.MeanMetric()
+        self.test_output = []
+
+        if self.opt_cf_: self.criterion = SupConLoss(**loss_params)
+
+    def forward(self, data):
+        return torch.cat([self.model(x)["emb"] for x in data["image"]], dim=1)
+
+    def training_step(self, batch, batch_idx):
+        images = [batch["image"][:, i, ...]  for i in range(batch["image"].shape[1])]
+        bb_out = self.model["backbone"](images, masks=[None] * len(images), is_training=True)
+        pred = torch.stack([self.model["head"](i["x_norm_clstoken"]) for i in bb_out], dim=1)
+        pred = torch.nn.functional.normalize(pred, dim=-1)
+
+        pred_gather = self.all_gather(pred, sync_grads=True)
+        pred_gather = pred_gather.reshape(-1, *pred_gather.shape[-2:])
+        label_gather = self.all_gather(batch["label"]).reshape(-1, 1)
+
+        loss = self.criterion(pred_gather, label_gather)["loss"]
+        bs = batch["image"][0].shape[0] * torch.distributed.get_world_size()
+        self.log("train/contrastive",
+                 loss,
+                 on_step=True,
+                 on_epoch=True,
+                 batch_size=bs,
+                 rank_zero_only=True)
+        self.train_loss.update(loss, weight=bs)
+        return loss
+
+    @torch.inference_mode()
+    def validation_step(self, batch, batch_idx):
+        bs = batch["image"][0].shape[0] * torch.distributed.get_world_size()
+        images = [batch["image"][:, i, ...]  for i in range(batch["image"].shape[1])]
+        bb_out = self.model["backbone"](images, masks=[None] * len(images), is_training=True)
+        pred = [self.model["head"](i["x_norm_clstoken"]) for i in bb_out]
+        pred = torch.stack(pred, dim=1)
+        pred = torch.nn.functional.normalize(pred, dim=-1)
+
+        pred_gather = self.all_gather(pred, sync_grads=True)
+        pred_gather = pred_gather.reshape(-1, *pred_gather.shape[-2:])
+        label_gather = self.all_gather(batch["label"]).reshape(-1, 1)
+
+        loss = self.criterion(pred_gather, label_gather)["loss"]
+
+        self.val_loss.update(loss, weight=bs)
+
+
+    def on_train_epoch_end(self):
+        train_loss = self.train_loss.compute()
+        self.log("train/contrastive_manualepoch",
+                 train_loss,
+                 on_epoch=True,
+                 sync_dist=True,
+                 rank_zero_only=True)
+        logging.info(f"train/contrastive_manualepoch {train_loss}")
+        self.train_loss.reset()
+        gc.collect()
+
+    def on_validation_epoch_end(self):
+        val_loss = self.val_loss.compute()
+        self.log("val/contrastive_manualepoch",
+                 val_loss,
+                 on_epoch=True,
+                 sync_dist=True,
+                 rank_zero_only=True)
+        logging.info(f"val/contrastive_manualepoch {val_loss}")
+        self.val_loss.reset()
+        gc.collect()
+
+    def configure_optimizers(self):
+        if not self.training_params_:
+            return None  # if not training, no optimizer
+
+        opt, sch = get_optimizer_scheduler(self.model,
+                                           opt_cf=self.opt_cf_,
+                                           schd_cf=self.schd_cf_,
+                                           **self.training_params_)
+
+        if sch:
+            # get learn rate scheduler
+            lr_scheduler_config = {
+                "scheduler": sch,
+                "interval": "step",
+                "frequency": 1,
+                "name": "lr"
+            }
+            return [opt], lr_scheduler_config
+        else:
+            return [opt]
 
 class ContrastiveBaseSystem(EvalBaseSystem):
     """Lightning system for contrastive learning experiments."""
@@ -190,7 +304,7 @@ class SimCLRSystem(ContrastiveBaseSystem):
         self.val_loss.update(loss, weight=bs)
 
 
-class SupConSystem(ContrastiveBaseSystem):
+class SupConSystemOrig(ContrastiveBaseSystem):
     """Lightning system for SupCon experiment"""
 
     def __init__(self, loss_params=None, **kwargs):
