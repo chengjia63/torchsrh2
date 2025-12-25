@@ -254,7 +254,7 @@ def setup_testing_output_dirs(cf: OmegaConf, eval_instance_name: str):
     return exp_root, config_dir, pred_dir, code_dir, results_dir, pred_fname
 
 
-@pl.utilities.rank_zero.rank_zero_only
+# @pl.utilities.rank_zero.rank_zero_only
 def config_loggers(exp_root):
     """Config logger for the experiments
     Sets string format and where to save.

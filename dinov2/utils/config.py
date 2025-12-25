@@ -17,15 +17,15 @@ from dinov2.configs import dinov2_default_config
 logger = logging.getLogger("dinov2")
 
 
-def apply_scaling_rules_to_cfg(cfg):  # to fix
+def apply_scaling_rules_to_cfg(cfg, world_size=distributed.get_global_size()):  # to fix
     if cfg.optim.scaling_rule == "sqrt_wrt_1024":
         base_lr = cfg.optim.base_lr
         cfg.optim.lr = base_lr
         cfg.optim.lr *= math.sqrt(cfg.train.batch_size_per_gpu *
                                   cfg.train.get("grad_accum", 1) *
-                                  distributed.get_global_size() / 1024.0)
+                                  world_size / 1024.0)
         logger.info(
-            f"sqrt scaling learning rate; base: {base_lr}, new: {cfg.optim.lr}"
+            f"sqrt scaling learning rate; worldsize {world_size},  base: {base_lr}, new: {cfg.optim.lr}"
         )
     else:
         raise NotImplementedError

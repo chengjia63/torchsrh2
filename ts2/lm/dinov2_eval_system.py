@@ -10,7 +10,9 @@ import uuid
 
 class Dinov2EvalSystem(pl.LightningModule):
 
-    def __init__(self, model_hyperparams, pretrained_weights, get_image_attn=False, ckpt_key="teacher"):
+    def __init__(self, model_hyperparams, pretrained_weights,
+                 get_image_attn=False, get_patch_tokens=False,
+                 ckpt_key="teacher"):
         super().__init__()
 
         if get_image_attn:
@@ -19,6 +21,7 @@ class Dinov2EvalSystem(pl.LightningModule):
             bm_func = build_model
 
         self.get_image_attn = get_image_attn
+        self.get_patch_tokens = get_patch_tokens
         self.teacher_backbone, _ = bm_func(model_hyperparams,
                                                only_teacher=True,
                                                img_size=model_hyperparams.get(
@@ -31,10 +34,10 @@ class Dinov2EvalSystem(pl.LightningModule):
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         #if batch_idx==5:
         #    torch.save(batch, f"{uuid.uuid4().hex[:8]}.pt")
-
+        
         assert batch["image"].shape[1] == 1
         if self.get_image_attn:
-            emb = self.teacher_backbone(batch["image"][:, 0, ...], return_attn=self.get_image_attn)
+            emb = self.teacher_backbone(batch["image"][:, 0, ...], return_attn=True)
             results = {
                 "path": [i for i in batch["path"]],
                 "label": batch["label"],
@@ -42,8 +45,22 @@ class Dinov2EvalSystem(pl.LightningModule):
                 "attns": emb["attns"]
             }
 
+            if self.get_patch_tokens:
+                results.update({
+                    "patch_embeddings": emb["x_norm_patchtokens"]
+                })
+        
+        elif self.get_patch_tokens:
+            emb, full_dict = self.teacher_backbone(batch["image"][:, 0, ...])
+            results = {
+                "path": batch["path"],
+                "label": batch["label"],
+                "embeddings": emb,
+                "patch_embeddings": full_dict["x_norm_patchtokens"],
+            }
+
         else:
-            emb = self.teacher_backbone(batch["image"][:, 0, ...])
+            emb, _ = self.teacher_backbone(batch["image"][:, 0, ...])
             results = {
                 "path": batch["path"],
                 "label": batch["label"],

@@ -1,6 +1,7 @@
 import os
 import math
 import numpy as np
+import time
 
 import random
 import logging
@@ -74,12 +75,15 @@ class CellBenchDataset(BalanceableBaseDataset):
         for _, s in slides.iterrows():
             meta = pd.read_csv(f"{data_root}/scbench_processed/{s['mosaic']}.csv")
 
-            sampled_indices = meta.groupby('annot_labels').apply(lambda grp: conditional_sample_indices(grp, grp.name)).explode()
+            sampled_indices = meta.groupby('annot_labels').apply(lambda grp: conditional_sample_indices(grp, grp.name)).explode().tolist()
 
             all_meta.append(meta.iloc[sampled_indices]["annot_labels"])
+
             all_images.append(
                 torch.load(f"{data_root}/scbench_processed/{s['mosaic']}.pt")[sampled_indices].to(torch.float))
+            
             all_paths.extend([f"scbench.{s['ttype']}.{s['mosaic']}@{i}" for i in sampled_indices])
+
 
         all_meta = pd.concat(all_meta)
         all_images = torch.cat(all_images)
@@ -204,7 +208,8 @@ class CellDataset(BalanceableBaseDataset):
 
         inst = self.instances_[idx]
         target = self.class_to_idx_[inst["label"]]
-
+        #im = torch.randint(high = 65536, size=(2,64,64))
+        #logging.info(inst)
         try:
             mmap_info = self.tensor_shape_map[inst["slide_id"]]
             mmap_path = self.make_im_path(mmap_info["path"])
@@ -475,8 +480,15 @@ class CellDatasetDINOv2(CellDataset):
         assert self.num_transforms_ == 0
 
     def __getitem__(self, idx: int) -> Dict[str, Any]:
+        #return (self.transform_(torch.randint(high = 65536, size=(2,64,64)).to(float)), 0)
 
+        #start = time.time()
         inst = self.instances_[idx]
+        #logging.info({
+        #    'slide_id': inst["slide_id"],
+        #    'patch_name': inst["patch_name"],
+        #    'cell_idx': inst["cell_idx"], 
+        #})
         target = self.class_to_idx_[inst["label"]]
 
         try:
@@ -488,8 +500,21 @@ class CellDatasetDINOv2(CellDataset):
             logging.error("bad_file - {}".format(inst.im_path))
             return {"image": None, "label": None, "path": [None]}
 
+
+        #end1 = time.time()
+
         im = self.transform_(im)
         if self.target_transform_ is not None:
             target = self.target_transform_(target)
 
+        #end2 = time.time()
+
+        #logging.info({
+        #    'slide_id': inst["slide_id"],
+        #    'patch_name': inst["patch_name"],
+        #    'cell_idx': inst["cell_idx"], 
+        #    "time0": end1 - start,
+        #    "time1": end2 - start,
+        #    "times": times
+        #})
         return im, target

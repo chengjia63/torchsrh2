@@ -42,17 +42,17 @@ def fair_setup(cf, exp_root, model_dir):
     """
 
     default_cf = OmegaConf.create(dinov2_default_config)
-
+    world_size = cf['infra']['SLURM_JOB_NUM_NODES'] * cf['infra']['SLURM_GPUS_ON_NODE']
     if "dinov2_fair_config" in cf:
         fair_cf = OmegaConf.merge(default_cf, cf["dinov2_fair_config"])
         fair_cf.train.output_dir = model_dir
-        apply_scaling_rules_to_cfg(fair_cf)
+        apply_scaling_rules_to_cfg(fair_cf, world_size=world_size)
         cf.dinov2_fair_config = fair_cf
 
     else:
         global_cf = cf.dinov2_main_config
         global_cf.train.output_dir = model_dir
-        apply_scaling_rules_to_cfg(global_cf)
+        apply_scaling_rules_to_cfg(global_cf, world_size=world_size)
         cf.dinov2_main_config = global_cf
 
         cf.tile_dinov2_fair_config.compute_precision = default_cf.compute_precision
@@ -174,8 +174,6 @@ def main():
                      dataset=dm.train_dataset_,
                      tb_writer=tb_writer,
                      resume=not cf["ts_wrap_config"].get("no_resume", True))
-
-
 
 
 if __name__ == "__main__":

@@ -206,6 +206,7 @@ class SSLMetaArch(nn.Module):
             p.requires_grad = False
         logger.info(f"Student and Teacher are built: they are both {cfg.student.arch} network.")
 
+        
     def forward(self, inputs):
         raise NotImplementedError
 
@@ -222,6 +223,9 @@ class SSLMetaArch(nn.Module):
 
         global_crops = images["collated_global_crops"].cuda(non_blocking=True)
         local_crops = images["collated_local_crops"].cuda(non_blocking=True)
+
+        #torch.save(images, "out.pt")
+        #exit(0)
 
         masks = images["collated_masks"].cuda(non_blocking=True)
         mask_indices_list = images["mask_indices_list"].cuda(non_blocking=True)
@@ -372,6 +376,7 @@ class SSLMetaArch(nn.Module):
 
             # accumulate loss
             loss_accumulator += self.dino_loss_weight * dino_local_crops_loss
+            #loss_accumulator += 0.0 * dino_local_crops_loss
 
         # process global crops
         loss_scales = 2  # this is here since we process global crops together
@@ -393,6 +398,7 @@ class SSLMetaArch(nn.Module):
 
             # accumulate loss
             loss_accumulator += self.dino_loss_weight * dino_global_crops_loss
+            #loss_accumulator += 0.0 * dino_global_crops_loss
 
             student_cls_tokens = student_global_cls_tokens
 

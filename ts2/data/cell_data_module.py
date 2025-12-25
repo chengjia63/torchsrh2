@@ -170,7 +170,7 @@ class CellDataModule(pl.LightningDataModule):
                 else:
                     testdb_xform =  transforms[self.xform_config_.test.which](
                         which_set=self.set_, **self.xform_config_.test.params)
-                
+
                 if self.loader_config_:
                     if check_collate_fn_which(self.loader_config_.params,
                                               "test_databank") in defer_sxf_collators:

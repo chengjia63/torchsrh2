@@ -14,7 +14,7 @@ import torch
 
 from dinov2.data import SamplerType, make_data_loader
 from dinov2.data import collate_data_and_cast, MaskingGenerator
-from dinov2.data.collate import collate_tile_data_and_cast_fmi, collate_data_and_cast_with_context
+from dinov2.data.collate import (collate_tile_data_and_cast_fmi, collate_data_and_cast_with_context,CellCollator)
 import dinov2.distributed as distributed
 from dinov2.fsdp import FSDPCheckpointer
 from dinov2.logging import MetricLogger
@@ -23,6 +23,8 @@ from dinov2.utils.utils import CosineScheduler
 
 from dinov2.train.ssl_meta_arch import SSLMetaArch
 from dinov2.fsdp import rankstr
+
+from dinov2.data.masking import OuterBiasedTokenMasker
 
 torch.backends.cuda.matmul.allow_tf32 = True  # PyTorch 1.12 sets this to False by default
 logger = logging.getLogger("dinov2")
@@ -186,21 +188,49 @@ def do_train(cfg, model, dataset, tb_writer, resume=False):
     img_size = cfg.crops.global_crops_size
     patch_size = cfg.student.patch_size
     n_tokens = (img_size // patch_size)**2
-    mask_generator = MaskingGenerator(
-        input_size=(img_size // patch_size, img_size // patch_size),
-        max_num_patches=0.5 * img_size // patch_size * img_size // patch_size,
-    )
 
-    collate_fn = partial(
-        #collate_data_and_cast, # original
-        #collate_tile_data_and_cast_fmi, # for our tile dataset
-        collate_data_and_cast_with_context, # for our tile dataset with context
-        mask_ratio_tuple=cfg.ibot.mask_ratio_min_max,
-        mask_probability=cfg.ibot.mask_sample_probability,
-        n_tokens=n_tokens,
-        mask_generator=mask_generator,
-        dtype=inputs_dtype,
-    )
+    which_masker = cfg.train.get("masker", {}).get("which", "MaskingGenerator")
+    if which_masker == "MaskingGenerator":
+        mask_generator = MaskingGenerator(
+            input_size=(img_size // patch_size, img_size // patch_size),
+            max_num_patches=0.5 * img_size // patch_size * img_size // patch_size,
+        )
+    elif which_masker == "OuterBiasedTokenMasker":
+        mask_generator = OuterBiasedTokenMasker(
+                        mask_size=img_size // patch_size,
+                        **cfg.train.masker.params)
+
+    else:
+        raise ValueError()
+
+    which_collate = cfg.train.get("collate", {}).get("which", "collate_data_and_cast")
+
+    if which_collate == "CellCollator":
+        collate_fn = CellCollator(
+            mask_ratio_tuple=cfg.ibot.mask_ratio_min_max,
+            mask_probability=cfg.ibot.mask_sample_probability,
+            n_tokens=n_tokens,
+            mask_generator=mask_generator,
+            dtype = inputs_dtype,
+            **cfg.train.collate.params
+        )
+    else:
+        if which_collate == "collate_data_and_cast":
+            collate_fn_obj = collate_data_and_cast # dinov2 built in 
+        elif which_collate == "collate_tile_data_and_cast_fmi":
+            collate_fn_obj = collate_tile_data_and_cast_fmi # for our tiling in patch dataset
+        elif which_collate == "collate_data_and_cast_with_context":
+            collate_fn_obj = collate_data_and_cast_with_context # for our tile dataset with context
+
+        collate_fn = partial(
+            collate_fn_obj,
+            mask_ratio_tuple=cfg.ibot.mask_ratio_min_max,
+            mask_probability=cfg.ibot.mask_sample_probability,
+            n_tokens=n_tokens,
+            mask_generator=mask_generator,
+            dtype=inputs_dtype,
+        )
+
 
     # sampler_type = SamplerType.INFINITE
     sampler_type = SamplerType.SHARDED_INFINITE
@@ -215,6 +245,7 @@ def do_train(cfg, model, dataset, tb_writer, resume=False):
         0,  # TODO(qas): fix this -- start_iter * cfg.train.batch_size_per_gpu,
         drop_last=True,
         collate_fn=collate_fn,
+        persistent_workers=True,
     )
 
     # training loop
@@ -234,6 +265,9 @@ def do_train(cfg, model, dataset, tb_writer, resume=False):
             start_iter,
     ):
 
+        if distributed.is_enabled():
+            torch.distributed.barrier()
+            logging.info(f"[Rank {distributed.get_local_rank()}] reached start")
         current_batch_size = data["collated_global_crops"].shape[0] / 2
         if iteration > max_iter:
             return
@@ -251,6 +285,9 @@ def do_train(cfg, model, dataset, tb_writer, resume=False):
         optimizer.zero_grad(set_to_none=True)
         loss_dict = model.forward_backward(data, teacher_temp=teacher_temp)
 
+        #if distributed.is_enabled():
+        #    torch.distributed.barrier()
+        #    logging.info(f"[Rank {distributed.get_local_rank()}] reached loss_dict")
         # clip gradients
 
         if fp16_scaler is not None:
@@ -270,6 +307,9 @@ def do_train(cfg, model, dataset, tb_writer, resume=False):
 
         model.update_teacher(mom)
 
+        #if distributed.is_enabled():
+        #    torch.distributed.barrier()
+        #    logging.info(f"[Rank {distributed.get_local_rank()}] reached update_teacher")
         # logging
 
         if distributed.get_global_size() > 1:
@@ -304,6 +344,10 @@ def do_train(cfg, model, dataset, tb_writer, resume=False):
             tb_log_items.update(loss_dict_reduced)
             for k in tb_log_items:
                 tb_writer.add_scalar(k, tb_log_items[k], iteration)
+        
+        #if distributed.is_enabled():
+        #    torch.distributed.barrier()
+        #    logging.info(f"[Rank {distributed.get_local_rank()}] reached posttb")
 
         # checkpointing and testing
         if cfg.evaluation.eval_period_iterations > 0 and (
@@ -313,6 +357,11 @@ def do_train(cfg, model, dataset, tb_writer, resume=False):
         periodic_checkpointer.step(iteration)
 
         iteration = iteration + 1
+
+        #if distributed.is_enabled():
+        #    torch.distributed.barrier()
+        #    logging.info(f"[Rank {distributed.get_local_rank()}] reached endloop")
+
     metric_logger.synchronize_between_processes()
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 

@@ -144,31 +144,67 @@ class SingleCellTokenBandShuffleCollator(): # used for pertubation evaluations
         else:
             return fg_im * (fg_mask) + bg_im * (1-fg_mask)
 
-
     def __call__(self, raw_batch):
         all_images = torch.stack([i["image"]
                                   for i in raw_batch])  # b aug c h w
         assert all_images.shape[1] == 1
-        fg = all_images[:, 0, ...]
+        fg = torch.clone(all_images[:, 0, ...])
         #fg_clean = torch.clone(all_images[:, 0, ...]) # for viz
+
         bg = torch.clone(all_images[:, 0, ...])
         bg = bg[torch.randperm(len(bg))]
+
         fg = self.blend_batch(fg, bg)
 
         fg = torch.stack([self.transform(i) for i in fg[:, :3, ...]])
-        bg = torch.stack([self.transform(i) for i in bg[:, :3, ...]])
+        #bg = torch.stack([self.transform(i) for i in bg[:, :3, ...]])
 
         #torch.save({
         #        "alt_fg": fg,
         #        "bg": bg,
         #        "fg_clean": fg_clean,
-        #    }, "out.pt")
+        #    }, "band_perturb3.pt")
+        #exit(0)
 
         return {
             "image": fg.unsqueeze(1),
             "label": torch.stack([i["label"] for i in raw_batch]),
             "path": [[i["path"][0] for i in raw_batch]]
         }
+
+    #def __call__(self, raw_batch):
+    #    import copy
+    #    seed = 42
+    #    torch.manual_seed(seed)
+    #    perm = torch.randperm(len(raw_batch))
+    #    for j in range(7):
+    #        self.band_width = j+2
+    #        all_images = torch.stack([i["image"]
+    #                                  for i in copy.deepcopy(raw_batch)])  # b aug c h w
+    #        assert all_images.shape[1] == 1
+    #        fg = torch.clone(all_images[:, 0, ...])
+    #        fg_clean = torch.clone(all_images[:, 0, ...]) # for viz
+    #        bg = torch.clone(all_images[:, 0, ...])
+
+    #        bg = bg[perm]
+
+    #        fg = self.blend_batch(fg, bg)
+
+    #        fg = torch.stack([self.transform(i) for i in fg[:, :3, ...]])
+    #        bg = torch.stack([self.transform(i) for i in bg[:, :3, ...]])
+
+    #        torch.save({
+    #                "alt_fg": fg,
+    #                "bg": bg,
+    #                "fg_clean": fg_clean,
+    #            }, f"band_perturb{j}.pt")
+    #    exit(0)
+
+    #    return {
+    #        "image": fg.unsqueeze(1),
+    #        "label": torch.stack([i["label"] for i in raw_batch]),
+    #        "path": [[i["path"][0] for i in raw_batch]]
+    #    }
 
 class CellMILCollator(object):
     def __init__(self):

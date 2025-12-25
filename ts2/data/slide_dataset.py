@@ -13,7 +13,32 @@ from ts2.data.db_improc import MemmapReader, MemmapTileReader
 from ts2.data.balanceable_dataset import BalanceableBaseDataset
 from itertools import chain
 import random
+import os
+import pandas as pd
 
+class SRHPatchCoordMapper():
+
+    @staticmethod
+    def _to_universal_single(x):
+        return x[0] // 1000 * 3 + x[1] // 300
+
+    @staticmethod
+    def to_universal_coord(srh_coord):
+        first = SRHPatchCoordMapper._to_universal_single(
+            (srh_coord[0], srh_coord[2]))
+        second = SRHPatchCoordMapper._to_universal_single(
+            (srh_coord[1], srh_coord[3]))
+        return (first, second)
+
+    @staticmethod
+    def to_universal_patch_name(srh_patch_name):
+        nio_num, slide_num, patch_coord_str = srh_patch_name.split("-")
+
+        srh_coord = tuple(int(x) for x in patch_coord_str.split("_"))
+        uni_coord = SRHPatchCoordMapper.to_universal_coord(srh_coord)
+        #print(f"{patch_coord_str}\t{uni_coord[0]:04d}-{uni_coord[1]:04d}")
+        return "-".join(
+            [nio_num, slide_num, f"{uni_coord[0]:04d}", f"{uni_coord[1]:04d}"])
 
 class HierarchicalBaseDataset(BalanceableBaseDataset, ABC):
     """Patient Base Dataset. Abstract class.
@@ -219,6 +244,100 @@ class SLHSVSingleTileDatasetDINOV2(
 
         return im, target
 
+
+class SLHSVSingleTileCellProposalDatasetDINOV2(
+        SLHSVSingleTileDatasetDINOV2):
+
+    def __init__(self, sc_proposal_root, **kwargs):
+        super().__init__(**kwargs)
+        assert not kwargs.get("balance_instance_class")
+        assert not kwargs.get("num_sample_wo_replacement")
+
+        self.proposals_ = {}
+
+
+        for i in tqdm(self.instances_):
+            s = i["name"]
+            slide_meta = opj(sc_proposal_root, f"{s}-meta.csv")
+
+            assert os.path.exists(opj(sc_proposal_root, f"{s}-meta.csv"))
+
+            try:
+                cp = pd.read_csv(slide_meta)
+            except pd.errors.EmptyDataError:
+                logging.warning(f"No cells -- {slide_meta}")
+                i["patches"] = []
+                continue
+
+            cp["centroid_r"] = cp["centroid_r"].round().astype(int)
+            cp["centroid_c"] = cp["centroid_c"].round().astype(int)
+
+            cp_filt = cp[
+                cp["celltype"].isin({"nuclei", "mp"}) &
+                (cp["score"] > 0.5) &
+                (self.tile_size/2 <= cp["centroid_r"])&
+                (cp["centroid_r"] <= 300-self.tile_size/2) &
+                (self.tile_size/2 <= cp["centroid_c"])&
+                (cp["centroid_c"] <= 300-self.tile_size/2)
+            ]
+            
+            cp_filt = pd.DataFrame({
+                "patch": cp_filt["patch"],
+                "proposal": zip(cp_filt["centroid_r"], cp_filt["centroid_c"])
+            })
+
+            cp_filt.loc[:, "patch"] = cp_filt["patch"].apply(
+                SRHPatchCoordMapper.to_universal_patch_name
+            ).apply(lambda x: "-".join(x.split("-")[-2:]))
+
+            
+            cp_filt = cp_filt.groupby("patch").agg(list).to_dict()["proposal"]
+            patch_keep = set(cp_filt.keys())
+
+            i["patches"] = [j for j in self.instances_[0]["patches"]
+                             if j["patch_name"] in patch_keep]
+            
+            self.proposals_.update({s: cp_filt})
+
+        #import pdb; pdb.set_trace()
+        for i in self.instances_:
+            if not len(i["patches"]):    
+                print(i["name"])
+
+        self.instances_ = [i for i in self.instances_
+            if len(i["patches"])]    
+
+        logging.info(f"Num instances {len(self.instances_)}; "+
+            f"num slide with proposals {len(self.proposals_)}")
+       
+        
+
+    @torch.no_grad()
+    def read_images(self, inst: Dict):
+        """Read in a list of patches, different patches and transformations"""
+
+        #patches_list = inst["patches"]
+        im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
+        #mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
+
+    
+        tensor_shape = tuple(self.tensor_shape_map[inst["name"]]["shape"])
+        rc_idx = random.sample(self.proposals_[inst["name"]][inst["patches"][im_id[0]]["patch_name"]], k=1)[0]
+        rc_idx = (rc_idx[0]-self.tile_size//2, rc_idx[1]-self.tile_size//2)
+        #rc_idx = (np.random.randint(tensor_shape[1]-self.tile_size),
+        #          np.random.randint(tensor_shape[2]-self.tile_size))
+
+        
+        images = self.process_read_im_(
+            self.make_im_path(self.tensor_shape_map[inst["name"]]["path"]),
+            tensor_shape, im_id, rc_idx, self.tile_size)
+        
+        im_id = None
+        assert self.transform_ is not None
+        images = self.transform_(images.squeeze())
+        return images
+
+
 class SingleLevelHierarchicalDatasetMultipleViewDINOV2(
         SingleLevelHierarchicalDataset):
 
@@ -258,7 +377,6 @@ class SingleLevelHierarchicalDatasetMultipleViewDINOV2(
             target = self.target_transform_(target)
 
         return im, target
-
 
 
 class SLHTileSVDatasetDINOv2(SingleLevelHierarchicalDatasetSingleViewDINOV2):

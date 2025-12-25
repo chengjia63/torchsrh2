@@ -31,7 +31,7 @@ from ts2.train.common import setup_checkpoints
 from ts2.train.infra import (parse_args, read_process_cf, setup_infra_training,
                              setup_infra_testing, get_rank)
 
-from ts2.eval.common import get_knn_logits, load_prediction
+from ts2.eval.common import get_knn_logits, load_prediction, get_knn_logits_exclude_slide
 from ts2.eval.eval_modules import do_eval
 from ts2.eval.cell_mil_eval_modules import do_cell_mil_eval
 
@@ -300,7 +300,12 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
 
     # knn inference
     if do_knn:
-        pred["val"] = get_knn_logits(cf, pred["train"], pred["val"])
+        which_knn = cf.testing.knn.get("which", "knn")
+        if which_knn == "knn":
+            pred["val"] = get_knn_logits(cf, pred["train"], pred["val"])
+        elif which_knn == "knn_exclude_slide":
+            pred["val"] = get_knn_logits_exclude_slide(cf, pred["train"], pred["val"])
+
 
         val_pred_fname = opj(pred_dir, "val_predictions.pt.gz")
         with gzip.open(val_pred_fname, "w") as fd:

@@ -7,7 +7,7 @@ import torchvision
 from torchvision.transforms.functional import to_tensor
 import einops
 import logging
-
+import time
 
 def instantiate_process_read(which: str, which_set: Optional[str] = "srh"):
     """Returns the proper process read function"""
@@ -40,15 +40,20 @@ class CellMemmapReader():
         Returns:
             A 2 channel torch Tensor in the shape 2 * H * W
         """
+
+        #start = time.time()
         fd = np.memmap(mm_path,
                        dtype=self.dtype_,
                        mode="r",
                        shape=tensor_shape)
+        #t1 = time.time()
         im = np.array(fd[patch_idx, ...])
         fd._mmap.close()
         del fd
-        return torch.from_numpy(im.astype(np.float32)).to(
-            torch.float32).contiguous()
+        #t2 = time.time()
+        data = torch.from_numpy(im).to(torch.float32).contiguous()
+        #t3 = time.time()
+        return data#, (t1-start,t2-start,t3-start)
 
 
 class MemmapReader():

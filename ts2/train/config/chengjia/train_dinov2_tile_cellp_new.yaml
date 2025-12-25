@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/fmi_hdinov2_tile
+  exp_name: ts2/fmi_dinov2_cc_new
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -13,6 +13,7 @@ data:
     params:
       cached_parser_file:
         train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srhum/bf99b89c_slide_all
+        #train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srhum/bf99b89c_slide_toy
         trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srhum/bf99b89c_slide_toy
         #train: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_all
         #trainval: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_toy
@@ -30,17 +31,18 @@ data:
           to_uint8: False
         strong_aug_params:
           aug_list:
-          - which: dinov2_nonorm_always_apply
+          - which: CellAugmentationDINO_always_apply
             params: ${........dinov2_fair_config.crops}
           aug_prob: 1
     trainval: ${.train}
   dataset:
-    which: SLHSVSingleTileDatasetDINOV2
+    which: SLHSVSingleTileCellProposalDatasetDINOV2
     which_process_read: memmap_tile
     params:
       common:
         data_root: /nfs/turbo/umms-tocho-snr/data/root_histology_db/srh/
-        tile_size: 48
+        sc_proposal_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root_gen2
+        tile_size: 64
         num_transforms: 0
         num_samples: 1
         num_instance_self_replicate: 1
@@ -55,31 +57,43 @@ ts_wrap_config:
   #  ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/dinov2/base/pytorch_model.bin
 dinov2_fair_config:
   dino:
-    head_n_prototypes: 65536 #1024
-    head_bottleneck_dim: 384
-  ibot:
-    separate_head: true
-    head_n_prototypes: 65536 #1024
+    head_n_prototypes: 1024
+    #head_bottleneck_dim: 384
+  #ibot:
+  #  separate_head: true
+  #  head_n_prototypes: 65536
   train:
-    batch_size_per_gpu: 384 #704
-    centering: sinkhorn_knopp
+    batch_size_per_gpu: 384
+    #centering: sinkhorn_knopp
+    num_workers: 8
+    collate:
+      which: CellCollator
+      params:
+        omb_params:
+          mask_size: 12
+          token_size: 4
+          dist_power: 2.0
+          sharpness_range: [0.2,10]
+          n_mask_token_perct_range: [0.5, 0.5]
   student:
     arch: vit_small
     patch_size: 4
-    drop_path_rate: 0.4
-    ffn_layer: swiglufused
+    #drop_path_rate: 0.4
+    #ffn_layer: swiglufused
     block_chunks: 4
   teacher:
-    momentum_teacher: 0.996
+    momentum_teacher: 0.992
   optim:
     epochs: 100
-    weight_decay_end: 0.2
+    #weight_decay_end: 0.2
     base_lr: 2.0e-04  # learning rate for a batch size of 1024
     warmup_epochs: 10
-    layerwise_decay: 1.0
+    #layerwise_decay: 1.0
   crops:
     global_crops_size: 48
-    local_crops_size: 20
+    local_crops_size: 48
+    local_crops_number: 4
+
   evaluation:                                                                   
     eval_period_iterations: 5000 
 tune:

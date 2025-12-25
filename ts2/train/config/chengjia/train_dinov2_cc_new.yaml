@@ -1,0 +1,109 @@
+infra:
+  exp_name: ts2/fmi_dinov2_cc_new
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
+  comment: dev
+  log_gpu: True
+  seed: 1000
+  float32_matmul_precision: medium
+
+data:
+  set: scsrh
+  parser:
+    which: CachedCSVParser
+    params:
+      cached_parser_file:
+#        train: ../data/tsmeta/srh7v1_sc/55e0deb2_cell_train                    
+#        trainval: ../data/tsmeta/srh7v1_sc/55e0deb2_cell_trainval    
+#         train: ../data/tsmeta/scsrh7_patchcode_label/45c59d84_cell_train
+#         trainval: ../data/tsmeta/scsrh7_patchcode_label/45c59d84_cell_trainval  
+        train: ../data/tsmeta/scsrh7_patchcode_label/0f008cdd_cell_train
+        trainval: ../data/tsmeta/scsrh7_patchcode_label/0f008cdd_cell_trainval
+  transform:
+    train:
+      which: HistologyTransform
+      params:
+        base_aug_params:
+          laser_noise_config: null
+          get_third_channel_params:
+            mode: three_channels
+            subtracted_base: 0.07629394531
+          mask_params:
+            how_to_process: small_patch #rm_background #
+            bg_fill: [9957.5889, 10057.9795]
+          #to_uint8: True
+          to_uint8: False
+        strong_aug_params:
+          aug_list:
+          #- which: center_crop_always_apply
+          #  params:
+          #    size: 48
+          #- which: srh_instance_norm_always_apply
+          #  params: {}
+          - which: CellAugmentationDINO_always_apply
+            params: ${........dinov2_fair_config.crops}
+          aug_prob: 1
+    trainval: ${.train}
+  dataset:
+    which: CellDatasetDINOv2
+    which_process_read: cell_memmap
+    params:
+      common:
+        data_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root2/
+        num_transforms: 0
+        balance_instance_class: False
+      train: {}
+      trainval: {}
+ts_wrap_config:
+  no_resume: True
+  #load_uni_ckpt:
+  #  do: True
+  #  ckpt_path: /nfs/mm-isilon/brainscans/dropbox/exp/models/dinov2/base/pytorch_model.bin
+dinov2_fair_config:
+  dino:
+    head_n_prototypes: 1024 #65536
+  #  head_bottleneck_dim: 384
+  #ibot:
+  #  separate_head: true
+  #  head_n_prototypes: 65536
+  train:
+    batch_size_per_gpu: 512
+    #centering: sinkhorn_knopp
+    num_workers: 8
+    collate:
+      which: CellCollator
+      params:
+        omb_params:
+          mask_size: 12
+          token_size: 4
+          dist_power: 2.0
+          sharpness_range: [0.2,10]
+          n_mask_token_perct_range: [0.5,0.75]
+  student:
+    arch: vit_small
+    patch_size: 4
+    #drop_path_rate: 0.4
+    #ffn_layer: swiglufused
+    block_chunks: 1
+  teacher:
+    momentum_teacher: 0.992
+  optim:
+    epochs: 100
+    #weight_decay_end: 0.2
+    base_lr: 2.0e-04  # learning rate for a batch size of 1024
+    warmup_epochs: 10
+    #layerwise_decay: 1.0
+  crops:
+    global_crops_size: 48
+    local_crops_size: 48
+    local_crops_number: 3
+  evaluation:                                                                   
+    eval_period_iterations: 5000 
+tune:
+  diagonal_items: False
+  params:
+    dinov2_fair_config/optim/base_lr:
+    - 1.0e-3
+    - 5.0e-4
+    dinov2_fair_config/teacher/momentum_teacher:
+    - 0.992
+    - 0.994

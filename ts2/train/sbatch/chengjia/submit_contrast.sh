@@ -32,21 +32,26 @@
 #SBATCH --account=tocho_owned1
 #------------------------------------------------------------------------------
 # SBATCH --nodelist=armis26004
-#SBATCH --exclude=armis2600[0-1]
+# SBATCH --exclude=armis2600[0-1]
 #------------------------------------------------------------------------------
-#SBATCH --time=14-00:00:00
+#SBATCH --time=5-00:00:00
 # SBATCH --time=27:00:00
 # SBATCH --time=16:00:00
 #------------------------------------------------------------------------------
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:2
-#SBATCH --ntasks-per-node=2
+#SBATCH --gres=gpu:4
+#SBATCH --ntasks-per-node=4
 #------------------------------------------------------------------------------
 #SBATCH --array=0
 #------------------------------------------------------------------------------
 
 set -x
 set -e
+
+#export NCCL_DEBUG=INFO
+#export NCCL_DEBUG_SUBSYS=ALL
+#export TORCH_NCCL_TRACE_BUFFER_SIZE=16777216
+#export CUDA_LAUNCH_BLOCKING=1
 
 #srun python main.py -c=config/chengjia/train_pjepa_tcga.yaml
 #srun python main.py -c=config/chengjia/train_modsimclr_tcga.yaml
@@ -76,5 +81,17 @@ set -e
 #srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmitds_finetuned.yaml
 
 #srun python main_dinov2.py -c=config/chengjia/train_mcmmcm_dinov2_fmitds_finetuned.yaml
-srun python main_dinov2.py -c=config/chengjia/train_pic.yaml
+#srun python main_dinov2.py -c=config/chengjia/train_pic.yaml
 #srun python main_dinov2.py -c=config/chengjia/train_mcm_dinov2_fmitds_nouint8.yaml
+#srun python main.py -c=config/chengjia/train_supcon_scsrh7.yaml
+#srun python main.py -c=config/chengjia/train_supcon_scsrh7_orig.yaml
+
+#srun python main_dinov2.py -c=config/chengjia/train_dinov2_cc.yaml
+
+#srun python main_dinov2.py -c=config/chengjia/train_dinov2_tile_cellp.yaml
+#srun python main_dinov2.py -c=config/chengjia/train_dinov2_tile_cellp_new.yaml
+srun python main_dinov2.py -c=config/chengjia/train_dinov2_tile_cellp_new_aggressive.yaml
+#srun python main_dinov2.py -c=config/chengjia/train_dinov2_cc_new.yaml
+#srun python main_dinov2.py -c=config/chengjia/train_dinov2_ncc.yaml
+#srun python main_dinov2.py -c=config/chengjia/train_dinov2_cc_noloco.yaml
+#srun python main_dinov2.py -c=config/chengjia/tile/train_mcm_dinov2_fmitds_nouint8.yaml

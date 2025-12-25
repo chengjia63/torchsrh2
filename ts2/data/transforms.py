@@ -24,8 +24,13 @@ from torchvision.transforms.functional import adjust_contrast, adjust_brightness
 from torch import Tensor
 from torchvision.transforms import InterpolationMode
 
-from dinov2.data.augmentations import (DataAugmentationDINO, DataAugmentationDINONoNormalize,
-                                       DataAugmentationHiDiscDINO, TileDataAugmentationDINO, TileContextMultiCropDataAugmentationDINO, TileContextMultiCropDataAugmentationNoNormalizeDINO)
+from dinov2.data.augmentations import (DataAugmentationDINO,
+                                       DataAugmentationDINONoNormalize,
+                                       AggressiveDataAugmentationDINONoNormalize,
+                                       DataAugmentationHiDiscDINO,
+                                       TileDataAugmentationDINO,
+                                       TileContextMultiCropDataAugmentationDINO,
+                                       TileContextMultiCropDataAugmentationNoNormalizeDINO,CellAugmentationDINO)
 from dinov2.data.transforms import (make_normalize_transform)
 
 
@@ -123,6 +128,18 @@ class SCSRHBaseTransform(torch.nn.Module):
 def srh_to_uint8_func(x):
     return (adjust_brightness(adjust_contrast(x, 2), 3) * 255).to(torch.uint8)
 
+
+class SRHInstanceNorm(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.instance_norm = torch.nn.InstanceNorm2d(num_features=3)
+        self.mean = torch.tensor([0.0872, 0.1546, 0.1604]).unsqueeze(-1).unsqueeze(-1)
+        self.std = torch.tensor([0.0444, 0.0939, 0.0560]).unsqueeze(-1).unsqueeze(-1)
+
+    def __call__(self, image):
+        return (self.instance_norm(image) * self.std + self.mean).clamp(0, 1)
+
+
 class SRHBaseTransform(torch.nn.Module):
     """Base transformations for SRH training."""
 
@@ -217,10 +234,13 @@ class StrongTransform(torch.nn.Module):
             "dinov2_always_apply": DataAugmentationDINO,
             "tile_dinov2_always_apply": TileDataAugmentationDINO,
             "dinov2_nonorm_always_apply": DataAugmentationDINONoNormalize,
+            "aggressive_dinov2_nonorm_always_apply": AggressiveDataAugmentationDINONoNormalize,
             "tile_n_context_mc_dinov2_always_apply": TileContextMultiCropDataAugmentationDINO,
             "tile_n_context_mc_dinov2_nonorm_always_apply": TileContextMultiCropDataAugmentationNoNormalizeDINO,
+            "CellAugmentationDINO_always_apply": CellAugmentationDINO,
             "center_crop_always_apply": CenterCrop,
             "center_resized_crop_always_apply": CenterResizedCrop,
+            "srh_instance_norm_always_apply": SRHInstanceNorm,
             "resize": Resize,
             "normalize_always_apply": Normalize,
             "dinov2_normalize_always_apply": Dinov2Normalization,

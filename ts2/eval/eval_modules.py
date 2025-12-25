@@ -555,6 +555,12 @@ class EvalBaseModule(ABC):
             n_samples=[n_query_samples])[query_set].sort_index()
         tgt_pred = preds[self.cf_.testing.nn_viz.target_set]
 
+        query_pred["slide"] = query_pred["path"].apply(self.get_slide_id)
+        query_pred["patch"] = query_pred["path"].apply(self.get_patch_id)
+        tgt_pred["slide"] = tgt_pred["path"].apply(self.get_slide_id)
+        tgt_pred["patch"] = tgt_pred["path"].apply(self.get_patch_id)
+
+
         query_feat = torch.tensor([d for d in query_pred["embeddings"]])
         tgt_feat = torch.tensor([d for d in tgt_pred["embeddings"]])
 
@@ -567,6 +573,7 @@ class EvalBaseModule(ABC):
         else:
             mask = None
 
+        #import pdb; pdb.set_trace()
         sim = self.compute_emb_sim_top_k(query_feat,
                                          tgt_feat,
                                          k=self.cf_.testing.nn_viz.k,

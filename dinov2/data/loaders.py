@@ -215,6 +215,7 @@ def make_data_loader(
         drop_last=drop_last,
         persistent_workers=persistent_workers,
         collate_fn=collate_fn,
+        prefetch_factor=8
     )
 
     try:

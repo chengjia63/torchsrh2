@@ -6,7 +6,7 @@
 import random
 import math
 import numpy as np
-
+import torch
 
 class MaskingGenerator:
     def __init__(
@@ -84,3 +84,53 @@ class MaskingGenerator:
                 mask_count += delta
 
         return mask
+
+class OuterBiasedTokenMasker():
+    def __init__(self,
+                 mask_size:int,
+                 dist_power:float=2.0,
+                 sharpness_range=[1, 5],
+                 device='cpu', dtype=torch.float32):
+        """
+        Args:
+            mask_size (int): size of the square mask (mask_size x mask_size).
+            power (float): strength of the bias toward outer elements.
+            device (str): device to use for tensors ('cpu' or 'cuda').
+            dtype (torch.dtype): dtype for probability tensor.
+        """
+        self.mask_size = mask_size
+        self.device = device
+        self.dtype = dtype
+        self.sharpness_range = sharpness_range
+
+        # Precompute distance
+        x = torch.arange(mask_size, device=device, dtype=dtype)
+        y = torch.arange(mask_size, device=device, dtype=dtype)
+        yy, xx = torch.meshgrid(x, y, indexing='ij')
+
+        cx, cy = (mask_size - 1) / 2, (mask_size - 1) / 2
+        dist2 = (xx - cx) ** dist_power + (yy - cy) ** dist_power
+        self.norm_dist = dist2 / dist2.max()  # normalize to [0, 1]
+
+    def __call__(self, num_masked) -> torch.Tensor:
+        """
+        Sample a k x k binary mask with num_masked entries = 1, biased toward outer region.
+
+        Args:
+            num_masked (int): number of tokens to mask.
+
+        Returns:
+            torch.Tensor: mask of shape (k, k), dtype=torch.uint8.
+        """
+        sharpness = random.uniform(*self.sharpness_range)
+        prob = self.norm_dist.pow(sharpness)
+        prob = (prob / prob.sum()).flatten()
+        flat_mask = torch.zeros(self.mask_size * self.mask_size, dtype=torch.uint8, device=self.device)
+        if num_masked == 0:
+            return (flat_mask.view(self.mask_size, self.mask_size)).to(bool)   
+        else:
+            idx = torch.multinomial(prob, num_samples=num_masked, replacement=False)
+            flat_mask[idx] = 1
+            return (flat_mask.view(self.mask_size, self.mask_size)).to(bool)
+
+

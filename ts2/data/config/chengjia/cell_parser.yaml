@@ -12,10 +12,14 @@ data:
         patch_data_root: /nfs/turbo/umms-tocho/root_srh_db/
         patch_seg_model: 03207B00
         slide_cell_thres: null
-        which_cell_filter: include_nuclei_exclude_edge_exclude_lowconfidence
+        cell_filter_params: 
+          exclude_edge: True
+          exclude_edge_check_pixel_values: True
+          confidence_threshold: 0.5
+          class_filter: ["nuclei", "macrophage"]
         primary_label_idx: 0
         use_patch_code_as_label: True
-        slide_cell_thres: 40
+        slide_cell_thres: 10
       train:
         df: /nfs/turbo/umms-tocho/data/data_splits/srh7v1/srh7v1_diagnostic_train.csv
       trainval:

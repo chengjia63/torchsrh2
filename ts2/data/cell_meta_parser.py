@@ -14,12 +14,12 @@ from torchsrh.datasets.common import patch_code_to_list
 from ts2.data.meta_parser import GTParser, DiscriminationLevel
 from functools import partial
 import numpy as np
-
+from omegaconf import OmegaConf
 
 class CellCSVParser():
 
     def __init__(self, data_root: str, patch_data_root:str, patch_seg_model:str,slide_cell_thres: int,
-                 which_cell_filter: str, df: Union[pd.DataFrame, str],
+                 cell_filter_params: Dict, df: Union[pd.DataFrame, str],
                  primary_label_idx: int, use_patch_code_as_label:bool=False):
 
         if type(df) is pd.DataFrame:
@@ -44,7 +44,7 @@ class CellCSVParser():
             "patch_data_root": patch_data_root,
             "patch_seg_model": patch_seg_model,
             "slide_cell_thres": slide_cell_thres,
-            "which_cell_filter": which_cell_filter
+            "cell_filter_params": cell_filter_params
         }
         self.cmp_ = CellMetaParser(
             get_patch_gt=self.get_gt_,
@@ -70,12 +70,11 @@ class CellCSVParser():
         params["df"] = self.df_name_
         params["instance_len"] = len(inst)
         params["labels"] = sorted({i["label"] for i in inst})
-
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
 
         with open(opj(cache_dir, "meta.json"), "w", encoding="utf-8") as fd:
-            json.dump(params, fd, indent=2)
+            json.dump(OmegaConf.to_container(OmegaConf.create(params)), fd, indent=2)
         with open(opj(cache_dir, "instances.json"), "w",
                   encoding="utf-8") as fd:
             json.dump(inst, fd)
@@ -94,7 +93,6 @@ class CellCSVParser():
             if cells_s:
                 instances.extend(cells_s)
                 tensor_shapes.update({id_s: ts_s})
-
         return instances, tensor_shapes
 
     def get_slide_instances(
@@ -115,32 +113,31 @@ class CellCSVParser():
                 tensor_shapes.update({id_s: ts_s})
         return slide_instances, tensor_shapes
 
+class CellFilter():
+    def __init__(self, exclude_edge:bool=True,
+                 exclude_edge_check_pixel_values:bool=True,
+                 confidence_threshold:float=0.5,
+                 class_filter:List[str]=["nuclei"]):
+        self.exclude_edge = exclude_edge
+        self.exclude_edge_check_pixel_values = exclude_edge_check_pixel_values
+        self.confidence_threshold = confidence_threshold
+        self.class_filter = class_filter
 
-class CellFilters():
+    def __call__(self, cell_meta:Dict):
+        if self.exclude_edge:
+            if cell_meta["is_edge"]:
+                return False
+            if self.exclude_edge_check_pixel_values and not (cell_meta["pixel_edge_check"]):
+                return False
 
-    @staticmethod
-    def include_all(_: Dict) -> bool:
+        if cell_meta["score"] < self.confidence_threshold:
+            return False
+
+        if not (cell_meta["celltype"] in self.class_filter):
+            return False
+
         return True
-
-    @staticmethod
-    def exclude_edge(cell_meta: Dict) -> bool:
-        return not cell_meta["is_edge"]
-
-    @staticmethod
-    def exclude_lowconfidence(cell_meta: Dict) -> bool:
-        return cell_meta["score"] > 0.5
-
-    @staticmethod
-    def include_nuclei(cell_meta: Dict) -> bool:
-        return cell_meta["celltype"] == "nuclei"
-
-    @staticmethod
-    def include_nuclei_exclude_edge_exclude_lowconfidence(cell_meta):
-        return (CellFilters.exclude_edge(cell_meta)
-                and CellFilters.exclude_lowconfidence(cell_meta)
-                and CellFilters.include_nuclei(cell_meta))
-
-
+        
 class CellMetaParser():
     """Parser to work with MLiNS internal SRH dataset metadata files
 
@@ -166,7 +163,7 @@ class CellMetaParser():
             data_root: str,
             patch_data_root: str,
             patch_seg_model:str,
-            which_cell_filter: str = "include_all_cells",
+            cell_filter_params: Dict,
             slide_cell_thres: Optional[int] = None,
             get_patch_gt: Optional[Callable] = None):
         """Inits the SRH Metadata parser"""
@@ -176,8 +173,7 @@ class CellMetaParser():
         self.patch_seg_model_ = patch_seg_model
         self.slide_cell_thres_ = slide_cell_thres
         self.label_parser_ = get_patch_gt
-        #self.patch_path_func_ = self.make_ts2_sc_memmap_path
-        self.include_cell = CellFilters.__dict__[which_cell_filter]
+        self.include_cell = CellFilter(**cell_filter_params)
 
     def process_slide(self, slide_s: pd.Series, keep_label: bool):  # one slide
 
@@ -203,10 +199,24 @@ class CellMetaParser():
 
         with open(patch_meta_fname) as fd: patch_meta = json.load(fd)
 
+        if self.include_cell.exclude_edge_check_pixel_values:
+            cell_mmap_fd = np.memmap(mmap_fname,
+                           dtype="uint16",
+                           mode="r",
+                           shape=tuple(meta_s["tensor_shape"]))
+            cell_center_sample = np.array(cell_mmap_fd[:,-1,30:34,30:34])
+            cell_mmap_fd._mmap.close()
+            del cell_mmap_fd
+            pixel_check = np.any(cell_center_sample.reshape((len(cell_center_sample), -1)), axis=-1)
+        else:
+            pixel_check = np.ones(meta_s["tensor_shape"][0], dtype=bool)
+
+
         patch_seg_preds = patch_meta["slides"][slide_s["mosaic"]]["predictions"][self.patch_seg_model_]
         patch_seg_preds = {item.removesuffix(".tif").removesuffix(".tiff"): key for key, values in patch_seg_preds.items() for item in values}
 
         cells = pd.DataFrame(meta_s["cells"])
+        cells["pixel_edge_check"] = pixel_check
         cells = cells[cells.apply(self.include_cell, axis=1)]
 
         cells["patch_label"] = cells["patch"].apply(lambda x: patch_seg_preds[x])

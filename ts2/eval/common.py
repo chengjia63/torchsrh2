@@ -161,10 +161,64 @@ def get_knn_logits_simpleshot(cf, train_predictions, val_predictions):
     return val_predictions
 
 
+def get_knn_logits_exclude_slide(cf, train_predictions, val_predictions):
+    if "logits" in val_predictions:
+        logging.warning("found existing logits. deleting for re-knn eval")
+        del val_predictions["logits"]
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    torch.cuda.empty_cache()
+    with torch.no_grad():
+
+        train_embs = torch.nn.functional.normalize(
+            train_predictions["embeddings"], p=2, dim=1).T.to(device)
+        val_embs = torch.nn.functional.normalize(val_predictions["embeddings"],
+                                                 p=2,
+                                                 dim=1)
+        train_labels = train_predictions["label"].to(device)
+        batch_size = cf["testing"]["knn"]["knn_params"]["batch_size"]
+
+
+
+        train_nion = pd.DataFrame({"path": train_predictions["path"]})["path"].str.extract("((?:NIO|INV)_[A-Z]+_[0-9]+[a-zA-Z]*)")
+        val_nion = pd.DataFrame({"path": val_predictions["path"]})["path"].str.extract("((?:NIO|INV)_[A-Z]+_[0-9]+[a-zA-Z]*)")
+
+        adj = np.array(( val_nion[0].values[:, None] == train_nion[0].values[None, :])).squeeze()
+
+
+
+        all_scores = []
+        for k in tqdm(range(val_embs.shape[0] // batch_size + 1)):
+            # find current minibatch
+            start_coeff = batch_size * k
+            end_coeff = min(batch_size * (k + 1),
+                            val_embs.shape[0])  # leftover
+            val_embs_k = val_embs[start_coeff:end_coeff].to(
+                device)  # 1536 x 2048
+
+            # knn predict on the minibatch
+            _, pred_scores = knn_predict(
+                val_embs_k,
+                train_embs,
+                train_labels,
+                len(cf["data"]["test_dataset"]["classes_reorder"]),
+                knn_k=cf["testing"]["knn"]["knn_params"]["k"],
+                knn_t=cf["testing"]["knn"]["knn_params"]["t"],
+                mask = adj[start_coeff:end_coeff, :])
+
+            # add to list
+            all_scores.append(
+                torch.nn.functional.normalize(pred_scores, p=1, dim=1).to("cpu"))
+            torch.cuda.empty_cache()
+
+    # add to predictions dict
+    val_predictions["logits"] = torch.vstack(all_scores)
+    return val_predictions
+
+
 # code for kNN prediction from here:
 # https://colab.research.google.com/github/facebookresearch/moco/blob/colab-notebook/colab/moco_cifar10_demo.ipynb
 def knn_predict(feature, feature_bank, feature_labels, classes: int,
-                knn_k: int, knn_t: float):
+                knn_k: int, knn_t: float, mask=None):
     """Helper method to run kNN predictions on features based on a feature bank
     Args:
         feature: Tensor of shape [B, D] consisting of N D-dimensional features
@@ -176,6 +230,10 @@ def knn_predict(feature, feature_bank, feature_labels, classes: int,
     """
     # compute cos similarity between each feature vector and feature bank ---> [B, N]
     sim_matrix = torch.mm(feature, feature_bank)
+
+    if mask is not None:
+        sim_matrix[torch.tensor(mask).to(bool)] = torch.inf
+
     # [B, K]
     sim_weight, sim_indices = sim_matrix.topk(k=knn_k, dim=-1)
     # [B, K]

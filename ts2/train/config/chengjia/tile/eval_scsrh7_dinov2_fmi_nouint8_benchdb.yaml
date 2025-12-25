@@ -29,6 +29,8 @@ data:
           to_uint8: False
         strong_aug_params:
           aug_list:
+          - which: srh_instance_norm_always_apply
+            params: {}
           - which: center_crop_always_apply
             params:
               size: 48
@@ -174,5 +176,5 @@ tune:
     infra/exp_root:
     - ts2/fmi_hdinov2_tile
     lightning_module/params/pretrained_weights:
-    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/dc0bfcd4_May02-23-35-53_sd1000_dev_tune0/models/eval/training_119999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/2e7833f0_Apr30-16-49-29_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/9baaa202_May06-17-06-06_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_hdinov2_tile/2e7833f0_Apr30-16-49-29_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
