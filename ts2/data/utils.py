@@ -5,6 +5,8 @@ from typing import List, Tuple
 from ts2.data.mask_collator import MBMaskCollator
 import time
 import itertools
+from dinov2.data.collate import OuterBiasedMasker,OuterCircularMasker
+
 
 class SingleCellBlendedCollator(): # augmentation at training time - early exp
 
@@ -206,6 +208,85 @@ class SingleCellTokenBandShuffleCollator(): # used for pertubation evaluations
     #        "path": [[i["path"][0] for i in raw_batch]]
     #    }
 
+
+class SingleCellTokenMaskShuffleCollator:  # used for perturbation evaluations
+    def __init__(self,
+                 mask_generator_which,
+                 mask_generator_params,
+                 strong_transforms,
+                 use_mean: bool = False):
+        """
+        Args:
+            mask_generator: callable with signature () -> 2D mask (H, W)
+                Typically an instance of OuterCircularMasker.
+            strong_transforms: augmentation pipeline applied to blended images.
+            use_mean (bool): if True, background is replaced by per-image mean.
+        """
+        if mask_generator_which=="OuterBiasedMasker":
+            self.mask_generator = OuterBiasedMasker(**mask_generator_params)
+        elif mask_generator_which=="OuterCircularMasker":
+            self.mask_generator = OuterCircularMasker(**mask_generator_params)
+        else:
+            assert False
+
+        self.transform = strong_transforms
+        self.use_mean = use_mean
+
+
+    def blend_batch(self, fg_im, bg_im, fg_mask):
+        """
+        fg_im: (B, C, H, W)
+        bg_im: (B, C, H, W)
+        fg_mask: (B, H, W), uint8/bool, 1=fg, 0=bg
+        """
+        fg_mask = fg_mask.to(device=fg_im.device, dtype=fg_im.dtype)
+        fg_mask = fg_mask.unsqueeze(1)                        # (B, 1, H, W)
+        fg_mask = fg_mask.expand(-1, fg_im.shape[1], -1, -1)  # (B, C, H, W)
+
+        if self.use_mean:
+            bg_mean = bg_im.mean(dim=[2,3], keepdim=True)     # (B, C, 1, 1)
+            return fg_im * fg_mask + bg_mean * (1 - fg_mask)
+        else:
+            return fg_im * fg_mask + bg_im * (1 - fg_mask)
+
+    def __call__(self, raw_batch):
+        # all_images: (B, aug, C, H, W)
+        all_images = torch.stack([i["image"] for i in raw_batch])
+        assert all_images.shape[1] == 1  # one view per sample
+
+        # Take first (and only) aug
+        fg = torch.clone(all_images[:, 0, ...])  # (B, C, H, W)
+
+        # Build shuffled background
+        bg = torch.clone(all_images[:, 0, ...])  # (B, C, H, W)
+        bg = bg[torch.randperm(len(bg))]
+
+        B, C, H, W = fg.shape
+
+        # Generate one mask per sample via the mask_generator
+        # mask_generator() -> (H, W) with values in {0,1}
+        masks = torch.stack(
+            [1 - self.mask_generator().to(fg.device) for _ in range(B)],  # (B, H, W)
+            dim=0,
+        )
+
+        # Blend foreground/background using the masks
+        fg_blended = self.blend_batch(fg, bg, masks)  # (B, C, H, W)
+
+        # Apply strong transforms (per-sample)
+        # You were slicing [:3]; keep that if your transform expects up to 3 channels.
+        fg_aug = torch.stack(
+            [self.transform(img) for img in fg_blended[:, :3, ...]],
+            dim=0,
+        )
+
+        return {
+            "image": fg_aug.unsqueeze(1),  # (B, 1, C, H, W) to match original API
+            "label": torch.stack([i["label"] for i in raw_batch]),
+            "path": [[i["path"][0] for i in raw_batch]],
+        }
+
+
 class CellMILCollator(object):
     def __init__(self):
         super(CellMILCollator, self).__init__()
@@ -224,7 +305,8 @@ def get_collate_fn(which, params):
         "MBMaskCollator": MBMaskCollator,
         "SingleCellBlendedCollator": SingleCellBlendedCollator,
         "CellMILCollator": CellMILCollator,
-        "SingleCellTokenBandShuffleCollator": SingleCellTokenBandShuffleCollator
+        "SingleCellTokenBandShuffleCollator": SingleCellTokenBandShuffleCollator,
+        "SingleCellTokenMaskShuffleCollator": SingleCellTokenMaskShuffleCollator
     }
     return collate_list[which](**params)
 

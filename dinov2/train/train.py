@@ -14,7 +14,7 @@ import torch
 
 from dinov2.data import SamplerType, make_data_loader
 from dinov2.data import collate_data_and_cast, MaskingGenerator
-from dinov2.data.collate import (collate_tile_data_and_cast_fmi, collate_data_and_cast_with_context,CellCollator)
+from dinov2.data.collate import (collate_tile_data_and_cast_fmi, collate_data_and_cast_with_context, CellCollator)
 import dinov2.distributed as distributed
 from dinov2.fsdp import FSDPCheckpointer
 from dinov2.logging import MetricLogger
