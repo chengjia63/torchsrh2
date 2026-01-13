@@ -267,7 +267,7 @@ def do_train(cfg, model, dataset, tb_writer, resume=False):
 
         if distributed.is_enabled():
             torch.distributed.barrier()
-            logging.info(f"[Rank {distributed.get_local_rank()}] reached start")
+            #logging.info(f"[Rank {distributed.get_local_rank()}] reached start")
         current_batch_size = data["collated_global_crops"].shape[0] / 2
         if iteration > max_iter:
             return

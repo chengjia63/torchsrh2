@@ -16,17 +16,29 @@ from dinov2.data.transforms import (
 )
 from dinov2.data.augmentations import GaussianNoise
 
-def collate_data_and_cast(samples_list, mask_ratio_tuple, mask_probability, dtype, n_tokens=None, mask_generator=None):
+
+def collate_data_and_cast(samples_list,
+                          mask_ratio_tuple,
+                          mask_probability,
+                          dtype,
+                          n_tokens=None,
+                          mask_generator=None):
     # dtype = torch.half  # TODO: Remove
     #torch.save(samples_list, "noaug_sample_list.pt")
     #exit(0)
     n_global_crops = len(samples_list[0][0]["global_crops"])
     n_local_crops = len(samples_list[0][0]["local_crops"])
 
-    collated_global_crops = torch.stack([s[0]["global_crops"][i] for i in range(n_global_crops) for s in samples_list])
+    collated_global_crops = torch.stack([
+        s[0]["global_crops"][i] for i in range(n_global_crops)
+        for s in samples_list
+    ])
 
     if n_local_crops:
-        collated_local_crops = torch.stack([s[0]["local_crops"][i] for i in range(n_local_crops) for s in samples_list])
+        collated_local_crops = torch.stack([
+            s[0]["local_crops"][i] for i in range(n_local_crops)
+            for s in samples_list
+        ])
     else:
         collated_local_crops = torch.empty(collated_global_crops.shape)
 
@@ -39,7 +51,9 @@ def collate_data_and_cast(samples_list, mask_ratio_tuple, mask_probability, dtyp
     for i in range(0, n_samples_masked):
         prob_min = probs[i]
         prob_max = probs[i + 1]
-        masks_list.append(torch.BoolTensor(mask_generator(int(N * random.uniform(prob_min, prob_max)))))
+        masks_list.append(
+            torch.BoolTensor(
+                mask_generator(int(N * random.uniform(prob_min, prob_max)))))
         upperbound += int(N * prob_max)
     for i in range(n_samples_masked, B):
         masks_list.append(torch.BoolTensor(mask_generator(0)))
@@ -49,30 +63,47 @@ def collate_data_and_cast(samples_list, mask_ratio_tuple, mask_probability, dtyp
     collated_masks = torch.stack(masks_list).flatten(1)
     mask_indices_list = collated_masks.flatten().nonzero().flatten()
 
-    masks_weight = (1 / collated_masks.sum(-1).clamp(min=1.0)).unsqueeze(-1).expand_as(collated_masks)[collated_masks]
+    masks_weight = (1 / collated_masks.sum(-1).clamp(min=1.0)
+                    ).unsqueeze(-1).expand_as(collated_masks)[collated_masks]
 
     return {
-        "collated_global_crops": collated_global_crops.to(dtype),
-        "collated_local_crops": collated_local_crops.to(dtype),
-        "collated_masks": collated_masks,
-        "mask_indices_list": mask_indices_list,
-        "masks_weight": masks_weight,
-        "upperbound": upperbound,
-        "n_masked_patches": torch.full((1,), fill_value=mask_indices_list.shape[0], dtype=torch.long),
+        "collated_global_crops":
+        collated_global_crops.to(dtype),
+        "collated_local_crops":
+        collated_local_crops.to(dtype),
+        "collated_masks":
+        collated_masks,
+        "mask_indices_list":
+        mask_indices_list,
+        "masks_weight":
+        masks_weight,
+        "upperbound":
+        upperbound,
+        "n_masked_patches":
+        torch.full((1, ),
+                   fill_value=mask_indices_list.shape[0],
+                   dtype=torch.long),
     }
 
 
+def collate_data_and_cast_with_context(samples_list,
+                                       mask_ratio_tuple,
+                                       mask_probability,
+                                       dtype,
+                                       n_tokens=None,
+                                       mask_generator=None):
 
-def collate_data_and_cast_with_context(samples_list, mask_ratio_tuple, mask_probability, dtype, n_tokens=None, mask_generator=None):
-    
-    data = collate_data_and_cast(samples_list, mask_ratio_tuple,
-        mask_probability, dtype, n_tokens=n_tokens,
-        mask_generator=mask_generator)
+    data = collate_data_and_cast(samples_list,
+                                 mask_ratio_tuple,
+                                 mask_probability,
+                                 dtype,
+                                 n_tokens=n_tokens,
+                                 mask_generator=mask_generator)
     data["context"] = torch.stack([i[0]["context"] for i in samples_list])
     return data
 
 
-def create_mask(B,N, mask_ratio_tuple, mask_probability, mask_generator):
+def create_mask(B, N, mask_ratio_tuple, mask_probability, mask_generator):
     n_samples_masked = int(B * mask_probability)
     probs = torch.linspace(*mask_ratio_tuple, n_samples_masked + 1)
     upperbound = 0
@@ -80,7 +111,9 @@ def create_mask(B,N, mask_ratio_tuple, mask_probability, mask_generator):
     for i in range(0, n_samples_masked):
         prob_min = probs[i]
         prob_max = probs[i + 1]
-        masks_list.append(torch.BoolTensor(mask_generator(int(N * random.uniform(prob_min, prob_max)))))
+        masks_list.append(
+            torch.BoolTensor(
+                mask_generator(int(N * random.uniform(prob_min, prob_max)))))
         upperbound += int(N * prob_max)
     for i in range(n_samples_masked, B):
         masks_list.append(torch.BoolTensor(mask_generator(0)))
@@ -90,27 +123,83 @@ def create_mask(B,N, mask_ratio_tuple, mask_probability, mask_generator):
     collated_masks = torch.stack(masks_list).flatten(1)
     mask_indices_list = collated_masks.flatten().nonzero().flatten()
 
-    masks_weight = (1 / collated_masks.sum(-1).clamp(min=1.0)).unsqueeze(-1).expand_as(collated_masks)[collated_masks]
+    masks_weight = (1 / collated_masks.sum(-1).clamp(min=1.0)
+                    ).unsqueeze(-1).expand_as(collated_masks)[collated_masks]
+    n_masked_patches = torch.full((1, ),
+                                  fill_value=mask_indices_list.shape[0],
+                                  dtype=torch.long)
 
     return {
         "collated_masks": collated_masks,
         "mask_indices_list": mask_indices_list,
         "masks_weight": masks_weight,
         "upperbound": upperbound,
-        "n_masked_patches": torch.full((1,), fill_value=mask_indices_list.shape[0], dtype=torch.long),
+        "n_masked_patches": n_masked_patches
     }
 
 
-def collate_tile_data_and_cast_fmi(samples_list, mask_ratio_tuple, mask_probability, dtype, n_tokens=None, mask_generator=None):
+def create_mask_with_bgswap_mask(B, N, mask_ratio_tuple, mask_probability,
+                                 mask_generator, bgswap_mask_generator):
+    n_samples_masked = int(B * mask_probability)
+    probs = torch.linspace(*mask_ratio_tuple, n_samples_masked + 1)
+    upperbound = 0
+    masks_list = []
+    for i in range(0, n_samples_masked):
+        prob_min = probs[i]
+        prob_max = probs[i + 1]
+        masks_list.append(
+            torch.BoolTensor(
+                mask_generator(int(N * random.uniform(prob_min, prob_max)))))
+        upperbound += int(N * prob_max)
+    for i in range(n_samples_masked, B):
+        masks_list.append(torch.BoolTensor(mask_generator(0)))
+
+    random.shuffle(masks_list)
+
+    collated_masks = torch.stack(masks_list).flatten(1)
+    mask_indices_list = collated_masks.flatten().nonzero().flatten()
+    bgs_fg_masks = 1 - torch.stack([
+        bgswap_mask_generator(return_flat_mask=True)
+        for _ in range(len(masks_list))
+    ])
+    masks_weight = (1 / (collated_masks * bgs_fg_masks).sum(-1).clamp(min=1.0)
+                    ).unsqueeze(-1).expand_as(collated_masks)[collated_masks]
+    n_masked_patches = torch.full((1, ),
+                                  fill_value=mask_indices_list.shape[0],
+                                  dtype=torch.long)
+    return {
+        "collated_masks": collated_masks,
+        "mask_indices_list": mask_indices_list,
+        "masks_weight": masks_weight,
+        "upperbound": upperbound,
+        "n_masked_patches": n_masked_patches,
+        #"bgswap_masked_masks": collated_masks * bgs_fg_masks,
+    }
+
+
+def collate_tile_data_and_cast_fmi(samples_list,
+                                   mask_ratio_tuple,
+                                   mask_probability,
+                                   dtype,
+                                   n_tokens=None,
+                                   mask_generator=None):
     # dtype = torch.half  # TODO: Remove
     n_global_crops = len(samples_list[0][0]["global_crops"])
     n_local_crops = len(samples_list[0][0]["local_crops"])
 
-    collated_global_crops = torch.stack([torch.stack([s[0]["global_crops"][i] for i in range(n_global_crops)]) for s in samples_list])
-    collated_global_crops = einops.rearrange(collated_global_crops, "b v t c h w -> (v b t) c h w").contiguous()
+    collated_global_crops = torch.stack([
+        torch.stack([s[0]["global_crops"][i] for i in range(n_global_crops)])
+        for s in samples_list
+    ])
+    collated_global_crops = einops.rearrange(
+        collated_global_crops, "b v t c h w -> (v b t) c h w").contiguous()
 
-    collated_local_crops = torch.stack([torch.stack([s[0]["local_crops"][i] for i in range(n_local_crops)]) for s in samples_list])
-    collated_local_crops = einops.rearrange(collated_local_crops, "b v t c h w -> (v b t) c h w").contiguous()
+    collated_local_crops = torch.stack([
+        torch.stack([s[0]["local_crops"][i] for i in range(n_local_crops)])
+        for s in samples_list
+    ])
+    collated_local_crops = einops.rearrange(
+        collated_local_crops, "b v t c h w -> (v b t) c h w").contiguous()
 
     images = {
         "collated_global_crops": collated_global_crops.to(dtype),
@@ -119,10 +208,10 @@ def collate_tile_data_and_cast_fmi(samples_list, mask_ratio_tuple, mask_probabil
     B = len(collated_global_crops)
     N = n_tokens
 
-    images.update(create_mask(B,N,mask_ratio_tuple, mask_probability, mask_generator))
+    images.update(
+        create_mask(B, N, mask_ratio_tuple, mask_probability, mask_generator))
 
     return images
-
 
 
 def collate_tile_patch_data_and_cast_fmi(samples_list,
@@ -147,10 +236,6 @@ def collate_tile_patch_data_and_cast_fmi(samples_list,
         patch_mask_generator)
 
     return images
-
-
-
-
 
 
 class OuterBiasedMasker():
@@ -192,7 +277,7 @@ class OuterBiasedMasker():
                                           dtype=torch.uint8,
                                           device=device)
 
-    def __call__(self) -> torch.Tensor:
+    def __call__(self, return_flat_mask=False) -> torch.Tensor:
         """
         Sample a k x k binary mask with num_masked entries = 1, biased toward outer region.
 
@@ -215,11 +300,15 @@ class OuterBiasedMasker():
                                 replacement=False)
         flat_mask[idx] = 1
         base_mask = flat_mask.view(self.mask_size, self.mask_size)
-        return torch.kron(base_mask, self.upsample_kernel)
-
+        upsampled_full_mask = torch.kron(base_mask, self.upsample_kernel)
+        if return_flat_mask:
+            return flat_mask
+        else:
+            return upsampled_full_mask
 
 
 class OuterCircularMasker:
+
     def __init__(
         self,
         mask_size: int,
@@ -281,48 +370,44 @@ class OuterCircularMasker:
         cx = (mask_size - 1) / 2.0
         cy = (mask_size - 1) / 2.0
 
-        dist2 = (xx - cx) ** 2 + (yy - cy) ** 2  # [mask_size, mask_size]
-        self.dist2_flat = dist2.reshape(-1)      # [num_tokens]
+        dist2 = (xx - cx)**2 + (yy - cy)**2  # [mask_size, mask_size]
+        self.dist2_flat = dist2.reshape(-1)  # [num_tokens]
 
         # Define inner region (not part of the fixed outer ring).
         if self.outer_ring_width > 0:
             w = self.outer_ring_width
-            inner = (
-                (xx >= w) & (xx < mask_size - w) &
-                (yy >= w) & (yy < mask_size - w)
-            )
+            inner = ((xx >= w) & (xx < mask_size - w) & (yy >= w) &
+                     (yy < mask_size - w))
         else:
             inner = torch.ones_like(xx, dtype=torch.bool, device=device)
 
         inner_flat = inner.reshape(-1)
-        self.interior_mask_flat = inner_flat                     # True for inner tokens
+        self.interior_mask_flat = inner_flat  # True for inner tokens
         self.interior_indices = torch.nonzero(
-            inner_flat, as_tuple=False
-        ).squeeze(1)                                             # [N_inner]
-        self.ring_indices = torch.nonzero(
-            ~inner_flat, as_tuple=False
-        ).squeeze(1)                                             # [N_ring]
+            inner_flat, as_tuple=False).squeeze(1)  # [N_inner]
+        self.ring_indices = torch.nonzero(~inner_flat, as_tuple=False).squeeze(
+            1)  # [N_ring]
         self.num_tokens_inner = int(self.interior_indices.numel())
 
         # Distances restricted to inner region
-        self.dist2_inner = self.dist2_flat[self.interior_indices]   # [N_inner]
-        sorted_dist2_inner, order_inner = torch.sort(
-            self.dist2_inner, descending=False, stable=True
-        )
-        self.sorted_dist2_inner = sorted_dist2_inner                # [N_inner]
-        self.sorted_idx_inner = self.interior_indices[order_inner]  # [N_inner], global indices
+        self.dist2_inner = self.dist2_flat[self.interior_indices]  # [N_inner]
+        sorted_dist2_inner, order_inner = torch.sort(self.dist2_inner,
+                                                     descending=False,
+                                                     stable=True)
+        self.sorted_dist2_inner = sorted_dist2_inner  # [N_inner]
+        self.sorted_idx_inner = self.interior_indices[
+            order_inner]  # [N_inner], global indices
 
         if mode == "strict" and self.num_tokens_inner > 0:
             # Shells over inner tokens only
-            unique_vals, counts = torch.unique(
-                self.sorted_dist2_inner, return_counts=True
-            )
+            unique_vals, counts = torch.unique(self.sorted_dist2_inner,
+                                               return_counts=True)
             start = torch.zeros_like(counts)
             start[1:] = torch.cumsum(counts[:-1], dim=0)
 
-            self.shell_radii = unique_vals     # [S_inner]
-            self.shell_counts = counts         # [S_inner]
-            self.shell_start = start           # [S_inner]
+            self.shell_radii = unique_vals  # [S_inner]
+            self.shell_counts = counts  # [S_inner]
+            self.shell_start = start  # [S_inner]
 
         # Upsampling kernel for tokens -> pixels
         self.upsample_kernel = torch.ones(
@@ -343,7 +428,9 @@ class OuterCircularMasker:
             (mask_size * token_size, mask_size * token_size), dtype=torch.uint8.
         """
         # Start with all unmasked (0)
-        mask_flat = torch.zeros(self.num_tokens, dtype=torch.uint8, device=self.device)
+        mask_flat = torch.zeros(self.num_tokens,
+                                dtype=torch.uint8,
+                                device=self.device)
 
         # Always-mask outer ring (if any)
         if self.outer_ring_width > 0 and self.ring_indices.numel() > 0:
@@ -357,7 +444,8 @@ class OuterCircularMasker:
         # Sample desired masked fraction over the INNER region only
         frac = random.uniform(self.frac_min, self.frac_max)
         num_masked_target_inner = int(round(frac * self.num_tokens_inner))
-        num_masked_target_inner = max(0, min(self.num_tokens_inner, num_masked_target_inner))
+        num_masked_target_inner = max(
+            0, min(self.num_tokens_inner, num_masked_target_inner))
         num_unmasked_target_inner = self.num_tokens_inner - num_masked_target_inner
 
         inner_idx = self.interior_indices  # global indices of inner tokens
@@ -387,7 +475,8 @@ class OuterCircularMasker:
                 unmasked_indices = []
 
                 if self.num_tokens_inner > 0:
-                    for shell_start, shell_count in zip(self.shell_start, self.shell_counts):
+                    for shell_start, shell_count in zip(
+                            self.shell_start, self.shell_counts):
                         shell_start = int(shell_start.item())
                         shell_count = int(shell_count.item())
 
@@ -395,8 +484,8 @@ class OuterCircularMasker:
                             break
 
                         shell_idx = self.sorted_idx_inner[
-                            shell_start : shell_start + shell_count
-                        ]  # global indices for this shell
+                            shell_start:shell_start +
+                            shell_count]  # global indices for this shell
 
                         if remaining >= shell_count:
                             # Take the entire shell as unmasked
@@ -404,7 +493,8 @@ class OuterCircularMasker:
                             remaining -= shell_count
                         else:
                             # Boundary shell: randomly select 'remaining' tokens in this shell
-                            perm = torch.randperm(shell_count, device=self.device)[:remaining]
+                            perm = torch.randperm(
+                                shell_count, device=self.device)[:remaining]
                             chosen = shell_idx[perm]
                             unmasked_indices.append(chosen)
                             remaining = 0
@@ -429,27 +519,33 @@ class CellCollator():
                  omb_params,
                  omb_which="OuterBiasedMasker",
                  n_tokens=None,
-                 mask_generator=None):
+                 mask_generator=None,
+                 mask_outerbias_weight=False):
+
         self.mask_ratio_tuple = mask_ratio_tuple
         self.mask_probability = mask_probability
         self.dtype = dtype
         self.n_tokens = n_tokens
         self.mask_generator = mask_generator
 
-        self.color_jittering = transforms.Compose([
-            transforms.RandomApply(
-                [
-                    transforms.ColorJitter(
-                        brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)
-                ],
-                p=0.8,
-            ),
-            transforms.RandomApply([GaussianNoise(min_var=0, max_var=0.05)],
-                                   p=0.5),
-            GaussianBlur(p=0.5, radius_max=1),
-            transforms.RandomSolarize(threshold=0.5, p=.2),
-            transforms.RandomGrayscale(p=0.2),
-        ])
+        self.color_jittering = transforms.Compose(
+            [  # for local views, deferred
+                transforms.RandomApply(
+                    [
+                        transforms.ColorJitter(brightness=0.4,
+                                               contrast=0.4,
+                                               saturation=0.2,
+                                               hue=0.1)
+                    ],
+                    p=0.8,
+                ),
+                transforms.RandomApply(
+                    [GaussianNoise(min_var=0, max_var=0.05)], p=0.5),
+                GaussianBlur(p=0.5, radius_max=1),
+                transforms.RandomSolarize(threshold=0.5, p=.2),
+                transforms.RandomGrayscale(p=0.2),
+            ])
+        #self.color_jittering = transforms.Compose([])
 
         if omb_which == "OuterBiasedMasker":
             self.obm = OuterBiasedMasker(**omb_params)
@@ -457,6 +553,8 @@ class CellCollator():
             self.obm = OuterCircularMasker(**omb_params)
         else:
             assert False
+
+        self.mask_outerbias_weight = mask_outerbias_weight
 
     def __call__(self, samples_list):
         n_global_crops = len(samples_list[0][0]["global_crops"])
@@ -474,6 +572,7 @@ class CellCollator():
         bg_swap_masks = torch.stack([
             self.obm() for _ in range(len(collated_local_crops))
         ]).unsqueeze(1)
+
         collated_local_crops = (
             collated_local_crops *
             (1 - bg_swap_masks) + collated_local_crops[torch.randperm(
@@ -488,10 +587,20 @@ class CellCollator():
         }
         B = len(collated_global_crops)
         N = self.n_tokens
-        images.update(
-            create_mask(B, N, self.mask_ratio_tuple, self.mask_probability,
-                        self.mask_generator))
+
+        if self.mask_outerbias_weight:
+            images.update(
+                create_mask_with_bgswap_mask(B, N, self.mask_ratio_tuple,
+                                             self.mask_probability,
+                                             self.mask_generator, self.obm))
+        else:
+            images.update(
+                create_mask(
+                    B,
+                    N,
+                    self.mask_ratio_tuple,
+                    self.mask_probability,
+                    self.mask_generator,
+                ))
 
         return images
-
-
