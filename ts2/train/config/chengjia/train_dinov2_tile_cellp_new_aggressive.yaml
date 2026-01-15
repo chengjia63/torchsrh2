@@ -109,11 +109,11 @@ tune:
   diagonal_items: true
   params:
     infra/comment:
-    - newrun_dev_nomaskobw
-    - newrun_dev_maskobw
+    - newrun_dev_nomaskobw_lr54
+    - newrun_dev_maskobw_lr54
     dinov2_fair_config/optim/base_lr:
-    - 0.25e-3
-    - 0.25e-3
+    - 5.0e-4
+    - 5.0e-4
     dinov2_fair_config/train/collate/params/mask_outerbias_weight:
     - False
     - True
