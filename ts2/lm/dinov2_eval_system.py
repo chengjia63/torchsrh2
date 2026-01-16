@@ -35,36 +35,47 @@ class Dinov2EvalSystem(pl.LightningModule):
         #if batch_idx==5:
         #    torch.save(batch, f"{uuid.uuid4().hex[:8]}.pt")
         
-        assert batch["image"].shape[1] == 1
-        if self.get_image_attn:
-            emb = self.teacher_backbone(batch["image"][:, 0, ...], return_attn=True)
-            results = {
-                "path": [i for i in batch["path"]],
-                "label": batch["label"],
-                "embeddings": emb["x_norm_clstoken"],
-                "attns": emb["attns"]
-            }
+        if batch["image"].shape[1] == 1:
+            if self.get_image_attn:
+                emb = self.teacher_backbone(batch["image"][:, 0, ...], return_attn=True)
+                results = {
+                    "path": [i for i in batch["path"]],
+                    "label": batch["label"],
+                    "embeddings": emb["x_norm_clstoken"],
+                    "attns": emb["attns"]
+                }
 
-            if self.get_patch_tokens:
-                results.update({
-                    "patch_embeddings": emb["x_norm_patchtokens"]
-                })
-        
-        elif self.get_patch_tokens:
-            emb, full_dict = self.teacher_backbone(batch["image"][:, 0, ...])
-            results = {
-                "path": batch["path"],
-                "label": batch["label"],
-                "embeddings": emb,
-                "patch_embeddings": full_dict["x_norm_patchtokens"],
-            }
+                if self.get_patch_tokens:
+                    results.update({
+                        "patch_embeddings": emb["x_norm_patchtokens"]
+                    })
+            
+            elif self.get_patch_tokens:
+                emb, full_dict = self.teacher_backbone(batch["image"][:, 0, ...])
+                results = {
+                    "path": batch["path"],
+                    "label": batch["label"],
+                    "embeddings": emb,
+                    "patch_embeddings": full_dict["x_norm_patchtokens"],
+                }
 
+            else:
+                emb, _ = self.teacher_backbone(batch["image"][:, 0, ...])
+                results = {
+                    "path": batch["path"],
+                    "label": batch["label"],
+                    "embeddings": emb,
+                }
+            return results
         else:
-            emb, _ = self.teacher_backbone(batch["image"][:, 0, ...])
-            results = {
+            assert not self.get_image_attn
+            assert not self.get_patch_tokens
+
+            embs = [self.teacher_backbone(batch["image"][:, i, ...])[0]
+                    for i in range(batch["image"].shape[1])]
+
+            return {
                 "path": batch["path"],
                 "label": batch["label"],
-                "embeddings": emb,
+                "embeddings": torch.stack(embs, dim=1),
             }
-
-        return results

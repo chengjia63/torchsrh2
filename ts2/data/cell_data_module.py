@@ -18,9 +18,8 @@ from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
 from ts2.data.cell_dataset import CellDataset, CellBagDataset, CellPatchDataset, CellDatasetDINOv2
 from ts2.data.histology_data_module import get_num_replicate
-from ts2.data.utils import get_collate_fn
+from ts2.data.utils import get_collate_fn, defer_sxf_collators
 
-defer_sxf_collators = {"SingleCellBlendedCollator", "SingleCellTokenBandShuffleCollator", "SingleCellTokenMaskShuffleCollator"}
 
 def check_collate_fn_which(loader_params, which_split):
     if cfw := loader_params.common.get("collate_fn", {}).get("which"):

@@ -274,6 +274,8 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
         else:
             process_predictions = concat_all_tensors
 
+
+
         if do_knn:
             pred = {
                 "train": process_predictions(pred_raw[0]),
@@ -297,6 +299,12 @@ def do_testing(cf, dm, con_exp, embedded_exp_root):
 
         if do_knn:
             pred.update({"train": load_prediction(pred_fname["train"])})
+
+    if cf.testing.save_pred_only:
+        val_pred_fname = opj(pred_dir, "val_predictions.pt.gz")
+        with gzip.open(val_pred_fname, "w") as fd:
+            torch.save(pred["val"], fd)
+        return
 
     # knn inference
     if do_knn:

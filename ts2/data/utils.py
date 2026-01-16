@@ -249,43 +249,76 @@ class SingleCellTokenMaskShuffleCollator:  # used for perturbation evaluations
         else:
             return fg_im * fg_mask + bg_im * (1 - fg_mask)
 
-    def __call__(self, raw_batch):
-        # all_images: (B, aug, C, H, W)
-        all_images = torch.stack([i["image"] for i in raw_batch])
-        assert all_images.shape[1] == 1  # one view per sample
 
-        # Take first (and only) aug
-        fg = torch.clone(all_images[:, 0, ...])  # (B, C, H, W)
+    def _make_one_aug_view(self, fg: torch.Tensor) -> torch.Tensor:
+        """
+        Make a single augmented view:
+          - shuffled background
+          - mask generation
+          - blend
+          - strong transform
 
-        # Build shuffled background
-        bg = torch.clone(all_images[:, 0, ...])  # (B, C, H, W)
-        bg = bg[torch.randperm(len(bg))]
-
+        fg: (B, C, H, W)
+        returns: (B, C, H, W)
+        """
         B, C, H, W = fg.shape
+        device = fg.device
 
-        # Generate one mask per sample via the mask_generator
-        # mask_generator() -> (H, W) with values in {0,1}
+        # shuffled background
+        bg = fg[torch.randperm(B, device=device)]
+
+        # masks (B, H, W)
         masks = torch.stack(
-            [1 - self.mask_generator().to(fg.device) for _ in range(B)],  # (B, H, W)
+            [1 - self.mask_generator().to(device) for _ in range(B)],
             dim=0,
         )
 
-        # Blend foreground/background using the masks
-        fg_blended = self.blend_batch(fg, bg, masks)  # (B, C, H, W)
+        blended = self.blend_batch(fg, bg, masks)  # (B, C, H, W)
 
-        # Apply strong transforms (per-sample)
-        # You were slicing [:3]; keep that if your transform expects up to 3 channels.
-        fg_aug = torch.stack(
-            [self.transform(img) for img in fg_blended[:, :3, ...]],
-            dim=0,
+        # apply strong transforms per sample
+        return torch.stack(
+            [self.transform(x) for x in blended[:, :3, ...]],
+            dim=0,  # (B, C, H, W)
         )
+
+    def __call__(self, raw_batch):
+        # all_images: (B, 1, C, H, W)
+        all_images = torch.stack([i["image"] for i in raw_batch])
+        assert all_images.shape[1] == 1
+
+        fg = all_images[:, 0, ...].clone()  # (B, C, H, W)
+        view = self._make_one_aug_view(fg).unsqueeze(1)  # (B, 1, C, H, W)
 
         return {
-            "image": fg_aug.unsqueeze(1),  # (B, 1, C, H, W) to match original API
+            "image": view,
             "label": torch.stack([i["label"] for i in raw_batch]),
             "path": [[i["path"][0] for i in raw_batch]],
         }
 
+class SingleCellTokenMaskShuffleMultiAugCollator(SingleCellTokenMaskShuffleCollator):
+    def __init__(self, n_aug=2, **kwargs):
+        super().__init__(**kwargs)
+        self.n_aug = n_aug
+
+    def __call__(self, raw_batch):
+        # all_images: (B, 1, C, H, W)
+        all_images = torch.stack([i["image"] for i in raw_batch])
+        assert all_images.shape[1] == 1
+
+        fg = all_images[:, 0, ...].clone()  # (B, C, H, W)
+
+        views = [
+            self._make_one_aug_view(fg).unsqueeze(1)
+            for _ in range(self.n_aug)
+        ]
+
+        images = torch.cat(views, dim=1)  # (B, n_aug, C, H, W)
+
+        return {
+            "image": images,
+            "label": torch.stack([i["label"] for i in raw_batch]),
+            "path": [[i["path"][0] for i in raw_batch]],
+        }
 
 class CellMILCollator(object):
     def __init__(self):
@@ -306,7 +339,15 @@ def get_collate_fn(which, params):
         "SingleCellBlendedCollator": SingleCellBlendedCollator,
         "CellMILCollator": CellMILCollator,
         "SingleCellTokenBandShuffleCollator": SingleCellTokenBandShuffleCollator,
-        "SingleCellTokenMaskShuffleCollator": SingleCellTokenMaskShuffleCollator
+        "SingleCellTokenMaskShuffleCollator": SingleCellTokenMaskShuffleCollator,
+        "SingleCellTokenMaskShuffleMultiAugCollator": SingleCellTokenMaskShuffleMultiAugCollator
     }
     return collate_list[which](**params)
+
+defer_sxf_collators = {
+    "SingleCellBlendedCollator",
+    "SingleCellTokenBandShuffleCollator",
+    "SingleCellTokenMaskShuffleCollator",
+    "SingleCellTokenMaskShuffleMultiAugCollator"
+}
 
