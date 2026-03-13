@@ -320,6 +320,63 @@ class SingleCellTokenMaskShuffleMultiAugCollator(SingleCellTokenMaskShuffleColla
             "path": [[i["path"][0] for i in raw_batch]],
         }
 
+class SingleCellTripletEvalCollator(SingleCellTokenMaskShuffleCollator):
+    def __init__(self, n_aug=2, **kwargs):
+        super().__init__(**kwargs)
+        self.n_aug = n_aug
+
+    def _make_one_aug_view(self, fg: torch.Tensor, bg: torch.Tensor) -> torch.Tensor:
+        """
+        Make a single augmented view:
+          - shuffled background
+          - mask generation
+          - blend
+          - strong transform
+
+        fg: (B, C, H, W)
+        returns: (B, C, H, W)
+        """
+        B, C, H, W = fg.shape
+        device = fg.device
+
+        # masks (B, H, W)
+        masks = torch.stack(
+            [1 - self.mask_generator().to(device) for _ in range(B)],
+            dim=0,
+        )
+
+        blended = self.blend_batch(fg, bg, masks)  # (B, C, H, W)
+
+        # apply strong transforms per sample
+        return torch.stack(
+            [self.transform(x) for x in blended[:, :3, ...]],
+            dim=0,  # (B, C, H, W)
+        )
+
+    def __call__(self, raw_batch):
+        # all_images: (B, 1, C, H, W)
+        all_images = torch.stack([i["image"] for i in raw_batch])
+        assert all_images.shape[1] == 2
+
+        fg = all_images[:, 0, ...].clone()  # (B, C, H, W)
+        bg = all_images[:, 1, ...].clone()  # (B, C, H, W)
+
+        clean = torch.stack([self.transform(x) for x in fg[:, :3, ...]], dim=0)
+
+        views = [
+            clean.unsqueeze(1),
+            self._make_one_aug_view(fg, bg).unsqueeze(1),
+            self._make_one_aug_view(bg, fg).unsqueeze(1)
+        ]
+
+        images = torch.cat(views, dim=1)  # (B, n_aug, C, H, W)
+
+        return {
+            "image": images,
+            "label": torch.stack([i["label"] for i in raw_batch]),
+            "path": [[i["path"][0] for i in raw_batch]],
+        }
+
 class CellMILCollator(object):
     def __init__(self):
         super(CellMILCollator, self).__init__()
@@ -340,7 +397,8 @@ def get_collate_fn(which, params):
         "CellMILCollator": CellMILCollator,
         "SingleCellTokenBandShuffleCollator": SingleCellTokenBandShuffleCollator,
         "SingleCellTokenMaskShuffleCollator": SingleCellTokenMaskShuffleCollator,
-        "SingleCellTokenMaskShuffleMultiAugCollator": SingleCellTokenMaskShuffleMultiAugCollator
+        "SingleCellTokenMaskShuffleMultiAugCollator": SingleCellTokenMaskShuffleMultiAugCollator,
+        "SingleCellTripletEvalCollator": SingleCellTripletEvalCollator
     }
     return collate_list[which](**params)
 
@@ -348,6 +406,7 @@ defer_sxf_collators = {
     "SingleCellBlendedCollator",
     "SingleCellTokenBandShuffleCollator",
     "SingleCellTokenMaskShuffleCollator",
-    "SingleCellTokenMaskShuffleMultiAugCollator"
+    "SingleCellTokenMaskShuffleMultiAugCollator",
+    "SingleCellTripletEvalCollator"
 }
 

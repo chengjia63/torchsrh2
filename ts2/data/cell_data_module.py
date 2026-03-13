@@ -16,7 +16,7 @@ from ts2.data.cell_meta_parser import CellCSVParser
 from ts2.data.meta_parser import CachedCSVParser
 from ts2.data.db_improc import instantiate_process_read
 from ts2.data.transforms import HistologyTransform
-from ts2.data.cell_dataset import CellDataset, CellBagDataset, CellPatchDataset, CellDatasetDINOv2
+from ts2.data.cell_dataset import CellDataset, CellBagDataset, CellPatchDataset, CellDatasetDINOv2, CellDatasetTripletEval
 from ts2.data.histology_data_module import get_num_replicate
 from ts2.data.utils import get_collate_fn, defer_sxf_collators
 
@@ -86,6 +86,7 @@ class CellDataModule(pl.LightningDataModule):
     def setup(self, stage: str):
         datasets = {
             "CellDataset": CellDataset,
+            "CellDatasetTripletEval": CellDatasetTripletEval,
             "CellBagDataset": CellBagDataset,
             "CellPatchDataset": CellPatchDataset,
             "CellDatasetDINOv2": CellDatasetDINOv2

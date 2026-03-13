@@ -4,6 +4,7 @@ import numpy as np
 import time
 
 import random
+from collections import defaultdict
 import logging
 from os.path import join as opj
 from abc import ABC
@@ -13,6 +14,8 @@ from functools import partial
 import pandas as pd
 import torch
 from tqdm import tqdm
+
+import torch.nn as nn
 
 from torchsrh.datasets.common import get_chnl_min, get_chnl_max
 
@@ -134,6 +137,7 @@ class CellBenchDataset(BalanceableBaseDataset):
         }
 
 
+
 class CellDataset(BalanceableBaseDataset):
     """Patch Base Dataset.
 
@@ -231,6 +235,131 @@ class CellDataset(BalanceableBaseDataset):
             [f"{inst['slide_id']}-{inst['patch_name']}@{inst['cell_idx']}"]
         }
 
+def shuffled_adversarial_instances(instances, shuffle_mode):
+    """
+    Return a shuffled copy of `instances` according to shuffle_mode.
+
+    Modes
+    -----
+    "all"                  : fully shuffle all instances
+    ""                     : no shuffle
+    "label"                : shuffle within each label
+    "slide_id"             : shuffle within each slide_id
+    "slide_id_patch_name"  : shuffle within each (slide_id, patch_name)
+    """
+    if shuffle_mode == "":
+        return instances.copy()
+
+    if shuffle_mode == "all":
+        out = instances.copy()
+        random.shuffle(out)
+        return out
+
+    if shuffle_mode == "label":
+        key_fn = lambda x: x["label"]
+    elif shuffle_mode == "slide_id":
+        key_fn = lambda x: x["slide_id"]
+    elif shuffle_mode == "slide_id_patch_name":
+        key_fn = lambda x: (x["slide_id"], x["patch_name"])
+    else:
+        raise ValueError(f"Unknown shuffle_mode: {shuffle_mode}")
+
+    groups = defaultdict(list)
+    for i, inst in enumerate(instances):
+        groups[key_fn(inst)].append(i)
+    import pdb; pdb.set_trace()
+    out = instances.copy()
+    for idxs in groups.values():
+        vals = [instances[i] for i in idxs]
+        random.shuffle(vals)
+        for i, v in zip(idxs, vals):
+            out[i] = v
+
+    return out
+
+class CellDatasetTripletEval(CellDataset):
+    """Patch Base Dataset.
+
+    Patch datasets treats each patch to be independent
+
+    Attributes:
+        data_root_: str containing the root path of the dataset
+        transform_: transformations to be performed on the data
+        target_transform_: transformations to be performed on the labels
+        df_: data frame containing patch information
+        instances_: a list of Slide
+        classes_: a set of primary labels in the dataset (could be any
+            hashable object)
+        class_to_idx_: a mapping from the primary class label to a numeric
+            label [0 .. num classes - 1]
+        weights_: weights assigned to each class, inverse proportional to the
+            slide count in each class
+    """
+
+    def __init__(self,
+                 shuffle_mode="label",
+                 balance_instance_class=False,
+                 num_sample_wo_replacement=None,
+                 **kwargs) -> None:
+
+        super().__init__(balance_instance_class=balance_instance_class, num_sample_wo_replacement=num_sample_wo_replacement,**kwargs)
+
+        assert not balance_instance_class
+        assert not num_sample_wo_replacement
+        assert self.num_transforms_==1
+        logging.info(self.transform_.strong_aug)
+        assert type(self.transform_.strong_aug) is nn.Identity
+
+
+        self.adversarial_instances_ = shuffled_adversarial_instances(
+            self.instances_, shuffle_mode
+        )
+
+
+    def __len__(self):
+        return len(self.instances_)
+
+    def make_im_path(self, x):
+        return opj(self.data_root_, x)
+
+    def get_item_impl(self, inst):
+        target = self.class_to_idx_[inst["label"]]
+        try:
+            mmap_info = self.tensor_shape_map[inst["slide_id"]]
+            mmap_path = self.make_im_path(mmap_info["path"])
+            im = self.process_read_im_(mmap_path, tuple(mmap_info["shape"]),
+                                       inst["cell_idx"])
+        except:
+            logging.error("bad_file - {}".format(inst.im_path))
+            return {"image": None, "label": None, "path": [None]}
+
+        im = torch.stack(
+            [self.transform_(im) for _ in range(self.num_transforms_)])
+
+        return {
+            "image": im,
+            "label": target,
+            "path":
+            [f"{inst['slide_id']}-{inst['patch_name']}@{inst['cell_idx']}"]
+        }
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        inst = self.instances_[idx]
+        target = self.class_to_idx_[inst["label"]]
+
+        clean_im = self.get_item_impl(inst)
+        adv_im = self.get_item_impl(self.adversarial_instances_[idx])
+
+        im = torch.concat([clean_im["image"], adv_im["image"]])
+
+        if self.target_transform_ is not None:
+            target = self.target_transform_(target)
+
+        return {
+            "image": im,
+            "label": target,
+            "path": [f"{clean_im['path']}/{adv_im['path']}"]
+        }
 
 class CellPatchDataset(BalanceableBaseDataset):
     """Patch Base Dataset.

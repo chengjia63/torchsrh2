@@ -158,29 +158,41 @@ tune:
     - smpt_BENCHDB_CCY_CBSP10_epoch0-step124999_sd1k
 
     lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
 
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/546d5129_Jan12-20-08-19_sd1000_newrun_dev_nomaskobw_lr54_tune0/models/eval/training_124999/teacher_checkpoint.pth
+
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #- /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/c2b59e45_Jan12-20-08-19_sd1000_newrun_dev_maskobw_lr54_tune1/models/eval/training_124999/teacher_checkpoint.pth
 
 
     data/loader/params/test/collate_fn/params/mask_generator_params/n_mask_token_perct_range:
