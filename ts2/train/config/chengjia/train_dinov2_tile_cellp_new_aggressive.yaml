@@ -71,7 +71,7 @@ dinov2_fair_config:
   #  separate_head: true
   #  head_n_prototypes: 65536
   train:
-    batch_size_per_gpu:  384 #
+    batch_size_per_gpu:  384
     #centering: sinkhorn_knopp
     num_workers: 8
     collate:
@@ -112,8 +112,8 @@ tune:
     - newrun_dev_nomaskobw_lr54
     - newrun_dev_maskobw_lr54
     dinov2_fair_config/optim/base_lr:
-    - 5.0e-4
-    - 5.0e-4
+    - 1.0e-3
+    - 1.0e-3
     dinov2_fair_config/train/collate/params/mask_outerbias_weight:
     - False
     - True
