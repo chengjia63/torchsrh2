@@ -20,7 +20,8 @@ cf = {
         "svs_root": "/nfs/mm-isilon/brainscans/dropbox/Slide_Incoming/svs"
     },                                                                  
     "prev_exp": {                                                       
-        "out_dir": "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_rigid_ransac"
+        #"out_dir": "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_rigid_ransac"
+        "out_dir": "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_affine_ransac"
     },                                                                  
     "manual": {                                                         
         "out_dir": "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_manual"
@@ -259,5 +260,5 @@ def save_block():
     return JSONResponse(content={"message": "Block saved successfully"})
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=48109)
 

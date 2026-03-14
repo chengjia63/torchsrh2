@@ -18,6 +18,6 @@ infra:
   svs_root: /nfs/mm-isilon/brainscans/dropbox/Slide_Incoming/svs
   annot_root: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/pixel_alignment/sections_annot2/
   out_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_rigid_ransac
-  num_block_per_job: 10
-  blocks_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/data/to_reg_250225re3.csv
+  num_block_per_job: 5
+  blocks_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/data/re_reg2_250625.csv
 

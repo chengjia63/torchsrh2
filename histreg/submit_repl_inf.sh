@@ -48,15 +48,15 @@
 #SBATCH --gres=gpu:1
 #SBATCH --ntasks-per-node=1
 #------------------------------------------------------------------------------
-# SBATCH --array=0
-#SBATCH --array=0-2
+#SBATCH --array=0
+# SBATCH --array=0-59
 #------------------------------------------------------------------------------
 
 set -x
 set -e
 
-python align_pipe.py -c config/alignment.yaml
-#python align_pipe.py -c config/alignment_rigid.yaml
+#python align_pipe.py -c config/alignment.yaml
+python align_pipe.py -c config/alignment_rigid.yaml
 
 #python align_pipe.py -c config/alignment_debug.yaml
 
