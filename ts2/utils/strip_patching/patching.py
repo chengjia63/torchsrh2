@@ -516,6 +516,69 @@ def save_stitched_patch_visualization(
     return stitched_image
 
 
+def save_tiled_patch_visualization(
+    patch_dict: Dict[str, np.ndarray],
+    output_path: str,
+) -> np.ndarray:
+    """Builds and saves a tiled visualization image from a patch dictionary.
+
+    This version ignores the coordinate suffix in patch names and instead tiles
+    patches into a compact grid using the coordinates encoded in the patch
+    names to determine row-major order.
+
+    Args:
+        patch_dict: Dictionary produced by a strip patch generation helper.
+        output_path: Destination path for the tiled image.
+
+    Returns:
+        The tiled ``H x W x 3`` uint8 visualization image that was saved.
+
+    Raises:
+        ValueError: If ``patch_dict`` is empty.
+    """
+
+    if not patch_dict:
+        raise ValueError("patch_dict must not be empty.")
+
+    patch_rows = {}
+    for patch_name, patch_array in tqdm(
+        patch_dict.items(),
+        total=len(patch_dict),
+        desc="Preparing tiled patches",
+    ):
+        coord_str = patch_name.rsplit("-", 1)[1]
+        y_str, x_str = coord_str.split("_", 1)
+        y_coord = int(y_str)
+        x_coord = int(x_str)
+        viz_patch = prepare_two_channel_viz_image(torch.as_tensor(patch_array).float())
+        patch_rows.setdefault(y_coord, []).append((x_coord, viz_patch.numpy()))
+
+    ordered_rows = []
+    max_columns = 0
+    for y_coord in sorted(patch_rows):
+        row_patches = [patch for _, patch in sorted(patch_rows[y_coord], key=lambda item: item[0])]
+        ordered_rows.append(row_patches)
+        max_columns = max(max_columns, len(row_patches))
+
+    patch_height, patch_width, num_channels = ordered_rows[0][0].shape
+    num_rows = len(ordered_rows)
+    tiled_image = np.zeros(
+        (num_rows * patch_height, max_columns * patch_width, num_channels),
+        dtype=np.uint8,
+    )
+
+    for row_index, row_patches in enumerate(
+        tqdm(ordered_rows, total=len(ordered_rows), desc="Tiling patches")
+    ):
+        top = row_index * patch_height
+        for col_index, patch_np in enumerate(row_patches):
+            left = col_index * patch_width
+            tiled_image[top : top + patch_height, left : left + patch_width] = patch_np
+
+    Image.fromarray(tiled_image).save(output_path)
+    return tiled_image
+
+
 def main() -> None:
     """Generates demo patches and saves one stitched visualization image.
 
@@ -544,8 +607,9 @@ def main() -> None:
         ch2_dicom_paths=ch2_dicom_paths,
         ch3_dicom_paths=ch3_dicom_paths,
         strip_offset_interval=900,
+        patch_stride=150,
     )
-    save_stitched_patch_visualization(patch_dict, "stitched.png")
+    save_tiled_patch_visualization(patch_dict, "stitched.png")
 
 
 if __name__ == "__main__":
