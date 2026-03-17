@@ -1,7 +1,11 @@
 """Minimal image processing helpers for standalone strip patching."""
 
+import logging
+
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 def field_flatten(
@@ -9,6 +13,10 @@ def field_flatten(
     blur_type: str = "gaussian",
     kernel_size: int = 301,
 ) -> np.ndarray:
+    assert array.ndim == 2, f"field_flatten expects a 2D array, got shape {array.shape}"
+    assert (
+        kernel_size > 0 and kernel_size % 2 == 1
+    ), f"kernel_size must be a positive odd integer, got {kernel_size}"
     if blur_type.lower() == "gaussian":
         filter_img = cv2.GaussianBlur(
             array,
@@ -20,12 +28,20 @@ def field_flatten(
     else:
         raise ValueError("blur_type must be 'gaussian' or 'average'.")
 
+    logger.debug(
+        "Applying field flatten with blur_type=%s kernel_size=%d",
+        blur_type,
+        kernel_size,
+    )
     flat_image = array / filter_img
     flat_image *= 10000
     return flat_image
 
 
 def get_16bit_patch(patch: np.ndarray, flatten_field: bool = True) -> np.ndarray:
+    assert (
+        patch.ndim == 3 and patch.shape[2] == 2
+    ), f"Expected patch shape (H, W, 2), got {patch.shape}"
     patch = patch.astype(float)
     ch2 = patch[:, :, 0]
     ch3 = patch[:, :, 1]
@@ -41,7 +57,11 @@ def get_16bit_patch(patch: np.ndarray, flatten_field: bool = True) -> np.ndarray
 
 
 def percentile_rescaling(array: np.ndarray, percentile_clip: int = 3) -> np.ndarray:
+    assert (
+        array.ndim == 2
+    ), f"percentile_rescaling expects a 2D array, got shape {array.shape}"
     p_low, p_high = np.percentile(array, (3, 100 - percentile_clip))
+    assert p_high > p_low, "Invalid percentile range produced zero dynamic range."
     array = array.clip(min=p_low, max=p_high)
     return (array - p_low) / (p_high - p_low)
 
@@ -51,6 +71,9 @@ def _srh_8bit_preprocess(
     percentile_clip: int = 3,
     subtracted_channel_recenter: float = 0.2,
 ) -> np.ndarray:
+    assert (
+        patch.ndim == 3 and patch.shape[2] == 2
+    ), f"Expected patch shape (H, W, 2), got {patch.shape}"
     patch = patch.astype(float)
     ch2 = percentile_rescaling(patch[:, :, 0], percentile_clip)
     ch3 = percentile_rescaling(patch[:, :, 1], percentile_clip)
@@ -69,6 +92,9 @@ def blood_check(
     upper_percentile: int = 20,
     intensity_threshold: int = 60,
 ) -> np.ndarray:
+    assert (
+        image.ndim == 3 and image.shape[2] >= 3
+    ), f"Expected image shape (H, W, >=3), got {image.shape}"
     two_channel = image[:, :, 1:3]
     for percentile in range(3, upper_percentile):
         post_image = _srh_8bit_preprocess(two_channel, percentile)
@@ -84,6 +110,7 @@ def get_three_channel_8bit_patch(
     check_blood: bool = True,
     intensity_threshold: int = 60,
 ) -> np.ndarray:
+    logger.debug("Converting patch to 8-bit SRH image")
     stack = _srh_8bit_preprocess(
         patch,
         percentile_clip,

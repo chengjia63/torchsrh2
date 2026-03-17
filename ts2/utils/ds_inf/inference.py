@@ -1,3 +1,4 @@
+import logging
 from typing import Iterable, Sequence
 
 import numpy as np
@@ -9,6 +10,7 @@ from tqdm.auto import tqdm
 from ts2.utils.ds_inf.model import get_model
 
 DEFAULT_CLASSES = ["na", "nuclei", "cyto", "rbc", "mp"]
+logger = logging.getLogger(__name__)
 
 
 def preprocess_srh_batch(
@@ -16,19 +18,19 @@ def preprocess_srh_batch(
     subtracted_base: float = 5000.0,
 ) -> torch.Tensor:
     """Convert a batch of 2-channel SRH images into normalized 3-channel tensors."""
+    logger.info("Preprocessing SRH batch")
     images = torch.as_tensor(images)
-    if images.ndim != 4:
-        raise ValueError(
-            f"Expected 4D input `(N, 2, H, W)`, got shape {tuple(images.shape)}."
-        )
-    if images.shape[1] != 2:
-        raise ValueError(f"Expected 2 channels, got {images.shape[1]}.")
+    assert (
+        images.ndim == 4
+    ), f"Expected 4D input `(N, 2, H, W)`, got shape {tuple(images.shape)}."
+    assert images.shape[1] == 2, f"Expected 2 channels, got {images.shape[1]}."
 
     images = images.to(torch.float32)
     ch2 = images[:, 0, :, :]
     ch3 = images[:, 1, :, :]
     ch1 = ch3 - ch2 + subtracted_base
     stacked = torch.stack((ch1, ch2, ch3), dim=1)
+    logger.info("Prepared normalized SRH batch with shape %s", tuple(stacked.shape))
     return (stacked / 65536.0).clamp_(0.0, 1.0)
 
 
@@ -94,6 +96,9 @@ def score_threshold_with_matrix_nms(
 ) -> dict[str, torch.Tensor]:
     """Apply matrix NMS, confidence filtering, and mask binarization."""
     output = {key: value.detach().cpu() for key, value in output.items()}
+    required_keys = {"scores", "masks", "labels", "boxes"}
+    missing_keys = required_keys.difference(output)
+    assert not missing_keys, f"Missing required output keys: {sorted(missing_keys)}"
 
     if len(output["scores"]) == 0:
         output["masks"] = output["masks"].to(torch.uint8).squeeze(1)
@@ -120,10 +125,9 @@ def score_threshold_with_matrix_nms(
 
 def compute_centroids(batch_mask: torch.Tensor) -> torch.Tensor:
     """Compute `(row, col)` centroids from a mask tensor of shape `(N, H, W)`."""
-    if batch_mask.ndim != 3:
-        raise ValueError(
-            f"Expected mask shape `(N, H, W)`, got {tuple(batch_mask.shape)}."
-        )
+    assert (
+        batch_mask.ndim == 3
+    ), f"Expected mask shape `(N, H, W)`, got {tuple(batch_mask.shape)}."
 
     batch_size, height, width = batch_mask.shape
     device = batch_mask.device
@@ -151,6 +155,9 @@ def package_cells_one_patch(
     celltypes: Sequence[str],
 ) -> list[dict[str, float | str]]:
     """Convert one patch prediction into lightweight metadata rows."""
+    required_keys = {"boxes", "labels", "scores", "masks"}
+    missing_keys = required_keys.difference(result)
+    assert not missing_keys, f"Missing required result keys: {sorted(missing_keys)}"
     if len(result["boxes"]) == 0:
         return []
 
@@ -193,16 +200,24 @@ def run_inference(
     batch_size: int = 8,
 ) -> list[dict[str, float | str]]:
     """Run batched inference using an already-loaded model."""
+    logger.info("Starting cell inference")
     processed = preprocess_srh_batch(images, subtracted_base=subtracted_base)
     device = next(model.parameters()).device
     image_batches = torch.split(processed, batch_size)
+    assert len(image_batches) > 0, "No image batches were created for inference."
+    logger.info(
+        "Running inference for %d images in %d batches on %s",
+        processed.shape[0],
+        len(image_batches),
+        device,
+    )
 
     outputs: list[dict[str, torch.Tensor]] = []
     with torch.inference_mode():
         for image_batch in tqdm(
             image_batches,
             total=len(image_batches),
-            desc="Cell inference",
+            desc="Cell detection",
         ):
             batch_outputs = model(image_batch.to(device))
             outputs.extend(
@@ -213,17 +228,24 @@ def run_inference(
                 )
                 for output in batch_outputs
             )
+    assert (
+        len(outputs) == processed.shape[0]
+    ), f"Expected {processed.shape[0]} outputs, got {len(outputs)}."
 
     if patch_names is None:
         patch_names_list = [f"patch_{idx:05d}" for idx in range(len(outputs))]
     else:
         patch_names_list = list(patch_names)
-        if len(patch_names_list) != len(outputs):
-            raise ValueError(
-                f"Expected {len(outputs)} patch names, got {len(patch_names_list)}."
-            )
+        assert len(patch_names_list) == len(
+            outputs
+        ), f"Expected {len(outputs)} patch names, got {len(patch_names_list)}."
 
     rows: list[dict[str, float | str]] = []
-    for patch_name, output in zip(patch_names_list, outputs):
+    for patch_name, output in tqdm(
+        zip(patch_names_list, outputs),
+        total=len(outputs),
+        desc="Packaging detections",
+    ):
         rows.extend(package_cells_one_patch(output, patch_name, classes))
+    logger.info("Finished cell inference with %d packaged detections", len(rows))
     return rows

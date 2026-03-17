@@ -1,3 +1,5 @@
+import logging
+import os
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -19,17 +21,22 @@ from ts2.utils.ds_inf.model import get_model
 from ts2.utils.srh_viz import prepare_two_channel_viz_image
 from ts2.utils.strip_patching.patching import generate_paired_strip_patches_from_lists
 
+logger = logging.getLogger(__name__)
+
 
 def _patch_dict_to_batch(
     patch_dict: Dict[str, np.ndarray],
 ) -> Tuple[np.ndarray, List[str]]:
     patch_names = list(patch_dict)
-    if not patch_names:
-        raise ValueError("No patches were generated from the provided strips.")
+    assert patch_names, "No patches were generated from the provided strips."
 
     images = np.stack(
         [np.moveaxis(np.asarray(patch_dict[name]), -1, 0) for name in patch_names],
         axis=0,
+    )
+    assert images.ndim == 4, f"Expected patch batch to be 4D, got shape {images.shape}"
+    logger.info(
+        "Prepared %d patches with batch shape %s", len(patch_names), tuple(images.shape)
     )
     return images, patch_names
 
@@ -66,6 +73,15 @@ def _add_global_coordinates(results: pd.DataFrame) -> pd.DataFrame:
     return results
 
 
+def _ensure_output_dir(output_dir: str) -> None:
+    os.makedirs(output_dir, exist_ok=True)
+    assert os.path.isdir(output_dir), f"Failed to create output directory: {output_dir}"
+
+
+def _can_use_cache(use_cached: bool, artifact_path: str) -> bool:
+    return use_cached and os.path.exists(artifact_path)
+
+
 def save_cell_prediction_visualization(
     patch_dict: Dict[str, np.ndarray],
     cell_predictions: pd.DataFrame,
@@ -73,6 +89,9 @@ def save_cell_prediction_visualization(
     outline_color: Tuple[int, int, int] = (255, 255, 0),
     outline_width: int = 2,
 ) -> np.ndarray:
+    assert (
+        patch_dict
+    ), "patch_dict is empty; cannot render cell prediction visualization."
     patch_items = []
     max_bottom = 0
     max_right = 0
@@ -88,6 +107,8 @@ def save_cell_prediction_visualization(
         patch_items.append((top, left, viz_patch.numpy().astype(np.float32)))
         max_bottom = max(max_bottom, top + patch_height)
         max_right = max(max_right, left + patch_width)
+
+    assert patch_items, "No patch items were available for visualization stitching."
 
     stitched_sum = np.zeros((max_bottom, max_right, 3), dtype=np.float32)
     stitched_count = np.zeros((max_bottom, max_right, 1), dtype=np.float32)
@@ -147,9 +168,10 @@ def dilate_ims(ims, bbox_spec, box_h: int = 48, box_w: int = 48):
     specs = torch.stack([start_x, start_y, torch.tensor(is_edge)])
 
     x0_r, y0_r = int(start_x.round()), int(start_y.round())
-    cropped_ims = [im[..., y0_r:y0_r + box_h, x0_r:x0_r + box_w] for im in ims]
+    cropped_ims = [im[..., y0_r : y0_r + box_h, x0_r : x0_r + box_w] for im in ims]
 
     return cropped_ims, specs
+
 
 def run_cell_representation_inference(
     patch_dict: Dict[str, np.ndarray],
@@ -159,11 +181,16 @@ def run_cell_representation_inference(
     device: str,
     batch_size: int = 256,
 ) -> dict:
+    logger.info("Running cell representation inference")
     transform = HistologyTransform(**data_xform_cf)
     tile_size = 48
 
     cells = []
-    for row in cell_predictions.itertuples(index=False):
+    for row in tqdm(
+        cell_predictions.itertuples(index=False),
+        total=len(cell_predictions),
+        desc="Preparing cell crops",
+    ):
         if row.celltype not in {"nuclei", "mp"} or row.score <= 0.5:
             continue
 
@@ -198,8 +225,10 @@ def run_cell_representation_inference(
         )
 
     if not cells:
+        logger.info("No cells passed representation inference filters")
         return {"path": [], "label": [], "embeddings": torch.empty((0, 0))}
 
+    logger.info("Prepared %d cells for representation inference", len(cells))
 
     model = Dinov2EvalSystem(**lightning_module_params).to(device)
     model.eval()
@@ -227,7 +256,17 @@ def run_cell_representation_inference(
             pred_raw["label"].extend(batch_pred["label"])
             pred_raw["embeddings"].append(batch_pred["embeddings"].detach().cpu())
 
+    assert pred_raw[
+        "embeddings"
+    ], "No embedding batches were produced during cell representation inference."
     pred_raw["embeddings"] = torch.cat(pred_raw["embeddings"], dim=0)
+    assert pred_raw["embeddings"].shape[0] == len(
+        pred_raw["path"]
+    ), "Embedding count does not match number of paths."
+    logger.info(
+        "Completed cell representation inference with embedding shape %s",
+        tuple(pred_raw["embeddings"].shape),
+    )
     return pred_raw
 
 
@@ -235,6 +274,7 @@ def run_single_slide_gmm_inference(
     cell_representations: dict,
     gmm_cf: dict,
 ) -> pd.DataFrame:
+    logger.info("Running single-slide GMM inference")
     gmm_metadata = instantiate_gmm(gmm_cf)
     gmm_output = run_gmm_inference(
         inf_embeddings=cell_representations["embeddings"],
@@ -245,7 +285,7 @@ def run_single_slide_gmm_inference(
         point_hard=False,
     )
 
-    return pd.DataFrame(
+    predictions = pd.DataFrame(
         {
             "path": cell_representations["path"],
             "label": cell_representations["label"],
@@ -253,9 +293,21 @@ def run_single_slide_gmm_inference(
             "assignment": gmm_output["assignment"].tolist(),
         }
     )
+    assert len(predictions) > 0, "GMM inference produced no predictions."
+    logger.info("Generated %d GMM predictions", len(predictions))
+    return predictions
 
 
 def main() -> None:
+    logging_format_str = (
+        "[%(levelname)-s|%(asctime)s|%(name)s|"
+        + "%(filename)s:%(lineno)d|%(funcName)s] %(message)s"
+    )
+    logging.basicConfig(
+        level=logging.INFO,
+        format=logging_format_str,
+    )
+    # Slide-specific inputs for one end-to-end silica single-cell evaluation run.
     mouse_id = "nio_mouse_1"
     mosaic_id = "10"
 
@@ -279,43 +331,52 @@ def main() -> None:
     mosaic_dicom_path = f"/nfs/turbo/umms-tocho/data/db_nio_mouse/mouse/{mouse_id}/{mosaic_id}/mosaics/IMG00001.dcm"
     viz_candidate_name = f"{mouse_id}-{mosaic_id}"
 
-    data_xform_cf = OmegaConf.create({
-        "which_set": "srh",
-        "base_aug_params": {
-            "laser_noise_config": None,
-            "get_third_channel_params": {
-                "mode": "three_channels",
-                "subtracted_base": 0.07629394531,
+    out_root = "out"
+    output_dir = os.path.join(out_root, viz_candidate_name)
+
+    # DINOv2 transform and checkpoint config for per-cell representation inference.
+    data_xform_cf = OmegaConf.create(
+        {
+            "which_set": "srh",
+            "base_aug_params": {
+                "laser_noise_config": None,
+                "get_third_channel_params": {
+                    "mode": "three_channels",
+                    "subtracted_base": 0.07629394531,
+                },
+                "to_uint8": False,
             },
-            "to_uint8": False,
-        },
-        "strong_aug_params": {
-            "aug_list": [
-                {
-                    "which": "center_crop_always_apply",
-                    "params": {"size": 48},
-                }
-            ],
-            "aug_prob": 1,
-        },
-    })
-    lightning_module_params = OmegaConf.create({
-        "model_hyperparams": {
-            "arch": "vit_small",
-            "img_size": 48,
-            "patch_size": 4,
-            "block_chunks": 4,
-            "ffn_bias": True,
-            "ffn_layer": "mlp",
-            "num_register_tokens": 0,
-            "interpolate_antialias": False,
-            "interpolate_offset": 0.1,
-            "layerscale": 1.0e-05,
-            "proj_bias": True,
-            "qkv_bias": True,
-        },
-        "pretrained_weights": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth",
-    })
+            "strong_aug_params": {
+                "aug_list": [
+                    {
+                        "which": "center_crop_always_apply",
+                        "params": {"size": 48},
+                    }
+                ],
+                "aug_prob": 1,
+            },
+        }
+    )
+    lightning_module_params = OmegaConf.create(
+        {
+            "model_hyperparams": {
+                "arch": "vit_small",
+                "img_size": 48,
+                "patch_size": 4,
+                "block_chunks": 4,
+                "ffn_bias": True,
+                "ffn_layer": "mlp",
+                "num_register_tokens": 0,
+                "interpolate_antialias": False,
+                "interpolate_offset": 0.1,
+                "layerscale": 1.0e-05,
+                "proj_bias": True,
+                "qkv_bias": True,
+            },
+            "pretrained_weights": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth",
+        }
+    )
+    # Pretrained GMM metadata used to convert embeddings into tumor likelihoods.
     gmm_cf = {
         "db_mean_path": "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/silica_gmm_reproduce/stats/db_mean.pt",
         "metrics_path": "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/silica_gmm_reproduce/stats/gmm_g2m_metrics.csv",
@@ -324,72 +385,153 @@ def main() -> None:
         "zero_components": [],
     }
 
-    #output_csv = "/path/to/cell_predictions.csv"
+    # output_csv = "/path/to/cell_predictions.csv"
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    use_cached = True
 
-    if len(ch2_dicom_paths) != len(ch3_dicom_paths):
-        raise ValueError(
-            "ch2_dicom_paths and ch3_dicom_paths must have the same length."
+    assert ch2_dicom_paths, "No CH2 DICOM paths provided."
+    assert ch3_dicom_paths, "No CH3 DICOM paths provided."
+    assert len(ch2_dicom_paths) == len(
+        ch3_dicom_paths
+    ), "ch2_dicom_paths and ch3_dicom_paths must have the same length."
+    logger.info("Using device=%s with %d strip pairs", device, len(ch2_dicom_paths))
+    _ensure_output_dir(output_dir)
+    logger.info("Writing all outputs under %s", output_dir)
+
+    patch_dict_path = os.path.join(output_dir, "generated_patches.pt")
+    detected_cells_csv_path = os.path.join(output_dir, "detected_cells.csv")
+    cell_predictions_image_path = os.path.join(output_dir, "cell_predictions.png")
+    cell_representations_path = os.path.join(output_dir, "cell_representations.pt")
+    gmm_predictions_csv_path = os.path.join(output_dir, "cell_gmm_predictions.csv")
+    gmm_overlay_path = os.path.join(output_dir, f"{viz_candidate_name}.png")
+    gmm_hist_path = os.path.join(output_dir, f"{viz_candidate_name}-hist.pdf")
+
+    # 1. Generate a global patch dictionary from paired CH2/CH3 strip DICOMs.
+    logger.info("Begin step 1: generate strip patches")
+    if _can_use_cache(use_cached, patch_dict_path):
+        logger.info("Loading cached patches from %s", patch_dict_path)
+        patch_dict = torch.load(patch_dict_path, weights_only=False)
+    else:
+        patch_dict = generate_paired_strip_patches_from_lists(
+            ch2_dicom_paths=ch2_dicom_paths,
+            ch3_dicom_paths=ch3_dicom_paths,
         )
-
-    patch_dict = generate_paired_strip_patches_from_lists(
-        ch2_dicom_paths=ch2_dicom_paths,
-        ch3_dicom_paths=ch3_dicom_paths,
-    )
+        assert patch_dict, "Patch generation returned no patches."
+        torch.save(patch_dict, patch_dict_path)
+        assert os.path.exists(
+            patch_dict_path
+        ), f"Expected generated patches at {patch_dict_path}"
+    assert patch_dict, "Patch dictionary is empty after step 1."
     images, patch_names = _patch_dict_to_batch(patch_dict)
+    logger.info("End step 1: generate strip patches")
 
-    model = get_model(
-        checkpoint_path=checkpoint_path,
-        num_classes=len(DEFAULT_CLASSES),
-        device=device,
-    )
-
-    results = pd.DataFrame(
-        run_inference(
-            images=images,
-            model=model,
-            classes=DEFAULT_CLASSES,
-            patch_names=patch_names,
+    # 2. Run cell detection on the patch batch and project detections to global coordinates.
+    logger.info("Begin step 2: run cell detection inference")
+    if _can_use_cache(use_cached, detected_cells_csv_path):
+        logger.info("Loading cached detections from %s", detected_cells_csv_path)
+        results = pd.read_csv(detected_cells_csv_path)
+    else:
+        logger.info("Loading cell detection model from %s", checkpoint_path)
+        model = get_model(
+            checkpoint_path=checkpoint_path,
+            num_classes=len(DEFAULT_CLASSES),
+            device=device,
         )
+        results = pd.DataFrame(
+            run_inference(
+                images=images,
+                model=model,
+                classes=DEFAULT_CLASSES,
+                patch_names=patch_names,
+            )
+        )
+        assert not results.empty, "Cell detection inference returned no detections."
+        logger.info("Cell detection produced %d detections", len(results))
+        results = _add_global_coordinates(results)
+        results.to_csv(detected_cells_csv_path, index=False)
+
+    assert not results.empty, "Detection results are empty after step 2."
+    required_columns = {
+        "patch",
+        "celltype",
+        "score",
+        "centroid_r",
+        "centroid_c",
+        "bbox_w",
+        "bbox_h",
+    }
+    missing_columns = required_columns.difference(results.columns)
+    assert (
+        not missing_columns
+    ), f"Missing expected detection columns: {sorted(missing_columns)}"
+
+    logger.info(
+        "Saving cell detection visualization to %s", cell_predictions_image_path
     )
-
-    results = _add_global_coordinates(results)
-
     save_cell_prediction_visualization(
         patch_dict=patch_dict,
         cell_predictions=results,
-        output_path="cell_predictions.png",
+        output_path=cell_predictions_image_path,
     )
-    cell_representations = run_cell_representation_inference(
-        patch_dict=patch_dict,
-        cell_predictions=results,
-        data_xform_cf=data_xform_cf,
-        lightning_module_params=lightning_module_params,
-        device=device,
-        batch_size=256,
-    )
-    gmm_predictions = run_single_slide_gmm_inference(
-        cell_representations=cell_representations,
-        gmm_cf=gmm_cf,
-    )
-    #torch.save(cell_representations, "cell_representations.pt")
-    #gmm_predictions.to_csv("cell_gmm_predictions.csv", index=False)
+    logger.info("End step 2: run cell detection inference")
 
+    # 3. Crop detected cells and run DINOv2 to produce per-cell embeddings.
+    logger.info("Begin step 3: run cell representation inference")
+    if _can_use_cache(use_cached, cell_representations_path):
+        logger.info(
+            "Loading cached cell representations from %s", cell_representations_path
+        )
+        cell_representations = torch.load(cell_representations_path, weights_only=False)
+    else:
+        cell_representations = run_cell_representation_inference(
+            patch_dict=patch_dict,
+            cell_predictions=results,
+            data_xform_cf=data_xform_cf,
+            lightning_module_params=lightning_module_params,
+            device=device,
+            batch_size=256,
+        )
+        torch.save(cell_representations, cell_representations_path)
+    assert (
+        "embeddings" in cell_representations
+    ), "Cached cell representations missing `embeddings`."
+    logger.info("End step 3: run cell representation inference")
+
+    # 4. Score the cell embeddings with the pretrained silica GMM.
+    logger.info("Begin step 4: run GMM inference")
+    if _can_use_cache(use_cached, gmm_predictions_csv_path):
+        logger.info("Loading cached GMM predictions from %s", gmm_predictions_csv_path)
+        gmm_predictions = pd.read_csv(gmm_predictions_csv_path)
+    else:
+        gmm_predictions = run_single_slide_gmm_inference(
+            cell_representations=cell_representations,
+            gmm_cf=gmm_cf,
+        )
+        gmm_predictions.to_csv(gmm_predictions_csv_path, index=False)
+    assert not gmm_predictions.empty, "GMM predictions are empty after step 4."
+    logger.info("Generated GMM predictions")
+
+    # Render the final whole-slide overlay and histogram from GMM predictions.
+    logger.info("Rendering GMM visualizations")
     generate_visualization(
         predictions=gmm_predictions,
         mosaic_dicom_path=mosaic_dicom_path,
-        out_dir=".",
+        out_dir=output_dir,
         candidate_name=viz_candidate_name,
         strip_padding=50,
     )
+    logger.info("End step 4: run GMM inference")
+    logger.info("Finished single-cell silica eval pipeline")
 
-    #output_path = Path(output_csv).expanduser()
-    #output_path.parent.mkdir(parents=True, exist_ok=True)
-    #results.to_csv(output_path, index=False)
+    # output_path = Path(output_csv).expanduser()
+    # output_path.parent.mkdir(parents=True, exist_ok=True)
+    # results.to_csv(output_path, index=False)
+
+
 #
-    #print(
-    #    f"Saved {len(results)} detections from {len(patch_names)} patches to {output_path}"
-    #)
+# print(
+#    f"Saved {len(results)} detections from {len(patch_names)} patches to {output_path}"
+# )
 
 
 if __name__ == "__main__":

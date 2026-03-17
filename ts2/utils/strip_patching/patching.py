@@ -9,6 +9,7 @@ windows while remaining aligned to the requested global patch grid.
 """
 
 import os
+import logging
 from typing import Callable, Dict, Optional, Sequence, Tuple, Union
 
 import numpy as np
@@ -27,6 +28,7 @@ from ts2.utils.srh_viz import prepare_two_channel_viz_image
 IntOrTuple = Union[int, Tuple[int, int]]
 PatchProcessor = Callable[[np.ndarray], np.ndarray]
 PatchProcessorArg = Optional[Union[str, PatchProcessor]]
+logger = logging.getLogger(__name__)
 
 
 def _as_pair(value: IntOrTuple, name: str) -> Tuple[int, int]:
@@ -321,15 +323,21 @@ def generate_paired_strip_patches(
         patch_width, patch_stride_x, patch_start_x, substrip_width
     )
 
+    assert os.path.exists(ch2_dicom_path), f"CH2 DICOM not found: {ch2_dicom_path}"
+    assert os.path.exists(ch3_dicom_path), f"CH3 DICOM not found: {ch3_dicom_path}"
+    logger.info(
+        "Generating paired strip patches for %s and %s", ch2_dicom_path, ch3_dicom_path
+    )
     ch2_strip = pyd.dcmread(ch2_dicom_path).pixel_array.astype(float)
     ch3_strip = pyd.dcmread(ch3_dicom_path).pixel_array.astype(float)
 
-    if ch2_strip.shape != ch3_strip.shape:
-        raise ValueError("Paired CH2/CH3 strips must have the same dimensions.")
-    if ch2_strip.ndim != 2:
-        raise ValueError("Expected single-frame 2D strip DICOM inputs.")
-    if patch_height > substrip_height or patch_width > substrip_width:
-        raise ValueError("patch_size cannot be larger than substrip_size.")
+    assert (
+        ch2_strip.shape == ch3_strip.shape
+    ), "Paired CH2/CH3 strips must have the same dimensions."
+    assert ch2_strip.ndim == 2, "Expected single-frame 2D strip DICOM inputs."
+    assert (
+        patch_height <= substrip_height and patch_width <= substrip_width
+    ), "patch_size cannot be larger than substrip_size."
 
     strip_height, strip_width = ch2_strip.shape
     substrip_starts_y = _substrip_starts(
@@ -339,69 +347,80 @@ def generate_paired_strip_patches(
         strip_width, substrip_width, substrip_stride_x, substrip_start_x
     )
 
-    if not substrip_starts_y or not substrip_starts_x:
-        raise ValueError(
-            "No valid substrips fit in the input strips with the requested "
-            "substrip_size and derived substrip layout."
-        )
+    assert substrip_starts_y and substrip_starts_x, (
+        "No valid substrips fit in the input strips with the requested "
+        "substrip_size and derived substrip layout."
+    )
+    logger.info(
+        "Strip shape=%s, substrip grid=%dx%d",
+        ch2_strip.shape,
+        len(substrip_starts_y),
+        len(substrip_starts_x),
+    )
 
     patch_prefix = series_name or "patch"
     patch_dict: Dict[str, np.ndarray] = {}
     seen_patch_origins = set()
 
-    for substrip_y in substrip_starts_y:
-        for substrip_x in substrip_starts_x:
-            ch2_substrip = ch2_strip[
-                substrip_y : substrip_y + substrip_height,
-                substrip_x : substrip_x + substrip_width,
-            ]
-            ch3_substrip = ch3_strip[
-                substrip_y : substrip_y + substrip_height,
-                substrip_x : substrip_x + substrip_width,
-            ]
+    total_substrips = len(substrip_starts_y) * len(substrip_starts_x)
+    for substrip_y, substrip_x in tqdm(
+        [(y, x) for y in substrip_starts_y for x in substrip_starts_x],
+        total=total_substrips,
+        desc=f"Processing substrips {patch_prefix}",
+    ):
+        ch2_substrip = ch2_strip[
+            substrip_y : substrip_y + substrip_height,
+            substrip_x : substrip_x + substrip_width,
+        ]
+        ch3_substrip = ch3_strip[
+            substrip_y : substrip_y + substrip_height,
+            substrip_x : substrip_x + substrip_width,
+        ]
 
-            if register:
-                registered_substrip = fft_register(ch2_substrip, ch3_substrip)
-            else:
-                registered_substrip = np.stack((ch2_substrip, ch3_substrip), axis=-1)
+        if register:
+            registered_substrip = fft_register(ch2_substrip, ch3_substrip)
+        else:
+            registered_substrip = np.stack((ch2_substrip, ch3_substrip), axis=-1)
 
-            patch_starts_y = _aligned_patch_starts(
-                substrip_y,
-                substrip_height,
-                patch_height,
-                patch_stride_y,
-                patch_start_y,
-            )
-            patch_starts_x = _aligned_patch_starts(
-                substrip_x,
-                substrip_width,
-                patch_width,
-                patch_stride_x,
-                patch_start_x,
-            )
+        patch_starts_y = _aligned_patch_starts(
+            substrip_y,
+            substrip_height,
+            patch_height,
+            patch_stride_y,
+            patch_start_y,
+        )
+        patch_starts_x = _aligned_patch_starts(
+            substrip_x,
+            substrip_width,
+            patch_width,
+            patch_stride_x,
+            patch_start_x,
+        )
 
-            for local_y in patch_starts_y:
-                for local_x in patch_starts_x:
-                    patch = registered_substrip[
-                        local_y : local_y + patch_height,
-                        local_x : local_x + patch_width,
-                        :,
-                    ]
-                    patch = _process_patch(
-                        patch,
-                        patch_processor=patch_processor,
-                    )
+        for local_y in patch_starts_y:
+            for local_x in patch_starts_x:
+                patch = registered_substrip[
+                    local_y : local_y + patch_height,
+                    local_x : local_x + patch_width,
+                    :,
+                ]
+                patch = _process_patch(
+                    patch,
+                    patch_processor=patch_processor,
+                )
 
-                    global_y = substrip_y + local_y + coordinate_offset_y
-                    global_x = substrip_x + local_x + coordinate_offset_x
-                    patch_origin = (global_y, global_x)
-                    if patch_origin in seen_patch_origins:
-                        continue
+                global_y = substrip_y + local_y + coordinate_offset_y
+                global_x = substrip_x + local_x + coordinate_offset_x
+                patch_origin = (global_y, global_x)
+                if patch_origin in seen_patch_origins:
+                    continue
 
-                    seen_patch_origins.add(patch_origin)
-                    patch_name = f"{patch_prefix}-{global_y}_{global_x}"
-                    patch_dict[patch_name] = patch
+                seen_patch_origins.add(patch_origin)
+                patch_name = f"{patch_prefix}-{global_y}_{global_x}"
+                patch_dict[patch_name] = patch
 
+    assert patch_dict, "Patch extraction produced no patches."
+    logger.info("Generated %d patches for %s", len(patch_dict), patch_prefix)
     return patch_dict
 
 
@@ -434,10 +453,10 @@ def generate_paired_strip_patches_from_lists(
         ValueError: If the CH2 and CH3 lists do not have the same length.
     """
 
-    if len(ch2_dicom_paths) != len(ch3_dicom_paths):
-        raise ValueError(
-            "ch2_dicom_paths and ch3_dicom_paths must have the same length."
-        )
+    assert len(ch2_dicom_paths) == len(
+        ch3_dicom_paths
+    ), "ch2_dicom_paths and ch3_dicom_paths must have the same length."
+    assert ch2_dicom_paths, "No CH2/CH3 strip paths were provided."
 
     patch_dict: Dict[str, np.ndarray] = {}
     for strip_index, (ch2_dicom_path, ch3_dicom_path) in enumerate(
@@ -456,6 +475,12 @@ def generate_paired_strip_patches_from_lists(
         )
         patch_dict.update(strip_patch_dict)
 
+    assert patch_dict, "Merged strip patch generation produced no patches."
+    logger.info(
+        "Generated %d total patches across %d strips",
+        len(patch_dict),
+        len(ch2_dicom_paths),
+    )
     return patch_dict
 
 
@@ -476,6 +501,8 @@ def save_stitched_patch_visualization(
         The stitched ``H x W x 3`` uint8 visualization image that was saved.
     """
 
+    logger.info("Saving stitched patch visualization to %s", output_path)
+    assert patch_dict, "patch_dict must not be empty."
     patch_items = []
     max_bottom = 0
     max_right = 0
@@ -513,6 +540,9 @@ def save_stitched_patch_visualization(
         np.maximum(stitched_count, 1),
     ).astype(np.uint8)
     Image.fromarray(stitched_image).save(output_path)
+    assert os.path.exists(
+        output_path
+    ), f"Failed to save stitched visualization: {output_path}"
     return stitched_image
 
 
@@ -539,6 +569,7 @@ def save_tiled_patch_visualization(
 
     if not patch_dict:
         raise ValueError("patch_dict must not be empty.")
+    logger.info("Saving tiled patch visualization to %s", output_path)
 
     patch_rows = {}
     for patch_name, patch_array in tqdm(
@@ -556,7 +587,9 @@ def save_tiled_patch_visualization(
     ordered_rows = []
     max_columns = 0
     for y_coord in sorted(patch_rows):
-        row_patches = [patch for _, patch in sorted(patch_rows[y_coord], key=lambda item: item[0])]
+        row_patches = [
+            patch for _, patch in sorted(patch_rows[y_coord], key=lambda item: item[0])
+        ]
         ordered_rows.append(row_patches)
         max_columns = max(max_columns, len(row_patches))
 
@@ -576,6 +609,9 @@ def save_tiled_patch_visualization(
             tiled_image[top : top + patch_height, left : left + patch_width] = patch_np
 
     Image.fromarray(tiled_image).save(output_path)
+    assert os.path.exists(
+        output_path
+    ), f"Failed to save tiled visualization: {output_path}"
     return tiled_image
 
 

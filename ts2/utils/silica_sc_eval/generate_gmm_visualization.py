@@ -1,3 +1,4 @@
+import logging
 import os
 
 import cv2
@@ -6,6 +7,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pydicom
+from tqdm.auto import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 def parse_cell_path(cell_path: str) -> tuple[int, int]:
@@ -25,7 +29,12 @@ def load_mosaic_image(
     mosaic_dicom_path: str,
     strip_padding: int = 50,
 ) -> np.ndarray:
+    logger.info("Loading mosaic image from %s", mosaic_dicom_path)
+    assert os.path.exists(
+        mosaic_dicom_path
+    ), f"Mosaic DICOM not found: {mosaic_dicom_path}"
     image = pydicom.dcmread(mosaic_dicom_path).pixel_array
+    assert image.ndim == 3, f"Expected 3D mosaic image, got shape {image.shape}"
     image = np.pad(
         image,
         ((strip_padding, strip_padding), (strip_padding, 0), (0, 0)),
@@ -48,13 +57,21 @@ def generate_visualization(
     circle_radius: int = 10,
     alpha: float = 0.5,
 ) -> None:
+    logger.info("Generating visualization for %s", candidate_name)
     os.makedirs(out_dir, exist_ok=True)
 
-    if "prediction" not in predictions.columns or "path" not in predictions.columns:
-        raise ValueError("Predictions CSV must contain `path` and `prediction` columns.")
+    assert len(predictions) > 0, "No predictions provided for visualization."
+    assert (
+        "prediction" in predictions.columns
+    ), "Predictions must contain a `prediction` column."
+    assert "path" in predictions.columns, "Predictions must contain a `path` column."
 
     norm_pred = np.asarray(predictions["prediction"], dtype=float)
     cell_coords = np.asarray([parse_cell_path(path) for path in predictions["path"]])
+    assert len(norm_pred) == len(
+        cell_coords
+    ), "Coordinate count does not match prediction count."
+    logger.info("Preparing histogram and overlay for %d cells", len(norm_pred))
 
     plt.rcParams["font.size"] = 14
     matplotlib.rcParams["pdf.fonttype"] = 42
@@ -68,15 +85,21 @@ def generate_visualization(
     ax.set_xlabel("Tumor likelihood")
     ax.grid(axis="both", color="#cbd5e1", zorder=0)
     plt.tight_layout()
-    fig.savefig(os.path.join(out_dir, f"{candidate_name}-hist.pdf"))
+    hist_path = os.path.join(out_dir, f"{candidate_name}-hist.pdf")
+    fig.savefig(hist_path)
     plt.close(fig)
+    assert os.path.exists(hist_path), f"Failed to save histogram: {hist_path}"
 
     image = load_mosaic_image(mosaic_dicom_path, strip_padding=strip_padding)
     image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     overlay = image_bgr.copy()
     cmap = plt.get_cmap("RdYlGn")
 
-    for (y, x), p in zip(cell_coords, norm_pred):
+    for (y, x), p in tqdm(
+        zip(cell_coords, norm_pred),
+        total=len(norm_pred),
+        desc="Drawing GMM overlay",
+    ):
         color = np.asarray(cmap(p)[:3]) * 255
         color_bgr = tuple(int(v) for v in color[::-1])
         cv2.circle(
@@ -88,4 +111,8 @@ def generate_visualization(
         )
 
     blended = cv2.addWeighted(overlay, alpha, image_bgr, 1 - alpha, 0)
-    cv2.imwrite(os.path.join(out_dir, f"{candidate_name}.png"), blended)
+    image_path = os.path.join(out_dir, f"{candidate_name}.png")
+    success = cv2.imwrite(image_path, blended)
+    assert success, f"Failed to save overlay image: {image_path}"
+    assert os.path.exists(image_path), f"Overlay image was not written: {image_path}"
+    logger.info("Saved visualization outputs to %s", out_dir)

@@ -1,5 +1,6 @@
 """Minimal FFT-based registration helpers for standalone strip patching."""
 
+import logging
 import math
 
 import numpy as np
@@ -7,8 +8,11 @@ import numpy
 import scipy.ndimage.interpolation as ndii
 from numpy.fft import fft2, ifft2, fftshift
 
+logger = logging.getLogger(__name__)
+
 
 def highpass(shape):
+    assert len(shape) == 2, f"highpass expects a 2D shape, got {shape}"
     x = numpy.outer(
         numpy.cos(numpy.linspace(-math.pi / 2.0, math.pi / 2.0, shape[0])),
         numpy.cos(numpy.linspace(-math.pi / 2.0, math.pi / 2.0, shape[1])),
@@ -17,6 +21,7 @@ def highpass(shape):
 
 
 def logpolar(image, angles=None, radii=None):
+    assert image.ndim == 2, f"logpolar expects a 2D image, got shape {image.shape}"
     shape = image.shape
     center = shape[0] / 2, shape[1] / 2
     if angles is None:
@@ -37,6 +42,7 @@ def logpolar(image, angles=None, radii=None):
 
 
 def similarity(im0, im1):
+    logger.debug("Running FFT similarity registration")
     if im0.shape != im1.shape:
         raise ValueError("Images must have same shapes.")
     if len(im0.shape) != 2:
@@ -98,6 +104,11 @@ def similarity(im0, im1):
 
 
 def fft_register(image1: np.ndarray, image2: np.ndarray) -> np.ndarray:
+    assert (
+        image1.shape == image2.shape
+    ), "Input images for registration must have identical shapes."
+    assert image1.ndim == 2, f"Expected 2D input images, got shape {image1.shape}"
+    logger.debug("Registering strip pair with shape %s", image1.shape)
     registered_image = np.zeros((image1.shape[0], image1.shape[1], 2), dtype=float)
     image3, _, _, _ = similarity(image1, image2)
     registered_image[:, :, 0] = image1

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any
 
 import torch
@@ -7,11 +9,17 @@ import torchvision
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 
+logger = logging.getLogger(__name__)
+
 
 def get_model_instance_segmentation(
     num_classes: int,
 ) -> torchvision.models.detection.MaskRCNN:
     """Create the Mask R-CNN architecture used by the original code."""
+    assert num_classes > 0, f"num_classes must be positive, got {num_classes}"
+    logger.info(
+        "Creating Mask R-CNN instance segmentation model with %d classes", num_classes
+    )
     model = torchvision.models.detection.maskrcnn_resnet50_fpn(
         weights=None,
         weights_backbone=None,
@@ -30,6 +38,7 @@ def get_model_instance_segmentation(
 
 
 def _extract_state_dict(ckpt: dict[str, Any]) -> dict[str, torch.Tensor]:
+    assert isinstance(ckpt, dict), "Checkpoint must be a dictionary."
     state_dict = ckpt["state_dict"] if "state_dict" in ckpt else ckpt
     return {key.removeprefix("model."): value for key, value in state_dict.items()}
 
@@ -43,11 +52,14 @@ def load_model_from_checkpoint(
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    assert os.path.exists(checkpoint_path), f"Checkpoint not found: {checkpoint_path}"
+    logger.info("Loading detection model checkpoint from %s", checkpoint_path)
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
     model = get_model_instance_segmentation(num_classes=num_classes)
     model.load_state_dict(_extract_state_dict(checkpoint))
     model.to(device)
     model.eval()
+    logger.info("Loaded detection model onto %s", device)
     return model
 
 
