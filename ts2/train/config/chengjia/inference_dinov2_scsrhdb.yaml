@@ -1,7 +1,7 @@
 infra:
   exp_name:  ts2/fmi_dinov2_cc_new
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
-  comment: INFDB_NOIN_dev
+  comment: INFDB_NOIN_srhum4m_dev
   seed: 1000
   float32_matmul_precision: medium
 
@@ -27,7 +27,7 @@ data:
     params:
       data_root: /nfs/turbo/umms-tocho-snr/data/root_histology_db/srh/
       #sc_proposal_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root_gen2/
-      cell_instances: srhum_glioma_2m_.csv #srhum_2m.csv
+      cell_instances: /nfs/turbo/umms-tocho/data/data_splits/chengjia/silica_databank/srhum_4m_.csv #srhum_glioma_2m_.csv #srhum_2m.csv
   loader:
     params:
       test:
