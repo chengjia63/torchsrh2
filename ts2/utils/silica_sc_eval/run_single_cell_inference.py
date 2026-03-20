@@ -378,10 +378,11 @@ def main() -> None:
     )
     # Pretrained GMM metadata used to convert embeddings into tumor likelihoods.
     gmm_cf = {
-        "db_mean_path": "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/silica_gmm_reproduce/stats/db_mean.pt",
-        "metrics_path": "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/silica_gmm_reproduce/stats/gmm_g2m_metrics.csv",
-        "model_path": "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/silica_gmm_reproduce/models/gmm_g2m_m32.pkl",
+        "db_mean_path": "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_sc_eval/out/silica_gmm_um2m/stats/db_mean.pt",
+        "metrics_path": "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_sc_eval/out/silica_gmm_um2m/stats/gmm_g2m_metrics.csv",
+        "model_path": "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_sc_eval/out/silica_gmm_um2m/models/gmm_g2m_m32.pkl",
         "k": 32,
+        "negative_label": "normal",
         "zero_components": [],
     }
 

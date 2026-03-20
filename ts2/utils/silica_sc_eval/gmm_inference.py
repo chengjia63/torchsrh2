@@ -1,4 +1,4 @@
-import ast
+import json
 import logging
 import os
 from typing import Any
@@ -10,6 +10,28 @@ import torch
 from sklearn.mixture import GaussianMixture
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_serialized_score_value(score_value):
+    if isinstance(score_value, str):
+        return json.loads(score_value)
+    return score_value
+
+
+def _normalize_component_class_scores(
+    score_value: dict[Any, dict[str, float]],
+    k: int,
+) -> dict[int, dict[str, float]]:
+    normalized_scores = {}
+    for raw_component_idx, class_scores in score_value.items():
+        component_idx = int(str(raw_component_idx).strip())
+        normalized_scores[component_idx] = class_scores
+
+    missing_components = sorted(set(range(k)).difference(normalized_scores))
+    assert (
+        not missing_components
+    ), f"Missing class proportions for components: {missing_components}"
+    return normalized_scores
 
 
 def gmm_inf_impl(
@@ -90,6 +112,8 @@ def load_mixture_score(
     metrics_or_path,
     k: int,
     zero_components: tuple[int, ...] = (),
+    target_label: str | None = None,
+    negative_label: str | None = None,
 ) -> np.ndarray:
     logger.info("Loading mixture score for k=%s", k)
     if isinstance(metrics_or_path, str):
@@ -100,17 +124,78 @@ def load_mixture_score(
     else:
         metrics = metrics_or_path
     assert "k" in metrics.columns, "Expected `k` column in metrics."
-    assert "pos_rate" in metrics.columns, "Expected `pos_rate` column in metrics."
+    assert (
+        "class_proportions" in metrics.columns
+    ), "Expected `class_proportions` column in metrics."
 
     metric_row = metrics.loc[metrics["k"] == k]
     if metric_row.empty:
         raise ValueError(f"No metrics row found for k={k}.")
 
-    pos_rate = metric_row.iloc[0]["pos_rate"]
-    if isinstance(pos_rate, str):
-        mixture_score = np.asarray(ast.literal_eval(pos_rate), dtype=float)
+    score_value = metric_row.iloc[0]["class_proportions"]
+    score_value = _parse_serialized_score_value(score_value)
+
+    if isinstance(score_value, dict):
+        first_value = next(iter(score_value.values())) if score_value else None
+        if isinstance(first_value, dict):
+            component_class_scores = _normalize_component_class_scores(score_value, k)
+            cluster_labels = sorted(
+                {
+                    label
+                    for cluster_scores in component_class_scores.values()
+                    for label in cluster_scores
+                }
+            )
+            if target_label is not None and negative_label is not None:
+                raise ValueError("Set only one of `target_label` or `negative_label`.")
+
+            if negative_label is not None:
+                if negative_label not in cluster_labels:
+                    raise ValueError(
+                        f"Requested negative_label={negative_label!r}, available labels are "
+                        f"{cluster_labels}."
+                    )
+                mixture_score = np.asarray(
+                    [
+                        1.0
+                        - float(component_class_scores[component_idx][negative_label])
+                        for component_idx in range(k)
+                    ],
+                    dtype=float,
+                )
+            else:
+                if target_label is None:
+                    if "tumor" in cluster_labels:
+                        target_label = "tumor"
+                    else:
+                        raise ValueError(
+                            "Metrics contain multiclass proportions; set `target_label` or "
+                            "`negative_label` to select how scores are loaded."
+                        )
+                mixture_score = np.asarray(
+                    [
+                        float(component_class_scores[component_idx][target_label])
+                        for component_idx in range(k)
+                    ],
+                    dtype=float,
+                )
+        else:
+            if target_label is None:
+                if "tumor" in score_value:
+                    target_label = "tumor"
+                else:
+                    raise ValueError(
+                        "Metrics contain multiclass proportions; set `target_label` to "
+                        "select which class score to load."
+                    )
+            if target_label not in score_value:
+                raise ValueError(
+                    f"Requested target_label={target_label!r}, available labels are "
+                    f"{sorted(score_value.keys())}."
+                )
+            mixture_score = np.asarray(score_value[target_label], dtype=float)
     else:
-        mixture_score = np.asarray(pos_rate, dtype=float)
+        mixture_score = np.asarray(score_value, dtype=float)
 
     for component_idx in zero_components:
         mixture_score[component_idx] = 0.0
@@ -140,6 +225,8 @@ def instantiate_gmm(gmm_cf: dict) -> dict[str, Any]:
         metrics_or_path=gmm_cf["metrics_path"],
         k=k,
         zero_components=tuple(gmm_cf.get("zero_components", ())),
+        target_label=gmm_cf.get("target_label"),
+        negative_label=gmm_cf.get("negative_label"),
     )
 
     return {

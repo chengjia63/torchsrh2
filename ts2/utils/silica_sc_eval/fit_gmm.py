@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import os
+from contextlib import contextmanager
 from typing import Iterable
 
 import altair as alt
@@ -26,16 +27,83 @@ from ts2.utils.srh_viz import prepare_three_channel_viz_image
 logger = logging.getLogger(__name__)
 
 
-def load_embedding_table(pred_path: str) -> pd.DataFrame:
+@contextmanager
+def tqdm_joblib(tqdm_object):
+    class TqdmBatchCompletionCallback(joblib.parallel.BatchCompletionCallBack):
+        def __call__(self, *args, **kwargs):
+            tqdm_object.update(n=self.batch_size)
+            return super().__call__(*args, **kwargs)
+
+    old_callback = joblib.parallel.BatchCompletionCallBack
+    joblib.parallel.BatchCompletionCallBack = TqdmBatchCompletionCallback
+    try:
+        yield tqdm_object
+    finally:
+        joblib.parallel.BatchCompletionCallBack = old_callback
+        tqdm_object.close()
+
+
+def _parse_proposal(value) -> tuple[int, int]:
+    if isinstance(value, tuple):
+        return int(value[0]), int(value[1])
+    if isinstance(value, list):
+        return int(value[0]), int(value[1])
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("(") and stripped.endswith(")"):
+            stripped = stripped[1:-1]
+        parts = [part.strip() for part in stripped.split(",")]
+        if len(parts) == 2:
+            return int(parts[0]), int(parts[1])
+    raise ValueError(f"Could not parse proposal coordinates from value: {value!r}")
+
+
+def _encode_cell_path(patch: str, proposal) -> str:
+    row, col = _parse_proposal(proposal)
+    return f"{patch}#{row}_{col}"
+
+
+def load_embedding_table(
+    pred_path: str,
+    cell_instances_path: str,
+    label_column: str = "patch_type",
+) -> pd.DataFrame:
     logger.info("Loading embedding table from %s", pred_path)
-    assert os.path.exists(pred_path), f"Embedding file not found: {pred_path}"
+
     data = torch.load(pred_path)
     table = pd.DataFrame(data)
-    assert len(table) > 0, f"No rows loaded from embedding file: {pred_path}"
     assert (
         "embeddings" in table.columns
     ), "Expected `embeddings` column in embedding table."
-    assert "label" in table.columns, "Expected `label` column in embedding table."
+    assert "path" in table.columns, "Expected `path` column in embedding table."
+
+    label_source = pd.read_csv(cell_instances_path, dtype=str)
+    label_source = label_source.copy()
+    label_source["path"] = label_source.apply(
+        lambda row: _encode_cell_path(row["patch"], row["proposal"]), axis=1
+    )
+    label_source = label_source.rename(columns={label_column: "label"})[
+        ["path", "label"]
+    ]
+    labels_per_path = label_source.groupby("path")["label"].nunique()
+    ambiguous_paths = labels_per_path[labels_per_path > 1]
+    assert (
+        ambiguous_paths.empty
+    ), "Cell instances CSV produced paths with conflicting labels: " + ", ".join(
+        ambiguous_paths.index[:10]
+    )
+    label_source = label_source.drop_duplicates(subset=["path", "label"])
+
+    table = table.drop(columns=["label"], errors="ignore").merge(
+        label_source,
+        on="path",
+        how="left",
+        validate="many_to_one",
+    )
+    missing_label_count = int(table["label"].isna().sum())
+    assert (
+        missing_label_count == 0
+    ), f"Could not match {missing_label_count} prediction rows to labels in source CSV."
     logger.info("Loaded %d rows with columns: %s", len(table), table.columns.tolist())
     return table
 
@@ -53,18 +121,34 @@ def prepare_embeddings(db_data: pd.DataFrame) -> tuple[torch.Tensor, torch.Tenso
     return db_mean, db_embs_norm
 
 
+def normalize_embeddings(
+    embeddings: torch.Tensor, db_mean: torch.Tensor
+) -> torch.Tensor:
+    embeddings = embeddings - db_mean
+    return torch.nn.functional.normalize(embeddings, dim=1)
+
+
 def sample_idx(group, n: int = 8192):
     return group.sample(n=min(n, len(group)), random_state=1000).index
 
 
 def sample_cells(db_data: pd.DataFrame, n_per_class: int = 8192) -> list[int]:
-    logger.info("Sampling up to %d cells per label for TSNE", n_per_class)
+    logger.info("Sampling up to %d cells per label", n_per_class)
     sampled_idx = (
         db_data.groupby("label").apply(sample_idx, n=n_per_class).explode().values
     )
     cell_samples = sorted(sampled_idx)
-    assert len(cell_samples) > 0, "No sampled cells were selected for TSNE."
-    logger.info("Sampled %d total cells for TSNE", len(cell_samples))
+    assert len(cell_samples) > 0, "No sampled cells were selected."
+    logger.info("Sampled %d total cells", len(cell_samples))
+    return cell_samples
+
+
+def sample_global_cells(db_data: pd.DataFrame, n: int | None = None) -> list[int]:
+    assert n > 0, f"global sample n must be positive, got {n}"
+    sampled_idx = db_data.sample(n=min(n, len(db_data)), random_state=1000).index
+    cell_samples = sorted(sampled_idx)
+    assert len(cell_samples) > 0, "No sampled cells were selected for global sample."
+    logger.info("Sampled %d total cells for global sample", len(cell_samples))
     return cell_samples
 
 
@@ -142,6 +226,30 @@ def compute_tsne(
     return (embeddings_2d - min_vals) / (max_vals - min_vals) * 0.9 + 0.05
 
 
+def _fit_single_gmm(
+    k: int,
+    db_embs_np: np.ndarray,
+    covariance_type: str,
+    max_iter: int,
+    init_params: str,
+    random_state: int,
+) -> tuple[GaussianMixture, float, float]:
+    logger.info("Fitting GMM with K=%s", k)
+    assert k > 0, f"Invalid GMM component count: {k}"
+    gmm = GaussianMixture(
+        n_components=k,
+        covariance_type=covariance_type,
+        max_iter=max_iter,
+        init_params=init_params,
+        random_state=random_state,
+    )
+    gmm.fit(db_embs_np)
+    bic = gmm.bic(db_embs_np)
+    aic = gmm.aic(db_embs_np)
+    logger.info("Finished k=%s BIC=%s AIC=%s", k, bic, aic)
+    return gmm, bic, aic
+
+
 def fit_gmms(
     db_embs_norm: torch.Tensor,
     k_range: Iterable[int],
@@ -149,30 +257,55 @@ def fit_gmms(
     max_iter: int = 200,
     init_params: str = "kmeans",
     random_state: int = 0,
+    n_jobs: int = 1,
+    parallel_backend: str = "loky",
 ) -> tuple[list[GaussianMixture], list[float], list[float]]:
-    gmms = []
-    bic_scores = []
-    aic_scores = []
+    k_values = list(k_range)
+    assert len(k_values) > 0, "k_range must contain at least one component count."
     db_embs_np = db_embs_norm.cpu().numpy()
     logger.info(
         "Starting GMM fitting on normalized embeddings with shape=%s", db_embs_np.shape
     )
+    logger.info(
+        "GMM fit config: ks=%s n_jobs=%s backend=%s",
+        k_values,
+        n_jobs,
+        parallel_backend,
+    )
 
-    for k in tqdm(k_range, desc="Fitting GMMs"):
-        logger.info("Fitting GMM with K=%s", k)
-        assert k > 0, f"Invalid GMM component count: {k}"
-        gmm = GaussianMixture(
-            n_components=k,
-            covariance_type=covariance_type,
-            max_iter=max_iter,
-            init_params=init_params,
-            random_state=random_state,
-        )
-        gmm.fit(db_embs_np)
-        gmms.append(gmm)
-        bic_scores.append(gmm.bic(db_embs_np))
-        aic_scores.append(gmm.aic(db_embs_np))
-        logger.info("Finished k=%s BIC=%s AIC=%s", k, bic_scores[-1], aic_scores[-1])
+    if n_jobs == 1:
+        results = [
+            _fit_single_gmm(
+                k=k,
+                db_embs_np=db_embs_np,
+                covariance_type=covariance_type,
+                max_iter=max_iter,
+                init_params=init_params,
+                random_state=random_state,
+            )
+            for k in tqdm(k_values, desc="Fitting GMMs")
+        ]
+    else:
+        with tqdm_joblib(tqdm(total=len(k_values), desc="Fitting GMMs")):
+            results = joblib.Parallel(
+                n_jobs=n_jobs,
+                backend=parallel_backend,
+                verbose=10,
+            )(
+                joblib.delayed(_fit_single_gmm)(
+                    k=k,
+                    db_embs_np=db_embs_np,
+                    covariance_type=covariance_type,
+                    max_iter=max_iter,
+                    init_params=init_params,
+                    random_state=random_state,
+                )
+                for k in k_values
+            )
+
+    gmms = [gmm for gmm, _, _ in results]
+    bic_scores = [bic for _, bic, _ in results]
+    aic_scores = [aic for _, _, aic in results]
 
     return gmms, bic_scores, aic_scores
 
@@ -187,19 +320,51 @@ def build_tsne_axis():
     )
 
 
+def save_tsne_plot(
+    out_dir: str,
+    db_sample: pd.DataFrame,
+    embeddings_2d: np.ndarray,
+) -> None:
+    logger.info("Saving sampled TSNE plot colored by label")
+    tsne_unit_axis = build_tsne_axis()
+    tsne_data = db_sample[["path", "label"]].copy().reset_index(drop=True)
+    tsne_data["x"] = embeddings_2d[:, 0]
+    tsne_data["y"] = embeddings_2d[:, 1]
+
+    chart = (
+        alt.Chart(tsne_data)
+        .mark_point(filled=True)
+        .encode(
+            x=alt.X("x", axis=tsne_unit_axis, scale=alt.Scale(domain=[0, 1])),
+            y=alt.Y("y", axis=tsne_unit_axis, scale=alt.Scale(domain=[0, 1])),
+            color=alt.Color("label:N"),
+            tooltip=["path", "label"],
+        )
+        .properties(width=600, height=600)
+        .interactive()
+    )
+    chart.save(f"{out_dir}/tsne/label_tsne.png")
+    chart.save(f"{out_dir}/tsne/label_tsne.pdf")
+    chart.save(f"{out_dir}/tsne/label_tsne.html")
+    chart.save(f"{out_dir}/tsne/label_tsne.json")
+
+
 def save_gmm_tsne_plots(
     out_dir: str,
     k_range: list[int],
     gmms: list[GaussianMixture],
-    db_data: pd.DataFrame,
-    db_embs_norm: torch.Tensor,
-    cell_samples: list[int],
+    metric_data: pd.DataFrame,
+    metric_embs_norm: torch.Tensor,
+    tsne_data: pd.DataFrame,
+    tsne_embs_norm: torch.Tensor,
     embeddings_2d: np.ndarray,
     im_str: list[str],
-) -> tuple[list[list[float]], list[list[int]]]:
-    cluster_positive_rates = []
+) -> tuple[list[dict[str, list[float]]], list[list[int]]]:
+    cluster_class_rates = []
     cluster_size = []
-    db_embs_np = db_embs_norm.cpu().numpy()
+    metric_embs_np = metric_embs_norm.cpu().numpy()
+    tsne_embs_np = tsne_embs_norm.cpu().numpy()
+    class_names = sorted(metric_data["label"].astype(str).unique().tolist())
 
     alt.data_transformers.disable_max_rows()
     tsne_unit_axis = build_tsne_axis()
@@ -212,23 +377,35 @@ def save_gmm_tsne_plots(
         total=len(k_range),
         desc="Saving GMM TSNE plots",
     ):
-        gmm_pred = gmm.predict(db_embs_np)
-        gmm_pred_df = pd.DataFrame(
-            {"cluster": gmm_pred, "label": db_data["label"] == "tumor"}
+        gmm_pred = gmm.predict(metric_embs_np)
+        cluster_class_df = pd.crosstab(
+            pd.Series(gmm_pred, name="cluster"),
+            pd.Series(metric_data["label"].astype(str).to_numpy(), name="label"),
+            normalize="index",
+        ).reindex(index=np.arange(k), columns=class_names, fill_value=0.0)
+        cluster_count_s = (
+            pd.Series(gmm_pred).value_counts().reindex(np.arange(k), fill_value=0)
         )
-        cluster_positive_rates.append(
-            gmm_pred_df.groupby("cluster").mean()["label"].tolist()
+        cluster_class_rates.append(
+            {
+                str(cluster_idx): {
+                    class_name: float(cluster_class_df.loc[cluster_idx, class_name])
+                    for class_name in class_names
+                }
+                for cluster_idx in range(k)
+            }
         )
-        cluster_size.append(gmm_pred_df.groupby("cluster").count()["label"].tolist())
+        cluster_size.append(cluster_count_s.astype(int).tolist())
+        tsne_gmm_pred = gmm.predict(tsne_embs_np)
 
         combined_data = pd.DataFrame(
             {
                 "x": embeddings_2d[:, 0],
                 "y": embeddings_2d[:, 1],
-                "path": db_data.iloc[cell_samples]["path"],
+                "path": tsne_data["path"].tolist(),
                 "image": im_str,
-                "gt": db_data.iloc[cell_samples]["label"],
-                "cluster": gmm_pred[cell_samples],
+                "gt": tsne_data["label"].tolist(),
+                "cluster": tsne_gmm_pred,
             }
         )
 
@@ -253,12 +430,8 @@ def save_gmm_tsne_plots(
         chart.save(f"{out_dir}/tsne/gmm_g2m_m{k}_tsne.pdf")
         chart.save(f"{out_dir}/tsne/gmm_g2m_m{k}_tsne.html")
         chart.save(f"{out_dir}/tsne/gmm_g2m_m{k}_tsne.json")
-        assert os.path.exists(f"{out_dir}/tsne/gmm_g2m_m{k}_tsne.png")
-        assert os.path.exists(f"{out_dir}/tsne/gmm_g2m_m{k}_tsne.pdf")
-        assert os.path.exists(f"{out_dir}/tsne/gmm_g2m_m{k}_tsne.html")
-        assert os.path.exists(f"{out_dir}/tsne/gmm_g2m_m{k}_tsne.json")
 
-    return cluster_positive_rates, cluster_size
+    return cluster_class_rates, cluster_size
 
 
 def topk_random_tiebreak(g):
@@ -281,9 +454,13 @@ def save_mixture_samples(
     gmms: list[GaussianMixture],
     db_embs_norm: torch.Tensor,
     dataset,
+    source_indices: list[int],
 ) -> None:
     db_embs_np = db_embs_norm.cpu().numpy()
     logger.info("Saving mixture sample grids")
+    assert (
+        len(source_indices) == db_embs_np.shape[0]
+    ), "source_indices must match the number of sampled embeddings."
 
     for k, gmm in tqdm(
         list(zip(k_range, gmms)),
@@ -305,7 +482,7 @@ def save_mixture_samples(
         allsample = pd.concat([center5, rand5]).sort_values(["cluster", "rank"])
 
         images = [
-            dataset[i]["image"]
+            dataset[source_indices[i]]["image"]
             for i in tqdm(
                 allsample.index.tolist(),
                 desc=f"Loading mixture images for k={k}",
@@ -348,7 +525,7 @@ def save_metrics_and_db_mean(
     k_range: list[int],
     bic_scores: list[float],
     aic_scores: list[float],
-    cluster_positive_rates: list[list[float]],
+    cluster_class_rates: list[dict[str, list[float]]],
     cluster_size: list[list[int]],
 ) -> pd.DataFrame:
     logger.info("Saving db_mean and metrics CSV")
@@ -358,8 +535,12 @@ def save_metrics_and_db_mean(
             "k": k_range,
             "AIC": aic_scores,
             "BIC": bic_scores,
-            "pos_rate": cluster_positive_rates,
-            "cluster_size": cluster_size,
+            "class_proportions": [
+                json.dumps(class_rates) for class_rates in cluster_class_rates
+            ],
+            "cluster_size": [
+                json.dumps(cluster_sizes) for cluster_sizes in cluster_size
+            ],
         }
     )
     metrics.to_csv(f"{out_dir}/stats/gmm_g2m_metrics.csv", index=False)
@@ -368,8 +549,41 @@ def save_metrics_and_db_mean(
     return metrics
 
 
+def load_serialized_metrics_value(value: str, field_name: str):
+    # try:
+    return json.loads(value)
+    # except json.JSONDecodeError:
+    #    # Backward compatibility for older CSVs written with Python repr strings.
+    #    parsed = literal_eval(value)
+    #    logger.warning(
+    #        "Parsed non-JSON %s from metrics CSV; rewriting metrics will normalize this.",
+    #        field_name,
+    #    )
+    #    return parsed
+
+
+def class_proportions_to_df(class_proportions: dict) -> pd.DataFrame:
+    if not class_proportions:
+        return pd.DataFrame()
+
+    first_value = next(iter(class_proportions.values()))
+    if isinstance(first_value, dict):
+        class_prop_df = pd.DataFrame.from_dict(class_proportions, orient="index")
+        class_prop_df.index = pd.to_numeric(class_prop_df.index)
+        class_prop_df = class_prop_df.sort_index()
+        class_prop_df.index.name = "cluster"
+        return class_prop_df
+
+    class_prop_df = pd.DataFrame(class_proportions)
+    class_prop_df.index = pd.to_numeric(class_prop_df.index)
+    class_prop_df.index.name = "cluster"
+    return class_prop_df
+
+
 def save_metric_plots(
-    out_dir: str, metrics: pd.DataFrame, cluster_positive_rates: list[list[float]]
+    out_dir: str,
+    metrics: pd.DataFrame,
+    cluster_class_rates: list[dict],
 ) -> None:
     logger.info("Saving summary metric plots")
     melted = pd.melt(
@@ -397,18 +611,22 @@ def save_metric_plots(
     )
     assert os.path.exists(f"{out_dir}/stats/gmm_g2m_metrics.png")
 
-    mean_conf = [
-        np.abs([c - 0.5 for c in pos_rate]).mean() * 2
-        for pos_rate in cluster_positive_rates
+    mean_cluster_purity = [
+        np.mean(np.max(class_proportions_to_df(class_rates).to_numpy(), axis=1))
+        for class_rates in cluster_class_rates
     ]
     (
-        alt.Chart(pd.DataFrame({"k": metrics["k"], "mean_conf": mean_conf}))
+        alt.Chart(
+            pd.DataFrame(
+                {"k": metrics["k"], "mean_cluster_purity": mean_cluster_purity}
+            )
+        )
         .mark_line(point=True)
         .encode(
             x=alt.X("k", axis=xaxis, scale=alt.Scale(domain=[0, 256])),
             y=alt.Y(
-                "mean_conf:Q",
-                axis=alt.Axis(tickSize=0, title="Mean mixture confidence"),
+                "mean_cluster_purity:Q",
+                axis=alt.Axis(tickSize=0, title="Mean cluster purity"),
                 scale=alt.Scale(zero=False),
             ),
         )
@@ -426,77 +644,104 @@ def get_mpl_colormap_hex_list(cmap_name: str = "RdYlGn", n: int = 256) -> list[s
 def save_cluster_stat_plots(out_dir: str, k_range: list[int]) -> None:
     logger.info("Saving per-k cluster statistics plots")
     metrics = pd.read_csv(f"{out_dir}/stats/gmm_g2m_metrics.csv")
-    hex_colors = get_mpl_colormap_hex_list("RdYlGn", 256)
 
     for k in tqdm(k_range, desc="Saving cluster stat plots"):
-        data = pd.DataFrame(
-            {
-                "pos_rate": json.loads(
-                    metrics.loc[metrics["k"] == k, "pos_rate"].item()
-                ),
-                "incidence": json.loads(
-                    metrics.loc[metrics["k"] == k, "cluster_size"].item()
-                ),
-            }
+        class_proportions = load_serialized_metrics_value(
+            metrics.loc[metrics["k"] == k, "class_proportions"].item(),
+            field_name="class_proportions",
         )
-        data["incidence"] /= 1000
-        data["cluster"] = np.arange(k)
+        cluster_sizes = load_serialized_metrics_value(
+            metrics.loc[metrics["k"] == k, "cluster_size"].item(),
+            field_name="cluster_size",
+        )
+        class_prop_df = class_proportions_to_df(class_proportions)
+        class_names = sorted(class_prop_df.columns.tolist())
 
-        base_chart = alt.Chart(data).mark_bar(width=512 / k)
-        pos_rate = base_chart.encode(
-            x=alt.X(
-                "cluster",
-                scale=alt.Scale(domain=[-0.5, k - 0.5]),
-                axis=alt.Axis(
-                    tickSize=0,
-                    values=np.linspace(0, k - 1, k),
-                    domain=False,
-                    labels=False,
-                    title="",
-                ),
-            ),
-            y=alt.Y(
-                "pos_rate",
-                axis=alt.Axis(
-                    tickSize=0,
-                    domain=False,
-                    labels=True,
-                    title="Tumor rate",
-                ),
-            ),
-            color=alt.Color(
-                "pos_rate:Q",
-                scale=alt.Scale(domain=[1, 0], range=hex_colors),
-                legend=None,
-            ),
-        ).properties(height=60, width=800)
+        class_prop_data = class_prop_df.reset_index()
+        class_prop_data = class_prop_data.melt(
+            id_vars="cluster",
+            var_name="label",
+            value_name="proportion",
+        )
+        class_prop_data["cluster"] = pd.to_numeric(class_prop_data["cluster"])
+        class_prop_data["proportion"] = pd.to_numeric(class_prop_data["proportion"])
+        class_prop_data["stack_order"] = (
+            class_prop_data.groupby("cluster")["proportion"]
+            .rank(method="first", ascending=False)
+            .astype(int)
+        )
+        incidence_data = pd.DataFrame(
+            {"cluster": np.arange(k), "incidence": np.asarray(cluster_sizes) / 1000}
+        )
+        incidence_data["cluster"] = pd.to_numeric(incidence_data["cluster"])
+        incidence_data["incidence"] = pd.to_numeric(incidence_data["incidence"])
 
-        incidence = base_chart.encode(
-            x=alt.X(
-                "cluster",
-                scale=alt.Scale(domain=[-0.5, k - 0.5]),
-                axis=alt.Axis(
-                    tickSize=0,
-                    values=np.linspace(0, k - 1, k),
-                    domain=False,
-                    labels=True,
-                    title="Cluster",
+        class_prop = (
+            alt.Chart(class_prop_data)
+            .mark_bar(width=512 / k)
+            .encode(
+                x=alt.X(
+                    "cluster:Q",
+                    scale=alt.Scale(domain=[-0.5, k - 0.5]),
+                    axis=alt.Axis(
+                        tickSize=0,
+                        values=np.linspace(0, k - 1, k),
+                        domain=False,
+                        labels=False,
+                        title="",
+                    ),
                 ),
-            ),
-            y=alt.Y(
-                "incidence",
-                axis=alt.Axis(
-                    tickSize=0,
-                    domain=False,
-                    labels=True,
-                    title="Cells (K)",
+                y=alt.Y(
+                    "proportion:Q",
+                    stack="zero",
+                    axis=alt.Axis(
+                        tickSize=0,
+                        domain=False,
+                        labels=True,
+                        title="Class proportion",
+                    ),
                 ),
-            ),
-            color=alt.value("#475569"),
-        ).properties(height=60, width=800)
+                color=alt.Color(
+                    "label:N",
+                    scale=alt.Scale(domain=class_names),
+                    legend=alt.Legend(title="Class"),
+                ),
+                order=alt.Order("stack_order:Q", sort="ascending"),
+            )
+            .properties(height=60, width=800)
+        )
+
+        incidence = (
+            alt.Chart(incidence_data)
+            .mark_bar(width=512 / k)
+            .encode(
+                x=alt.X(
+                    "cluster:Q",
+                    scale=alt.Scale(domain=[-0.5, k - 0.5]),
+                    axis=alt.Axis(
+                        tickSize=0,
+                        values=np.linspace(0, k - 1, k),
+                        domain=False,
+                        labels=True,
+                        title="Cluster",
+                    ),
+                ),
+                y=alt.Y(
+                    "incidence:Q",
+                    axis=alt.Axis(
+                        tickSize=0,
+                        domain=False,
+                        labels=True,
+                        title="Cells (K)",
+                    ),
+                ),
+                color=alt.value("#475569"),
+            )
+            .properties(height=60, width=800)
+        )
 
         (
-            (pos_rate & incidence)
+            (class_prop & incidence)
             .configure_axis(labelFontSize=14, titleFontSize=14)
             .configure_legend(titleFontSize=14)
             .interactive()
@@ -519,39 +764,65 @@ def fit_and_save_gmm_pipeline(
     k_range: list[int],
     dataset_config_path: str,
     cell_instances_path: str,
+    label_column: str = "patch_type",
+    tsne_n_per_class: int = 8192,
+    global_sample_n: int | None = None,
 ) -> pd.DataFrame:
     ensure_output_dirs(out_dir)
     assert os.path.isdir(out_dir), f"Output directory was not created: {out_dir}"
     logger.info("Starting full GMM fit pipeline")
     logger.info("Output dir: %s", out_dir)
     logger.info("k_range: %s", k_range)
+    logger.info("tsne_n_per_class: %s", tsne_n_per_class)
+    logger.info("global_sample_n: %s", global_sample_n)
 
-    db_data = load_embedding_table(pred_path)
+    db_data = load_embedding_table(
+        pred_path=pred_path,
+        cell_instances_path=cell_instances_path,
+        label_column=label_column,
+    )
+    if global_sample_n is None:
+        db_global_sample = db_data
+        global_source_indices = db_global_sample.index.tolist()
+        logger.info("Using all %d cells for global fitting set", len(db_global_sample))
+    else:
+        global_sample_indices = sample_global_cells(db_data, n=global_sample_n)
+        db_global_sample = db_data.loc[global_sample_indices].copy()
+        global_source_indices = global_sample_indices
 
-    cell_samples = sample_cells(db_data, n_per_class=8192)
-    db_sample = db_data.iloc[cell_samples]
-    all_embs = torch.stack(db_sample["embeddings"].tolist()).numpy()
-    logger.info("Sampled embedding matrix shape for TSNE: %s", all_embs.shape)
-    embeddings_2d = compute_tsne(all_embs)
+    tsne_sample_indices = sample_cells(db_global_sample, n_per_class=tsne_n_per_class)
+    db_tsne_sample = db_global_sample.loc[tsne_sample_indices].copy()
+    tsne_source_indices = tsne_sample_indices
+    tsne_embs = torch.stack(db_tsne_sample["embeddings"].tolist())
+    logger.info("TSNE embedding matrix shape: %s", tuple(tsne_embs.shape))
+    embeddings_2d = compute_tsne(tsne_embs.numpy())
+    save_tsne_plot(
+        out_dir=out_dir,
+        db_sample=db_tsne_sample,
+        embeddings_2d=embeddings_2d,
+    )
 
     dataset = build_dataset(
         config_path=dataset_config_path,
         cell_instances=cell_instances_path,
     )
-    _, im_str, _ = get_sample_images(dataset, cell_samples)
+    _, im_str, _ = get_sample_images(dataset, tsne_source_indices)
 
-    db_mean, db_embs_norm = prepare_embeddings(db_data)
+    db_mean, db_embs_norm = prepare_embeddings(db_global_sample)
+    tsne_embs_norm = normalize_embeddings(tsne_embs, db_mean)
     gmms, bic_scores, aic_scores = fit_gmms(
         db_embs_norm=db_embs_norm,
         k_range=k_range,
+        n_jobs=len(k_range),
     )
-    cluster_positive_rates, cluster_size = save_gmm_tsne_plots(
+    cluster_class_rates, cluster_size = save_gmm_tsne_plots(
         out_dir=out_dir,
         k_range=k_range,
         gmms=gmms,
-        db_data=db_data,
-        db_embs_norm=db_embs_norm,
-        cell_samples=cell_samples,
+        metric_data=db_global_sample,
+        metric_embs_norm=db_embs_norm,
+        tsne_data=db_tsne_sample,
+        tsne_embs_norm=tsne_embs_norm,
         embeddings_2d=embeddings_2d,
         im_str=im_str,
     )
@@ -562,6 +833,7 @@ def fit_and_save_gmm_pipeline(
         gmms=gmms,
         db_embs_norm=db_embs_norm,
         dataset=dataset,
+        source_indices=global_source_indices,
     )
     metrics = save_metrics_and_db_mean(
         out_dir=out_dir,
@@ -569,21 +841,15 @@ def fit_and_save_gmm_pipeline(
         k_range=k_range,
         bic_scores=bic_scores,
         aic_scores=aic_scores,
-        cluster_positive_rates=cluster_positive_rates,
+        cluster_class_rates=cluster_class_rates,
         cluster_size=cluster_size,
     )
     save_metric_plots(
         out_dir=out_dir,
         metrics=metrics,
-        cluster_positive_rates=cluster_positive_rates,
+        cluster_class_rates=cluster_class_rates,
     )
     save_cluster_stat_plots(out_dir=out_dir, k_range=k_range)
-    assert len(os.listdir(f"{out_dir}/models")) > 0, "No model files were written."
-    assert len(os.listdir(f"{out_dir}/stats")) > 0, "No stats files were written."
-    assert len(os.listdir(f"{out_dir}/tsne")) > 0, "No TSNE files were written."
-    assert (
-        len(os.listdir(f"{out_dir}/mixture_samples")) > 0
-    ), "No mixture sample files were written."
     logger.info("Completed full GMM fit pipeline")
     return metrics
 
@@ -599,10 +865,22 @@ def main() -> None:
     )
 
     pred_path = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/dd7f97e0_Jun06-21-19-30_sd1000_INFDB_NOIN_dev/predictions/pred.pt"
-    out_dir = "silica_gmm_reproduce"
+    out_dir = "silica_gmm_um2m"
     k_range = [2, 8, 16, 24, 32, 64, 128, 256]
     dataset_config_path = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/train/config/chengjia/inference_dinov2_scsrhdb.yaml"
     cell_instances_path = "/nfs/turbo/umms-tocho/data/data_splits/chengjia/silica_databank/srhum_glioma_2m_.csv"
+    label_key = "patch_type"
+
+    # pred_path = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/46076e81_Mar18-02-40-22_sd1000_INFDB_NOIN_srhum4m_dev/predictions/pred.pt"
+    # out_dir = "silica_gmm_reproduce"
+    # k_range = [2, 8, 16, 24, 32, 64, 96, 128, 192, 256]
+    # dataset_config_path = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/train/config/chengjia/inference_dinov2_scsrhdb.yaml"
+    # cell_instances_path = (
+    #    "/nfs/turbo/umms-tocho/data/data_splits/chengjia/silica_databank/srhum_4m_.csv"
+    # )
+    # label_key = "ttype_cheng"
+    tsne_n_per_class = 2048
+    global_sample_n = None
 
     fit_and_save_gmm_pipeline(
         pred_path=pred_path,
@@ -610,7 +888,32 @@ def main() -> None:
         k_range=k_range,
         dataset_config_path=dataset_config_path,
         cell_instances_path=cell_instances_path,
+        label_column=label_key,
+        tsne_n_per_class=tsne_n_per_class,
+        global_sample_n=global_sample_n,
     )
+
+
+def main_regenerate_cluster_stats() -> None:
+    logging_format_str = (
+        "[%(levelname)-s|%(asctime)s|%(name)s|"
+        + "%(filename)s:%(lineno)d|%(funcName)s] %(message)s"
+    )
+    logging.basicConfig(
+        level=logging.INFO,
+        format=logging_format_str,
+    )
+
+    out_dir = "silica_gmm_reproduce"
+    metrics_path = f"{out_dir}/stats/gmm_g2m_metrics.csv"
+    assert os.path.exists(metrics_path), f"Metrics CSV not found: {metrics_path}"
+
+    metrics = pd.read_csv(metrics_path)
+    assert "k" in metrics.columns, "Expected `k` column in metrics CSV."
+    k_range = metrics["k"].astype(int).tolist()
+    assert len(k_range) > 0, "No k values found in metrics CSV."
+
+    save_cluster_stat_plots(out_dir=out_dir, k_range=k_range)
 
 
 if __name__ == "__main__":
