@@ -16,7 +16,8 @@ import random
 import os
 import pandas as pd
 
-class SRHPatchCoordMapper():
+
+class SRHPatchCoordMapper:
 
     @staticmethod
     def _to_universal_single(x):
@@ -24,10 +25,8 @@ class SRHPatchCoordMapper():
 
     @staticmethod
     def to_universal_coord(srh_coord):
-        first = SRHPatchCoordMapper._to_universal_single(
-            (srh_coord[0], srh_coord[2]))
-        second = SRHPatchCoordMapper._to_universal_single(
-            (srh_coord[1], srh_coord[3]))
+        first = SRHPatchCoordMapper._to_universal_single((srh_coord[0], srh_coord[2]))
+        second = SRHPatchCoordMapper._to_universal_single((srh_coord[1], srh_coord[3]))
         return (first, second)
 
     @staticmethod
@@ -36,9 +35,11 @@ class SRHPatchCoordMapper():
 
         srh_coord = tuple(int(x) for x in patch_coord_str.split("_"))
         uni_coord = SRHPatchCoordMapper.to_universal_coord(srh_coord)
-        #print(f"{patch_coord_str}\t{uni_coord[0]:04d}-{uni_coord[1]:04d}")
+        # print(f"{patch_coord_str}\t{uni_coord[0]:04d}-{uni_coord[1]:04d}")
         return "-".join(
-            [nio_num, slide_num, f"{uni_coord[0]:04d}", f"{uni_coord[1]:04d}"])
+            [nio_num, slide_num, f"{uni_coord[0]:04d}", f"{uni_coord[1]:04d}"]
+        )
+
 
 class HierarchicalBaseDataset(BalanceableBaseDataset, ABC):
     """Patient Base Dataset. Abstract class.
@@ -58,18 +59,20 @@ class HierarchicalBaseDataset(BalanceableBaseDataset, ABC):
             slide count in each class
     """
 
-    def __init__(self,
-                 data_root: str,
-                 instances: List,
-                 tensor_shape_map: Dict,
-                 transform: callable,
-                 target_transform: Optional[callable] = torch.tensor,
-                 num_transforms: int = 1,
-                 process_read_im: callable = MemmapReader("srh"),
-                 num_instance_self_replicate: int = 1,
-                 balance_instance_class=False,
-                 num_sample_wo_replacement=None,
-                 **kwargs) -> None:
+    def __init__(
+        self,
+        data_root: str,
+        instances: List,
+        tensor_shape_map: Dict,
+        transform: callable,
+        target_transform: Optional[callable] = torch.tensor,
+        num_transforms: int = 1,
+        process_read_im: callable = MemmapReader("srh"),
+        num_instance_self_replicate: int = 1,
+        balance_instance_class=False,
+        num_sample_wo_replacement=None,
+        **kwargs,
+    ) -> None:
         """Inits the base abstract dataset
 
         Populate each attribute and walk through each patient to look for patches
@@ -116,7 +119,7 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
     def __init__(self, num_samples: int = 1, **kwargs):
 
         super().__init__(**kwargs)
-        #self.instances_ = tuple([(i["name"], i["label"],
+        # self.instances_ = tuple([(i["name"], i["label"],
         #                          tuple([(p["patch_name"], p["patch_idx"])
         #                                 for p in i["patches"]]))
         #                         for i in self.instances_])
@@ -127,21 +130,22 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
     def read_images(self, inst: Dict):
         """Read in a list of patches, different patches and transformations"""
 
-        #patches_list = inst["patches"]
+        # patches_list = inst["patches"]
         im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
-        #mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
+        # mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
 
         images = self.process_read_im_(
             self.make_im_path(self.tensor_shape_map[inst["name"]]["path"]),
-            tuple(self.tensor_shape_map[inst["name"]]["shape"]), im_id)
+            tuple(self.tensor_shape_map[inst["name"]]["shape"]),
+            im_id,
+        )
 
         im_id = None
 
         assert self.transform_ is not None
-        images = torch.stack([
-            self.transform_(im) for _ in range(self.num_transforms_)
-            for im in images
-        ])
+        images = torch.stack(
+            [self.transform_(im) for _ in range(self.num_transforms_) for im in images]
+        )
 
         return images
 
@@ -158,10 +162,7 @@ class SingleLevelHierarchicalDataset(HierarchicalBaseDataset):
         return {"image": im, "label": target}
 
 
-
-
-class SingleLevelHierarchicalDatasetSingleViewDINOV2(
-        SingleLevelHierarchicalDataset):
+class SingleLevelHierarchicalDatasetSingleViewDINOV2(SingleLevelHierarchicalDataset):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -172,13 +173,15 @@ class SingleLevelHierarchicalDatasetSingleViewDINOV2(
     def read_images(self, inst: Dict):
         """Read in a list of patches, different patches and transformations"""
 
-        #patches_list = inst["patches"]
+        # patches_list = inst["patches"]
         im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
-        #mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
+        # mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
 
         images = self.process_read_im_(
             self.make_im_path(self.tensor_shape_map[inst["name"]]["path"]),
-            tuple(self.tensor_shape_map[inst["name"]]["shape"]), im_id)
+            tuple(self.tensor_shape_map[inst["name"]]["shape"]),
+            im_id,
+        )
 
         im_id = None
         assert self.transform_ is not None
@@ -200,12 +203,15 @@ class SingleLevelHierarchicalDatasetSingleViewDINOV2(
 
 SingleLevelHierarchicalDatasetDINOV2 = SingleLevelHierarchicalDatasetSingleViewDINOV2
 
-class SLHSVSingleTileDatasetDINOV2(
-        SingleLevelHierarchicalDatasetDINOV2):
 
-    def __init__(self, tile_size,
-                 process_read_im: callable = MemmapTileReader(which_set="srh"),
-                 **kwargs):
+class SLHSVSingleTileDatasetDINOV2(SingleLevelHierarchicalDatasetDINOV2):
+
+    def __init__(
+        self,
+        tile_size,
+        process_read_im: callable = MemmapTileReader(which_set="srh"),
+        **kwargs,
+    ):
         super().__init__(process_read_im=process_read_im, **kwargs)
         self.tile_size = tile_size
         assert self.num_samples_ == 1  # This version only work with 1 xform
@@ -215,18 +221,24 @@ class SLHSVSingleTileDatasetDINOV2(
     def read_images(self, inst: Dict):
         """Read in a list of patches, different patches and transformations"""
 
-        #patches_list = inst["patches"]
+        # patches_list = inst["patches"]
         im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
-        #mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
+        # mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
 
         tensor_shape = tuple(self.tensor_shape_map[inst["name"]]["shape"])
-        rc_idx = (np.random.randint(tensor_shape[1]-self.tile_size),
-                  np.random.randint(tensor_shape[2]-self.tile_size))
-        
+        rc_idx = (
+            np.random.randint(tensor_shape[1] - self.tile_size),
+            np.random.randint(tensor_shape[2] - self.tile_size),
+        )
+
         images = self.process_read_im_(
             self.make_im_path(self.tensor_shape_map[inst["name"]]["path"]),
-            tensor_shape, im_id, rc_idx, self.tile_size)
-        
+            tensor_shape,
+            im_id,
+            rc_idx,
+            self.tile_size,
+        )
+
         im_id = None
         assert self.transform_ is not None
         images = self.transform_(images.squeeze())
@@ -245,8 +257,7 @@ class SLHSVSingleTileDatasetDINOV2(
         return im, target
 
 
-class SLHSVSingleTileCellProposalDatasetDINOV2(
-        SLHSVSingleTileDatasetDINOV2):
+class SLHSVSingleTileCellProposalDatasetDINOV2(SLHSVSingleTileDatasetDINOV2):
 
     def __init__(self, sc_proposal_root, **kwargs):
         super().__init__(**kwargs)
@@ -254,7 +265,6 @@ class SLHSVSingleTileCellProposalDatasetDINOV2(
         assert not kwargs.get("num_sample_wo_replacement")
 
         self.proposals_ = {}
-
 
         for i in tqdm(self.instances_):
             s = i["name"]
@@ -273,73 +283,77 @@ class SLHSVSingleTileCellProposalDatasetDINOV2(
             cp["centroid_c"] = cp["centroid_c"].round().astype(int)
 
             cp_filt = cp[
-                cp["celltype"].isin({"nuclei", "mp"}) &
-                (cp["score"] > 0.5) &
-                (self.tile_size/2 <= cp["centroid_r"])&
-                (cp["centroid_r"] <= 300-self.tile_size/2) &
-                (self.tile_size/2 <= cp["centroid_c"])&
-                (cp["centroid_c"] <= 300-self.tile_size/2)
+                cp["celltype"].isin({"nuclei", "mp"})
+                & (cp["score"] > 0.5)
+                & (self.tile_size / 2 <= cp["centroid_r"])
+                & (cp["centroid_r"] <= 300 - self.tile_size / 2)
+                & (self.tile_size / 2 <= cp["centroid_c"])
+                & (cp["centroid_c"] <= 300 - self.tile_size / 2)
             ]
-            
-            cp_filt = pd.DataFrame({
-                "patch": cp_filt["patch"],
-                "proposal": zip(cp_filt["centroid_r"], cp_filt["centroid_c"])
-            })
 
-            cp_filt.loc[:, "patch"] = cp_filt["patch"].apply(
-                SRHPatchCoordMapper.to_universal_patch_name
-            ).apply(lambda x: "-".join(x.split("-")[-2:]))
+            cp_filt = pd.DataFrame(
+                {
+                    "patch": cp_filt["patch"],
+                    "proposal": zip(cp_filt["centroid_r"], cp_filt["centroid_c"]),
+                }
+            )
 
-            
+            cp_filt.loc[:, "patch"] = (
+                cp_filt["patch"]
+                .apply(SRHPatchCoordMapper.to_universal_patch_name)
+                .apply(lambda x: "-".join(x.split("-")[-2:]))
+            )
+
             cp_filt = cp_filt.groupby("patch").agg(list).to_dict()["proposal"]
             patch_keep = set(cp_filt.keys())
 
-            i["patches"] = [j for j in self.instances_[0]["patches"]
-                             if j["patch_name"] in patch_keep]
-            
+            i["patches"] = [j for j in i["patches"] if j["patch_name"] in patch_keep]
+
             self.proposals_.update({s: cp_filt})
 
-        #import pdb; pdb.set_trace()
+        # import pdb; pdb.set_trace()
         for i in self.instances_:
-            if not len(i["patches"]):    
+            if not len(i["patches"]):
                 print(i["name"])
 
-        self.instances_ = [i for i in self.instances_
-            if len(i["patches"])]    
+        self.instances_ = [i for i in self.instances_ if len(i["patches"])]
 
-        logging.info(f"Num instances {len(self.instances_)}; "+
-            f"num slide with proposals {len(self.proposals_)}")
-       
-        
+        logging.info(
+            f"Num instances {len(self.instances_)}; "
+            + f"num slide with proposals {len(self.proposals_)}"
+        )
 
     @torch.no_grad()
     def read_images(self, inst: Dict):
         """Read in a list of patches, different patches and transformations"""
 
-        #patches_list = inst["patches"]
+        # patches_list = inst["patches"]
         im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
-        #mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
+        # mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
 
-    
         tensor_shape = tuple(self.tensor_shape_map[inst["name"]]["shape"])
-        rc_idx = random.sample(self.proposals_[inst["name"]][inst["patches"][im_id[0]]["patch_name"]], k=1)[0]
-        rc_idx = (rc_idx[0]-self.tile_size//2, rc_idx[1]-self.tile_size//2)
-        #rc_idx = (np.random.randint(tensor_shape[1]-self.tile_size),
+        rc_idx = random.sample(
+            self.proposals_[inst["name"]][inst["patches"][im_id[0]]["patch_name"]], k=1
+        )[0]
+        rc_idx = (rc_idx[0] - self.tile_size // 2, rc_idx[1] - self.tile_size // 2)
+        # rc_idx = (np.random.randint(tensor_shape[1]-self.tile_size),
         #          np.random.randint(tensor_shape[2]-self.tile_size))
 
-        
         images = self.process_read_im_(
             self.make_im_path(self.tensor_shape_map[inst["name"]]["path"]),
-            tensor_shape, im_id, rc_idx, self.tile_size)
-        
+            tensor_shape,
+            im_id,
+            rc_idx,
+            self.tile_size,
+        )
+
         im_id = None
         assert self.transform_ is not None
         images = self.transform_(images.squeeze())
         return images
 
 
-class SingleLevelHierarchicalDatasetMultipleViewDINOV2(
-        SingleLevelHierarchicalDataset):
+class SingleLevelHierarchicalDatasetMultipleViewDINOV2(SingleLevelHierarchicalDataset):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -349,21 +363,20 @@ class SingleLevelHierarchicalDatasetMultipleViewDINOV2(
     def read_images(self, inst: Dict):
         """Read in a list of patches, different patches and transformations"""
 
-        #patches_list = inst["patches"]
+        # patches_list = inst["patches"]
         im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
-        #mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
+        # mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
 
         images = self.process_read_im_(
             self.make_im_path(self.tensor_shape_map[inst["name"]]["path"]),
-            tuple(self.tensor_shape_map[inst["name"]]["shape"]), im_id)
+            tuple(self.tensor_shape_map[inst["name"]]["shape"]),
+            im_id,
+        )
 
         im_id = None
         assert self.transform_ is not None
         images = [self.transform_(i) for i in images]
-        images = {
-            k: list(chain(*[i[k] for i in images]))
-            for k in images[0].keys()
-        }
+        images = {k: list(chain(*[i[k] for i in images])) for k in images[0].keys()}
         return images
 
     def __getitem__(self, idx: int):
@@ -384,14 +397,12 @@ class SLHTileSVDatasetDINOv2(SingleLevelHierarchicalDatasetSingleViewDINOV2):
     def __init__(self, num_samples: int = 1, **kwargs):
 
         super().__init__(**kwargs)
-        #self.instances_ = tuple([(i["name"], i["label"],
+        # self.instances_ = tuple([(i["name"], i["label"],
         #                          tuple([(p["patch_name"], p["patch_idx"])
         #                                 for p in i["patches"]]))
         #                         for i in self.instances_])
         assert self.num_samples_ == 1  # This version only work with 1 xform
 
-
-    
     def __getitem__(self, idx: int):
         """Retrieve a list of patches, from the wholeslide specified by idx"""
         idx = idx % len(self.instances_)
@@ -401,7 +412,7 @@ class SLHTileSVDatasetDINOv2(SingleLevelHierarchicalDatasetSingleViewDINOV2):
 
         if self.target_transform_ is not None:
             target = self.target_transform_(target)
- 
+
         im.update({"name": instance["name"]})
 
         return im, target
@@ -422,7 +433,8 @@ class SLHDatasetWithFMEmbeddings(SingleLevelHierarchicalDataset):
         return opj(
             self.fm_root_,
             *x.split("/")[1:3],
-            x.split("/")[4].removesuffix("-patches.dat") + f"-embs-{tag}.dat")
+            x.split("/")[4].removesuffix("-patches.dat") + f"-embs-{tag}.dat",
+        )
 
     @torch.no_grad()
     def read_images(self, inst: Dict):
@@ -436,15 +448,16 @@ class SLHDatasetWithFMEmbeddings(SingleLevelHierarchicalDataset):
         tensor_shape = tuple(self.tensor_shape_map[inst["name"]]["shape"])
         ims, embs = self.process_read_im_(
             [self.make_im_path(rel_inst_path), fm_paths],
-            [tensor_shape, (tensor_shape[0], -1)], im_id)
+            [tensor_shape, (tensor_shape[0], -1)],
+            im_id,
+        )
 
         im_id = None
         assert self.transform_ is not None
 
-        images = torch.stack([
-            self.transform_(im) for _ in range(self.num_transforms_)
-            for im in ims
-        ])
+        images = torch.stack(
+            [self.transform_(im) for _ in range(self.num_transforms_) for im in ims]
+        )
 
         embs = [em.repeat((self.num_transforms_, 1)) for em in embs]
 
@@ -465,10 +478,9 @@ class SLHDatasetWithFMEmbeddings(SingleLevelHierarchicalDataset):
 
 class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
 
-    def __init__(self,
-                 num_context_samples: int = 1,
-                 num_target_samples: int = 1,
-                 **kwargs):
+    def __init__(
+        self, num_context_samples: int = 1, num_target_samples: int = 1, **kwargs
+    ):
 
         super().__init__(**kwargs)
         logging.info("processing dataset instances: convert to patch dict")
@@ -481,10 +493,12 @@ class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
 
     def process_read_wrap(self, curr_path, curr_inst, inst):
         im = self.process_read_im_(
-            curr_path, tuple(self.tensor_shape_map[inst["name"]]["shape"]),
-            curr_inst["patch_idx"])
+            curr_path,
+            tuple(self.tensor_shape_map[inst["name"]]["shape"]),
+            curr_inst["patch_idx"],
+        )
 
-        #imp = "@".join([curr_inst["slide_name"], curr_inst["patch_name"]])
+        # imp = "@".join([curr_inst["slide_name"], curr_inst["patch_name"]])
 
         coord = tuple(map(int, curr_inst["patch_name"].split("-")))
         return im, coord
@@ -494,23 +508,26 @@ class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
         raise NotImplementedError()
         im_id = np.random.permutation(inst["patch_names"])
 
-        im_shape = np.array(
-            self.tensor_shape_map[inst["name"]]["shape"][1:])[[-1, 0, 1]]
+        im_shape = np.array(self.tensor_shape_map[inst["name"]]["shape"][1:])[
+            [-1, 0, 1]
+        ]
         context_images = torch.zeros(
-            tuple(np.hstack([self.num_context_samples_, im_shape])))
+            tuple(np.hstack([self.num_context_samples_, im_shape]))
+        )
         target_images = torch.zeros(
             tuple(
-                np.hstack([
-                    self.num_context_samples_, self.num_target_samples_,
-                    im_shape
-                ])))
+                np.hstack(
+                    [self.num_context_samples_, self.num_target_samples_, im_shape]
+                )
+            )
+        )
         context_imps = np.empty([self.num_context_samples_], dtype=object)
         target_imps = np.empty(
-            [self.num_context_samples_, self.num_target_samples_],
-            dtype=object)
+            [self.num_context_samples_, self.num_target_samples_], dtype=object
+        )
         target_delta = np.empty(
-            [self.num_context_samples_, self.num_target_samples_, 2],
-            dtype=int)
+            [self.num_context_samples_, self.num_target_samples_, 2], dtype=int
+        )
         num_context = 0
         context_permute_idx = 0
         away_round = lambda x: math.ceil(x) if x > 0 else math.floor(x)
@@ -518,14 +535,13 @@ class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
         while num_context < self.num_context_samples_:
 
             # try:
-            curr_inst = inst["patches"][im_id[context_permute_idx %
-                                              len(im_id)]]
+            curr_inst = inst["patches"][im_id[context_permute_idx % len(im_id)]]
             curr_path = self.make_im_path(
-                self.tensor_shape_map[curr_inst["slide_name"]]["path"])
+                self.tensor_shape_map[curr_inst["slide_name"]]["path"]
+            )
 
             # read context
-            im_ci, cxt_coord = self.process_read_wrap(curr_path, curr_inst,
-                                                      inst)
+            im_ci, cxt_coord = self.process_read_wrap(curr_path, curr_inst, inst)
             context_images[num_context, ...] = im_ci
             context_imps[num_context] = curr_inst["patch_name"]
             context_permute_idx += 1
@@ -540,10 +556,11 @@ class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
                 target_patch_name = f"{new_coord[0]:04d}-{new_coord[1]:04d}"
 
                 if (target_patch_name in inst["patches"]) and (
-                        target_patch_name
-                        not in target_imps[num_context][:num_target]):
+                    target_patch_name not in target_imps[num_context][:num_target]
+                ):
                     im_tj, _ = self.process_read_wrap(
-                        curr_path, inst["patches"][target_patch_name], inst)
+                        curr_path, inst["patches"][target_patch_name], inst
+                    )
                     target_images[num_context, num_target, ...] = im_tj
                     target_imps[num_context, num_target] = target_patch_name
                     target_delta[num_context, num_target, :] = [dx, dy]
@@ -554,24 +571,23 @@ class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
             if num_target == self.num_target_samples_:
                 num_context += 1
 
-            #except:
+            # except:
             #    logging.error(
             #        "error reading context bad_file - {}".format(curr_path))
 
         assert self.transform_ is not None
 
-        target_images = torch.stack([
-            torch.stack([self.transform_(j) for j in i]) for i in target_images
-        ])
-        context_images = torch.stack(
-            [self.transform_(i) for i in context_images])
+        target_images = torch.stack(
+            [torch.stack([self.transform_(j) for j in i]) for i in target_images]
+        )
+        context_images = torch.stack([self.transform_(i) for i in context_images])
         imp_maker = np.vectorize(lambda x: "@".join([inst["name"], x]))
         return {
             "context_image": context_images,
             "target_image": target_images,
             "context_path": imp_maker(context_imps).tolist(),
             "target_path": imp_maker(target_imps).tolist(),
-            "target_delta": torch.tensor(target_delta)
+            "target_delta": torch.tensor(target_delta),
         }
 
     def read_images(self, inst: Dict):
@@ -580,23 +596,26 @@ class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
         raise NotImplementedError()
         im_id = np.random.permutation(inst["patch_names"])
 
-        im_shape = np.array(
-            self.tensor_shape_map[inst["name"]]["shape"][1:])[[-1, 0, 1]]
+        im_shape = np.array(self.tensor_shape_map[inst["name"]]["shape"][1:])[
+            [-1, 0, 1]
+        ]
         context_images = torch.zeros(
-            tuple(np.hstack([self.num_context_samples_, im_shape])))
+            tuple(np.hstack([self.num_context_samples_, im_shape]))
+        )
         target_images = torch.zeros(
             tuple(
-                np.hstack([
-                    self.num_context_samples_, self.num_target_samples_,
-                    im_shape
-                ])))
+                np.hstack(
+                    [self.num_context_samples_, self.num_target_samples_, im_shape]
+                )
+            )
+        )
         context_imps = np.empty([self.num_context_samples_], dtype=object)
         target_imps = np.empty(
-            [self.num_context_samples_, self.num_target_samples_],
-            dtype=object)
+            [self.num_context_samples_, self.num_target_samples_], dtype=object
+        )
         target_delta = np.empty(
-            [self.num_context_samples_, self.num_target_samples_, 2],
-            dtype=int)
+            [self.num_context_samples_, self.num_target_samples_, 2], dtype=int
+        )
         num_context = 0
         context_permute_idx = 0
         away_round = lambda x: math.ceil(x) if x > 0 else math.floor(x)
@@ -604,69 +623,70 @@ class InterPatchJEPADataset(SingleLevelHierarchicalDataset):
         while num_context < self.num_context_samples_:
 
             # try:
-            curr_inst = inst["patches"][im_id[context_permute_idx %
-                                              len(im_id)]]
+            curr_inst = inst["patches"][im_id[context_permute_idx % len(im_id)]]
             curr_path = self.make_im_path(
-                self.tensor_shape_map[curr_inst["slide_name"]]["path"])
-            #print(f"@@@ context {curr_path}")
+                self.tensor_shape_map[curr_inst["slide_name"]]["path"]
+            )
+            # print(f"@@@ context {curr_path}")
             # read context
-            im_ci, cxt_coord = self.process_read_wrap(curr_path, curr_inst,
-                                                      inst)
+            im_ci, cxt_coord = self.process_read_wrap(curr_path, curr_inst, inst)
             context_images[num_context, ...] = im_ci
             context_imps[num_context] = curr_inst["patch_name"]
             context_permute_idx += 1
 
-            candidates = np.array([[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0],
-                                   [-1, 1], [0, 1], [1, 1]])
-            #candidates = np.array([[-2, -2], [-1, -2], [0, -2], [1, -2],
+            candidates = np.array(
+                [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
+            )
+            # candidates = np.array([[-2, -2], [-1, -2], [0, -2], [1, -2],
             #                       [2, -2], [-2, -1], [2, -1], [-2, 0], [2, 0],
             #                       [-2, 1], [2, 1], [-2, 2], [-1, 2], [0, 2],
             #                       [1, 2], [2, 2]])
             new_coord = np.array(cxt_coord) + candidates
-            target_patch_name = [
-                f"{nc[0]:04d}-{nc[1]:04d}" for nc in new_coord
-            ]
+            target_patch_name = [f"{nc[0]:04d}-{nc[1]:04d}" for nc in new_coord]
             target_patch_name = [
                 (tpn, delta)
                 for tpn, delta in zip(target_patch_name, candidates)
                 if tpn in inst["patches"]
             ]
 
-            #print(f"@@@    target {target_patch_name}")
+            # print(f"@@@    target {target_patch_name}")
 
             if len(target_patch_name) >= self.num_target_samples_:
-                chosen_idx = np.random.permutation(
-                    len(target_patch_name))[:self.num_target_samples_]
+                chosen_idx = np.random.permutation(len(target_patch_name))[
+                    : self.num_target_samples_
+                ]
                 chosen = [target_patch_name[ci] for ci in chosen_idx]
 
-                target_images[num_context, ...] = torch.stack([
-                    self.process_read_wrap(curr_path, inst["patches"][c[0]],
-                                           inst)[0] for c in chosen
-                ])
+                target_images[num_context, ...] = torch.stack(
+                    [
+                        self.process_read_wrap(curr_path, inst["patches"][c[0]], inst)[
+                            0
+                        ]
+                        for c in chosen
+                    ]
+                )
                 target_imps[num_context, :] = np.stack([c[0] for c in chosen])
-                target_delta[num_context, :, :] = np.stack(
-                    [c[1] for c in chosen])
+                target_delta[num_context, :, :] = np.stack([c[1] for c in chosen])
 
                 num_context += 1
 
-            #except:
+            # except:
             #    logging.error(
             #        "error reading context bad_file - {}".format(curr_path))
 
         assert self.transform_ is not None
 
-        target_images = torch.stack([
-            torch.stack([self.transform_(j) for j in i]) for i in target_images
-        ])
-        context_images = torch.stack(
-            [self.transform_(i) for i in context_images])
+        target_images = torch.stack(
+            [torch.stack([self.transform_(j) for j in i]) for i in target_images]
+        )
+        context_images = torch.stack([self.transform_(i) for i in context_images])
         imp_maker = np.vectorize(lambda x: "@".join([inst["name"], x]))
         return {
             "context_image": context_images,
             "target_image": target_images,
             "context_path": imp_maker(context_imps).tolist(),
             "target_path": imp_maker(target_imps).tolist(),
-            "target_delta": torch.tensor(target_delta)
+            "target_delta": torch.tensor(target_delta),
         }
 
     def __getitem__(self, idx: int):
@@ -694,20 +714,22 @@ class HierarchicalDataset(HierarchicalBaseDataset):
         primary_label_func_: callable to select the the primary label from a list
     """
 
-    def __init__(self,
-                 slides_file: str,
-                 num_slide_samples: int = 1,
-                 num_patch_samples: int = 1,
-                 **args) -> None:
+    def __init__(
+        self,
+        slides_file: str,
+        num_slide_samples: int = 1,
+        num_patch_samples: int = 1,
+        **args,
+    ) -> None:
         """Inits the patient dataset
 
         Populate each attribute and walk through each patient to look for patches.
         The constructor takes in a path to a CSV slide file
         """
 
-        super().__init__(df=pandas.read_csv(slides_file,
-                                            dtype={"institution": str}),
-                         **args)
+        super().__init__(
+            df=pandas.read_csv(slides_file, dtype={"institution": str}), **args
+        )
         self.num_slide_samples_ = num_slide_samples
         self.num_patch_samples_ = num_patch_samples
 
@@ -730,11 +752,12 @@ class HierarchicalDataset(HierarchicalBaseDataset):
                 logging.error("bad_file - {}".format(curr_path))
 
         assert self.transform_ is not None
-        xformed_im = torch.stack([
-            torch.stack(
-                [self.transform_(im) for _ in range(self.num_transforms_)])
-            for im in images
-        ])
+        xformed_im = torch.stack(
+            [
+                torch.stack([self.transform_(im) for _ in range(self.num_transforms_)])
+                for im in images
+            ]
+        )
         return xformed_im, imps_take
 
     def __getitem__(self, idx: int):
@@ -745,11 +768,10 @@ class HierarchicalDataset(HierarchicalBaseDataset):
         slide_idx = np.arange(len(patient.slides))
         np.random.shuffle(slide_idx)
         num_repeat = self.num_slide_samples_ // len(patient.slides) + 1
-        slide_idx = np.tile(slide_idx, num_repeat)[:self.num_slide_samples_]
+        slide_idx = np.tile(slide_idx, num_repeat)[: self.num_slide_samples_]
 
         images = [
-            self.read_images_slide(patient["slides"][i]["patches"])
-            for i in slide_idx
+            self.read_images_slide(patient["slides"][i]["patches"]) for i in slide_idx
         ]
         im = torch.stack([i[0] for i in images])
         imp = [i[1] for i in images]

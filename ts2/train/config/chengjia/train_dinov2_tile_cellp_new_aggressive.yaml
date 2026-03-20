@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/fmi_dinov2_cc_new
+  exp_name: ts2/fmi_dinov2_cc_fixdset
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -95,7 +95,7 @@ dinov2_fair_config:
   optim:
     epochs: 100
     #weight_decay_end: 0.2
-    base_lr: 2.0e-04  # learning rate for a batch size of 1024
+    base_lr: 0.004  # learning rate for a batch size of 1024
     warmup_epochs: 10
     #layerwise_decay: 1.0
   crops:
@@ -109,11 +109,11 @@ tune:
   diagonal_items: true
   params:
     infra/comment:
-    - newrun_dev_nomaskobw_lr54
-    - newrun_dev_maskobw_lr54
+    - dev_nomaskobw_lr43
+    - dev_maskobw_lr43
     dinov2_fair_config/optim/base_lr:
-    - 1.0e-3
-    - 1.0e-3
+    - 0.004
+    - 0.004
     dinov2_fair_config/train/collate/params/mask_outerbias_weight:
     - False
     - True

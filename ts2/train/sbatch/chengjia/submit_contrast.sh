@@ -23,15 +23,14 @@
 # --------
 #SBATCH --partition=tocho
 #SBATCH --cpus-per-task=8
-#SBATCH --mem-per-cpu=6g
-#7739m
+#SBATCH --mem-per-cpu=7739m
 #------------------------------------------------------------------------------
 # SBATCH --account=tocho1
 # SBATCH --account=tocho0
 # SBATCH --account=precisionhealth_owned1
 #SBATCH --account=tocho_owned1
 #------------------------------------------------------------------------------
-#SBATCH --nodelist=armis26005
+# SBATCH --nodelist=armis26005
 # SBATCH --exclude=armis2600[0-1]
 #------------------------------------------------------------------------------
 #SBATCH --time=5-00:00:00
@@ -42,7 +41,7 @@
 #SBATCH --gres=gpu:4
 #SBATCH --ntasks-per-node=4
 #------------------------------------------------------------------------------
-#SBATCH --array=1
+#SBATCH --array=0-1
 #------------------------------------------------------------------------------
 
 set -x
@@ -53,6 +52,12 @@ set -e
 #export TORCH_NCCL_TRACE_BUFFER_SIZE=16777216
 #export CUDA_LAUNCH_BLOCKING=1
 
+
+#srun python main_dinov2.py -c=config/chengjia/train_dinov2_tile_cellp.yaml
+srun python main_dinov2.py -c=config/chengjia/train_dinov2_tile_cellp_new_aggressive.yaml
+
+
+# ================================================
 #srun python main.py -c=config/chengjia/train_pjepa_tcga.yaml
 #srun python main.py -c=config/chengjia/train_modsimclr_tcga.yaml
 #srun python main.py -c=config/chengjia/train_simclr_tcga.yaml
@@ -88,9 +93,6 @@ set -e
 
 #srun python main_dinov2.py -c=config/chengjia/train_dinov2_cc.yaml
 
-#srun python main_dinov2.py -c=config/chengjia/train_dinov2_tile_cellp.yaml
-#srun python main_dinov2.py -c=config/chengjia/train_dinov2_tile_cellp_new.yaml
-srun python main_dinov2.py -c=config/chengjia/train_dinov2_tile_cellp_new_aggressive.yaml
 #srun python main_dinov2.py -c=config/chengjia/train_dinov2_cc_new.yaml
 #srun python main_dinov2.py -c=config/chengjia/train_dinov2_ncc.yaml
 #srun python main_dinov2.py -c=config/chengjia/train_dinov2_cc_noloco.yaml
