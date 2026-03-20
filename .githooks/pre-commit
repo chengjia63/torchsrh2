@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+matches=$(
+    git diff --cached --name-only --diff-filter=ACMR -- "*.py" |
+    while IFS= read -r path; do
+        [ -n "$path" ] || continue
+        git show ":$path" |
+        awk -v path="$path" '
+            {
+                raw = $0
+                line = $0
+                sub(/#.*/, "", line)
+                if (line ~ /pdb[[:space:]]*\.[[:space:]]*set_trace[[:space:]]*\([[:space:]]*\)/ ||
+                    line ~ /breakpoint[[:space:]]*\([[:space:]]*\)/) {
+                    print path ":" FNR ":" raw
+                }
+            }
+        '
+    done
+)
+
+if [ -n "$matches" ]; then
+    echo "Commit blocked: staged Python files contain active debugger calls." >&2
+    printf '%s\n' "$matches" >&2
+    exit 1
+fi
