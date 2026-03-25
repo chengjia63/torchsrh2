@@ -32,12 +32,12 @@ data:
         strong_aug_params:
           aug_list:
           - which: CellAugmentationDINO_always_apply
-            params: 
-              global_crops_scale: null                                              
-              local_crops_scale: null                                                
-              local_crops_number: 4                                                     
-              global_crops_size: 48                                                 
-              local_crops_size: 48   
+            params:
+              global_crops_scale: null
+              local_crops_scale: null
+              local_crops_number: 4
+              global_crops_size: 48
+              local_crops_size: 48
               gaussian_noise_params:
                 min_var: 0
                 max_var: 0.1
@@ -102,18 +102,17 @@ dinov2_fair_config:
     global_crops_size: 48
     local_crops_size: 48
     local_crops_number: 4
-
-  evaluation:                                                                   
-    eval_period_iterations: 5000 
+  evaluation:
+    eval_period_iterations: 5000
 tune:
   diagonal_items: true
   params:
     infra/comment:
-    - dev_nomaskobw_lr43
-    - dev_maskobw_lr43
+    - dev_nomaskobw_lr13
+    - dev_maskobw_lr13
     dinov2_fair_config/optim/base_lr:
-    - 0.004
-    - 0.004
+    - 0.001
+    - 0.001
     dinov2_fair_config/train/collate/params/mask_outerbias_weight:
     - False
     - True
