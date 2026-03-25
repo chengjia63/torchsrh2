@@ -1,0 +1,205 @@
+infra:
+  exp_name:  ts2/fmi_dinov2_cc_new
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
+  comment: INF_srh7v1tests64_dev
+  seed: 1000
+  float32_matmul_precision: medium
+
+data:
+  xform_params:
+    which_set: srh
+    base_aug_params:
+      laser_noise_config: null
+      get_third_channel_params:
+        mode: three_channels
+        subtracted_base: 0.07629394531
+      to_uint8: False
+    strong_aug_params:
+      aug_list:
+      - which: perturbed_eval_always_apply
+        params:
+          size: 48
+          mask_generator_which: OuterCircularMasker
+          mask_generator_params:
+            mask_size: 12
+            token_size: 4
+            outer_ring_width: 0
+            n_mask_token_perct_range: TODO
+            mode: shell
+      aug_prob: 1
+  test_dataset:
+    which: SingleCellListInferenceDatasetAdversarial
+    params:
+      data_root: /nfs/turbo/umms-tocho-snr/data/root_histology_db/srh/
+      cell_instances: /nfs/turbo/umms-tocho/data/chengjia/silica_databank/instances_labels/srh7_test_.csv
+      subsample_k_per_slide: 64
+      min_cells_per_slide: 8
+      #/nfs/turbo/umms-tocho/data/data_splits/chengjia/silica_databank/srhum_4m_.csv #srhum_glioma_2m_.csv #srhum_2m.csv
+  loader:
+    params:
+      test:
+        pin_memory: False
+        persistent_workers: False
+        prefetch_factor: 8
+        num_workers: 7
+        batch_size: 256
+        drop_last: False
+        shuffle: False
+
+lightning_module:
+  which: Dinov2EvalSystem
+  params:
+    model_hyperparams:
+      arch: vit_small
+      img_size: 48
+      patch_size: 4
+      block_chunks: 4
+      ffn_bias: true
+      ffn_layer: mlp
+      num_register_tokens: 0
+      interpolate_antialias: false
+      interpolate_offset: 0.1
+      layerscale: 1.0e-05
+      proj_bias: true
+      qkv_bias: true
+    #pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0/models/eval/training_124999/teacher_checkpoint.pth
+
+    #pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+
+testing: {}
+
+
+
+tune:
+  diagonal_items: True
+  params:
+    infra/comment:
+      - INF_srh7v1tests64_PERTURB00_dev
+      - INF_srh7v1tests64_PERTURB01_dev
+      - INF_srh7v1tests64_PERTURB02_dev
+      - INF_srh7v1tests64_PERTURB03_dev
+      - INF_srh7v1tests64_PERTURB04_dev
+      - INF_srh7v1tests64_PERTURB05_dev
+      - INF_srh7v1tests64_PERTURB06_dev
+      - INF_srh7v1tests64_PERTURB07_dev
+      - INF_srh7v1tests64_PERTURB08_dev
+      - INF_srh7v1tests64_PERTURB09_dev
+      - INF_srh7v1tests64_PERTURB10_dev
+    data/xform_params/strong_aug_params/aug_list:
+    - - which: perturbed_eval_always_apply
+        params:
+          size: 48
+          mask_generator_which: OuterCircularMasker
+          mask_generator_params:
+            mask_size: 12
+            token_size: 4
+            outer_ring_width: 0
+            n_mask_token_perct_range: [0.0, 0.0]
+            mode: shell
+    - - which: perturbed_eval_always_apply
+        params:
+          size: 48
+          mask_generator_which: OuterCircularMasker
+          mask_generator_params:
+            mask_size: 12
+            token_size: 4
+            outer_ring_width: 0
+            n_mask_token_perct_range: [0.1, 0.1]
+            mode: shell
+    - - which: perturbed_eval_always_apply
+        params:
+          size: 48
+          mask_generator_which: OuterCircularMasker
+          mask_generator_params:
+            mask_size: 12
+            token_size: 4
+            outer_ring_width: 0
+            n_mask_token_perct_range: [0.2, 0.2]
+            mode: shell
+    - - which: perturbed_eval_always_apply
+        params:
+          size: 48
+          mask_generator_which: OuterCircularMasker
+          mask_generator_params:
+            mask_size: 12
+            token_size: 4
+            outer_ring_width: 0
+            n_mask_token_perct_range: [0.3, 0.3]
+            mode: shell
+    - - which: perturbed_eval_always_apply
+        params:
+          size: 48
+          mask_generator_which: OuterCircularMasker
+          mask_generator_params:
+            mask_size: 12
+            token_size: 4
+            outer_ring_width: 0
+            n_mask_token_perct_range: [0.4, 0.4]
+            mode: shell
+    - - which: perturbed_eval_always_apply
+        params:
+          size: 48
+          mask_generator_which: OuterCircularMasker
+          mask_generator_params:
+            mask_size: 12
+            token_size: 4
+            outer_ring_width: 0
+            n_mask_token_perct_range: [0.5, 0.5]
+            mode: shell
+    - - which: perturbed_eval_always_apply
+        params:
+          size: 48
+          mask_generator_which: OuterCircularMasker
+          mask_generator_params:
+            mask_size: 12
+            token_size: 4
+            outer_ring_width: 0
+            n_mask_token_perct_range: [0.6, 0.6]
+            mode: shell
+    - - which: perturbed_eval_always_apply
+        params:
+          size: 48
+          mask_generator_which: OuterCircularMasker
+          mask_generator_params:
+            mask_size: 12
+            token_size: 4
+            outer_ring_width: 0
+            n_mask_token_perct_range: [0.7, 0.7]
+            mode: shell
+    - - which: perturbed_eval_always_apply
+        params:
+          size: 48
+          mask_generator_which: OuterCircularMasker
+          mask_generator_params:
+            mask_size: 12
+            token_size: 4
+            outer_ring_width: 0
+            n_mask_token_perct_range: [0.8, 0.8]
+            mode: shell
+    - - which: perturbed_eval_always_apply
+        params:
+          size: 48
+          mask_generator_which: OuterCircularMasker
+          mask_generator_params:
+            mask_size: 12
+            token_size: 4
+            outer_ring_width: 0
+            n_mask_token_perct_range: [0.9, 0.9]
+            mode: shell
+    - - which: perturbed_eval_always_apply
+        params:
+          size: 48
+          mask_generator_which: OuterCircularMasker
+          mask_generator_params:
+            mask_size: 12
+            token_size: 4
+            outer_ring_width: 0
+            n_mask_token_perct_range: [1.0, 1.0]
+            mode: shell
+
+
+#/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/2510a2cb_May30-19-10-14_sd1000_INFDB_dev
+#/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/17b1bb09_May30-19-44-14_sd1000_INFDB_dev

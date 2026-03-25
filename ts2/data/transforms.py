@@ -13,10 +13,25 @@ from torch.nn import ModuleList
 from torch.fft import fft2, fftshift, ifft2, ifftshift
 
 from torchvision.transforms import (
-    Compose, Resize, RandomCrop, Normalize, RandomAffine, RandomApply,
-    RandomHorizontalFlip, RandomVerticalFlip, ColorJitter, GaussianBlur,
-    RandomErasing, RandomAutocontrast, RandomSolarize, RandomAdjustSharpness,
-    Grayscale, RandomResizedCrop, RandomGrayscale, CenterCrop)
+    Compose,
+    Resize,
+    RandomCrop,
+    Normalize,
+    RandomAffine,
+    RandomApply,
+    RandomHorizontalFlip,
+    RandomVerticalFlip,
+    ColorJitter,
+    GaussianBlur,
+    RandomErasing,
+    RandomAutocontrast,
+    RandomSolarize,
+    RandomAdjustSharpness,
+    Grayscale,
+    RandomResizedCrop,
+    RandomGrayscale,
+    CenterCrop,
+)
 from torchvision.transforms import RandomEqualize, RandomPosterize, ConvertImageDtype
 from torchvision.transforms import functional as F
 from torchvision.transforms.functional import adjust_contrast, adjust_brightness
@@ -24,14 +39,18 @@ from torchvision.transforms.functional import adjust_contrast, adjust_brightness
 from torch import Tensor
 from torchvision.transforms import InterpolationMode
 
-from dinov2.data.augmentations import (DataAugmentationDINO,
-                                       DataAugmentationDINONoNormalize,
-                                       AggressiveDataAugmentationDINONoNormalize,
-                                       DataAugmentationHiDiscDINO,
-                                       TileDataAugmentationDINO,
-                                       TileContextMultiCropDataAugmentationDINO,
-                                       TileContextMultiCropDataAugmentationNoNormalizeDINO,CellAugmentationDINO)
-from dinov2.data.transforms import (make_normalize_transform)
+from dinov2.data.augmentations import (
+    DataAugmentationDINO,
+    DataAugmentationDINONoNormalize,
+    AggressiveDataAugmentationDINONoNormalize,
+    DataAugmentationHiDiscDINO,
+    TileDataAugmentationDINO,
+    TileContextMultiCropDataAugmentationDINO,
+    TileContextMultiCropDataAugmentationNoNormalizeDINO,
+    CellAugmentationDINO,
+)
+from dinov2.data.transforms import make_normalize_transform
+from dinov2.data.collate import OuterBiasedMasker, OuterCircularMasker
 
 
 class HistologyTransform(torch.nn.Module):
@@ -44,13 +63,66 @@ class HistologyTransform(torch.nn.Module):
             "scsrh_bench": SCSRHBaseTransform,
             "srh": SRHBaseTransform,
             "he": NoBaseTransform,
-            "cifar": VisionBaseTransform
+            "cifar": VisionBaseTransform,
         }
         self.base_aug = base_augs[which_set](**base_aug_params)
         self.strong_aug = StrongTransform(**strong_aug_params)
 
-    def forward(self, x: Tensor) -> Tensor:  # pylint: disable=missing-function-docstring
+    def forward(
+        self, x: Tensor
+    ) -> Tensor:  # pylint: disable=missing-function-docstring
         return self.strong_aug(self.base_aug(x))
+
+
+class SingleCellPerturbedEvalTransform(torch.nn.Module):
+    def __init__(
+        self,
+        size: int,
+        mask_generator_which,
+        mask_generator_params,
+        use_mean: bool = False,
+    ):
+        super().__init__()
+        self.size = size
+        self.use_mean = use_mean
+
+        if mask_generator_which == "OuterBiasedMasker":
+            self.mask_generator = OuterBiasedMasker(**mask_generator_params)
+        elif mask_generator_which == "OuterCircularMasker":
+            self.mask_generator = OuterCircularMasker(**mask_generator_params)
+        else:
+            raise ValueError(f"Unknown mask generator: {mask_generator_which}")
+
+    def blend_batch(self, fg_im, bg_im, fg_mask):
+        fg_mask = fg_mask.to(device=fg_im.device, dtype=fg_im.dtype)
+        fg_mask = fg_mask.unsqueeze(1)
+        fg_mask = fg_mask.expand(-1, fg_im.shape[1], -1, -1)
+
+        if self.use_mean:
+            bg_mean = bg_im.mean(dim=[2, 3], keepdim=True)
+            return fg_im * fg_mask + bg_mean * (1 - fg_mask)
+        return fg_im * fg_mask + bg_im * (1 - fg_mask)
+
+    def _make_one_aug_view(self, fg: Tensor, bg: Tensor) -> Tensor:
+        if fg.ndim != 4 or bg.ndim != 4:
+            raise ValueError(
+                f"Expected fg and bg to have shape (B, C, H, W), got {fg.shape} and {bg.shape}"
+            )
+
+        batch_size = fg.shape[0]
+        device = fg.device
+        masks = torch.stack(
+            [1 - self.mask_generator().to(device) for _ in range(batch_size)],
+            dim=0,
+        )
+        return self.blend_batch(fg, bg, masks)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = F.center_crop(x, [self.size, self.size])
+        fg = x[[0], ...]
+        bg = x[[1], ...]
+        fg_on_bg = self._make_one_aug_view(fg, bg)
+        return fg_on_bg
 
 
 class ProcessSCSRHMask(torch.nn.Module):
@@ -84,11 +156,13 @@ class ProcessSCSRHMask(torch.nn.Module):
 
 class SCSRHBaseTransform(torch.nn.Module):
 
-    def __init__(self,
-                 mask_params,
-                 laser_noise_config=None,
-                 get_third_channel_params=None,
-                 to_uint8=False):
+    def __init__(
+        self,
+        mask_params,
+        laser_noise_config=None,
+        get_third_channel_params=None,
+        to_uint8=False,
+    ):
         super().__init__()
 
         proc_mask = ProcessSCSRHMask(**mask_params)
@@ -106,12 +180,15 @@ class SCSRHBaseTransform(torch.nn.Module):
             layers.append(
                 RandomApply(
                     ModuleList([LaserNoise(**laser_noise_config.params)]),
-                    laser_noise_config.prob))
+                    laser_noise_config.prob,
+                )
+            )
         layers += [GetThirdChannel(**get_third_channel_params), MinMaxChop()]
 
         if proc_mask.num_channel_out == 2:
             to_uint8_func = srh_to_uint8_func
         else:
+
             def to_uint8_func(x):
                 im = srh_to_uint8_func(x[:3, ...])
                 mask = (x[[3], ...] * 255).to(torch.uint8)
@@ -124,6 +201,7 @@ class SCSRHBaseTransform(torch.nn.Module):
 
     def forward(self, x: Tensor):  # pylint: disable=missing-function-docstring
         return self.model(x)
+
 
 def srh_to_uint8_func(x):
     return (adjust_brightness(adjust_contrast(x, 2), 3) * 255).to(torch.uint8)
@@ -143,8 +221,9 @@ class SRHInstanceNorm(torch.nn.Module):
 class SRHBaseTransform(torch.nn.Module):
     """Base transformations for SRH training."""
 
-    def __init__(self, laser_noise_config=None,
-                 get_third_channel_params={},to_uint8=False):
+    def __init__(
+        self, laser_noise_config=None, get_third_channel_params={}, to_uint8=False
+    ):
         super().__init__()
         u16_min = (0, 0)
         u16_max = (65536, 65536)  # 2^16
@@ -155,13 +234,15 @@ class SRHBaseTransform(torch.nn.Module):
             layers.append(
                 RandomApply(
                     ModuleList([LaserNoise(**laser_noise_config.params)]),
-                    laser_noise_config.prob))
+                    laser_noise_config.prob,
+                )
+            )
 
         layers += [GetThirdChannel(**get_third_channel_params), MinMaxChop()]
-        
+
         if to_uint8:
             layers.append(srh_to_uint8_func)
-        
+
         self.model = Compose(layers)
 
     def forward(self, x: Tensor):  # pylint: disable=missing-function-docstring
@@ -176,7 +257,7 @@ class VisionBaseTransform(torch.nn.Module):
 
         imnet_norm_params = {
             "mean": (0.485, 0.456, 0.406),
-            "std": (0.229, 0.224, 0.225)
+            "std": (0.229, 0.224, 0.225),
         }
         u8_norm_params = {"mean": (0, 0, 0), "std": (255, 255, 255)}
 
@@ -209,16 +290,17 @@ class Dinov2Normalization(torch.nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.normalize = Compose([
-            ConvertImageDtype(dtype=float),
-            make_normalize_transform(),
-        ])
+        self.normalize = Compose(
+            [
+                ConvertImageDtype(dtype=float),
+                make_normalize_transform(),
+            ]
+        )
 
     def forward(self, x: torch.Tensor):
         return self.normalize(x).to(torch.float)
 
 
-    
 class StrongTransform(torch.nn.Module):
     """Strong transformations for all image data."""
 
@@ -241,6 +323,7 @@ class StrongTransform(torch.nn.Module):
             "center_crop_always_apply": CenterCrop,
             "center_resized_crop_always_apply": CenterResizedCrop,
             "srh_instance_norm_always_apply": SRHInstanceNorm,
+            "perturbed_eval_always_apply": SingleCellPerturbedEvalTransform,
             "resize": Resize,
             "normalize_always_apply": Normalize,
             "dinov2_normalize_always_apply": Dinov2Normalization,
@@ -265,7 +348,8 @@ class StrongTransform(torch.nn.Module):
         }
 
         self.transforms_ = Compose(
-            [callable_dict[aug["which"]](**aug["params"]) for aug in aug_list])
+            [callable_dict[aug["which"]](**aug["params"]) for aug in aug_list]
+        )
 
     @staticmethod
     def rand_apply(which, prob, **kwargs):
@@ -280,14 +364,17 @@ class CenterResizedCrop:
     """
     Center‐crop a square of size `crop_size` and then resize
     back to the original H×W.
-    
+
     Args:
         crop_size (int): side length of the square crop in pixels.
         interpolation (InterpolationMode): resize filter.
     """
-    def __init__(self,
-                 crop_size: int,
-                 interpolation: InterpolationMode = InterpolationMode.BILINEAR):
+
+    def __init__(
+        self,
+        crop_size: int,
+        interpolation: InterpolationMode = InterpolationMode.BILINEAR,
+    ):
         self.crop_size = crop_size
         self.interpolation = interpolation
 
@@ -302,10 +389,12 @@ class CenterResizedCrop:
         left = (W - self.crop_size) // 2
 
         # vectorized slice
-        patch = img[:, top : top + self.crop_size, left : left + self.crop_size]  # C×S×S
+        patch = img[
+            :, top : top + self.crop_size, left : left + self.crop_size
+        ]  # C×S×S
 
         # add batch dim and resize
-        patch = patch.unsqueeze(0)                         # 1×C×S×S
+        patch = patch.unsqueeze(0)  # 1×C×S×S
         resized = torch.nn.functional.interpolate(
             patch,
             size=(H, W),
@@ -314,7 +403,6 @@ class CenterResizedCrop:
         )
         return resized[0]  # back to C×H×W
 
-    
 
 # Base augmentation modules
 class GetThirdChannel(torch.nn.Module):
@@ -325,29 +413,25 @@ class GetThirdChannel(torch.nn.Module):
 
     """
 
-    def __init__(self,
-                 mode: str = "three_channels",
-                 subtracted_base: float = 5000 / 65536.0):
+    def __init__(
+        self, mode: str = "three_channels", subtracted_base: float = 5000 / 65536.0
+    ):
         super().__init__()
 
         self.subtracted_base = subtracted_base
         aug_func_dict = {
-            "three_channels":
-            self.get_third_channel_,
-            "ch2_only":
-            self.get_ch2_,
-            "ch3_only":
-            self.get_ch3_,
-            "diff_only":
-            self.get_diff_,
-            "get_third_channel_cellmask_passthrough":
-            self.get_third_channel_cellmask_passthrough_
+            "three_channels": self.get_third_channel_,
+            "ch2_only": self.get_ch2_,
+            "ch3_only": self.get_ch3_,
+            "diff_only": self.get_diff_,
+            "get_third_channel_cellmask_passthrough": self.get_third_channel_cellmask_passthrough_,
         }
         if mode in aug_func_dict:
             self.aug_func = aug_func_dict[mode]
         else:
-            raise ValueError("base_augmentation must be in " +
-                             f"{aug_func_dict.keys()}")
+            raise ValueError(
+                "base_augmentation must be in " + f"{aug_func_dict.keys()}"
+            )
 
     def get_third_channel_(self, im2: Tensor) -> Tensor:
         ch2 = im2[0, :, :]
@@ -408,13 +492,15 @@ class InpaintRows(torch.nn.Module):
         self.original_y = img.shape[1]
         mask = np.arange(0, self.original_y, self.y_skip)
         img_trans = img[:, mask, :]
-        img_trans = Resize(size=(self.image_size, self.image_size),
-                           interpolation=F.InterpolationMode.BILINEAR,
-                           antialias=True)(img_trans)
+        img_trans = Resize(
+            size=(self.image_size, self.image_size),
+            interpolation=F.InterpolationMode.BILINEAR,
+            antialias=True,
+        )(img_trans)
         return img_trans
 
     def __repr__(self):
-        return self.__class__.__name__ + '()'
+        return self.__class__.__name__ + "()"
 
 
 class GaussianNoise(torch.nn.Module):
@@ -428,18 +514,20 @@ class GaussianNoise(torch.nn.Module):
     def forward(self, tensor):
         var = random.uniform(self.min_var, self.max_var)
         noisy = tensor + torch.randn(tensor.size()) * var
-        noisy = torch.clamp(noisy, min=0., max=1.)
+        noisy = torch.clamp(noisy, min=0.0, max=1.0)
         return noisy
 
 
 class LaserNoise(torch.nn.Module):
     """object to add laser noise to images."""
 
-    def __init__(self,
-                 shot_noise_min_rate: float = 0.0,
-                 shot_noise_max_rate: float = 0.2,
-                 scatter_min_var: float = 0.0,
-                 scatter_max_var: float = 1.0):
+    def __init__(
+        self,
+        shot_noise_min_rate: float = 0.0,
+        shot_noise_max_rate: float = 0.2,
+        scatter_min_var: float = 0.0,
+        scatter_max_var: float = 1.0,
+    ):
         super().__init__()
         self.shot_noise_min_rate = shot_noise_min_rate
         self.shot_noise_max_rate = shot_noise_max_rate
@@ -451,8 +539,7 @@ class LaserNoise(torch.nn.Module):
         sigma_val = random.uniform(2, 3)
 
         # additive shot noise
-        var_shot = random.uniform(self.shot_noise_min_rate,
-                                  self.shot_noise_max_rate)
+        var_shot = random.uniform(self.shot_noise_min_rate, self.shot_noise_max_rate)
         shot_noise = torch.randn(img.size()) * var_shot
         shot_noise = gaussian(shot_noise, sigma=sigma_val, channel_axis=None)
 
@@ -492,7 +579,7 @@ class FFTLowPassFilter(torch.nn.Module):
         # invert the fft to get the reconstructed images
         freq_filt_img = ifft2(ifftshift(fft_img))
         freq_filt_img = torch.abs(freq_filt_img)
-        #freq_filt_img /= freq_filt_img.max()
+        # freq_filt_img /= freq_filt_img.max()
         return freq_filt_img
 
 
@@ -520,15 +607,15 @@ class FFTHighPassFilter(torch.nn.Module):
         # invert the fft to get the reconstructed images
         freq_filt_img = ifft2(ifftshift(fft_img))
         freq_filt_img = torch.abs(freq_filt_img)
-        #freq_filt_img /= freq_filt_img.max()
+        # freq_filt_img /= freq_filt_img.max()
         return freq_filt_img
 
 
 class FFTBandPassFilter(torch.nn.Module):
 
-    def __init__(self,
-                 lower_radius: List[int] = [50, 100],
-                 higher_radius: List[int] = [150, 300]):
+    def __init__(
+        self, lower_radius: List[int] = [50, 100], higher_radius: List[int] = [150, 300]
+    ):
         super().__init__()
         self.lower_radius_ = lower_radius
         self.higher_radius_ = higher_radius
@@ -542,12 +629,10 @@ class FFTBandPassFilter(torch.nn.Module):
         R, C = torch.meshgrid(r, c, indexing="ij")
         R_diff = R - center[0]
         C_diff = C - center[1]
-        radius_mat = (R_diff * R_diff + C_diff * C_diff)
+        radius_mat = R_diff * R_diff + C_diff * C_diff
 
-        low_radius = random.randint(self.lower_radius_[0],
-                                    self.lower_radius_[1])
-        high_radius = random.randint(self.higher_radius_[0],
-                                     self.higher_radius_[1])
+        low_radius = random.randint(self.lower_radius_[0], self.lower_radius_[1])
+        high_radius = random.randint(self.higher_radius_[0], self.higher_radius_[1])
 
         hpf_mask = radius_mat >= (low_radius * low_radius)
         lpf_mask = radius_mat < (high_radius * high_radius)
@@ -560,7 +645,7 @@ class FFTBandPassFilter(torch.nn.Module):
         # invert the fft to get the reconstructed images
         freq_filt_img = ifft2(ifftshift(fft_img))
         freq_filt_img = torch.abs(freq_filt_img)
-        #freq_filt_img /= freq_filt_img.max()
+        # freq_filt_img /= freq_filt_img.max()
         return freq_filt_img
 
 
@@ -603,8 +688,10 @@ class RandAugImWithMask(torch.nn.Module):
             return im
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}({self.aug_.__class__.__name__}, " +
-                f"p={self.p_})")
+        return (
+            f"{self.__class__.__name__}({self.aug_.__class__.__name__}, "
+            + f"p={self.p_})"
+        )
 
 
 class Autocontrast(torch.nn.Module):
@@ -642,5 +729,7 @@ class AdjustSharpness(torch.nn.Module):
         return F.adjust_sharpness(img, self.sharpness_factor_)
 
     def __repr__(self) -> str:
-        return (f"{self.__class__.__name__}" +
-                f"(sharpness_factor={self.sharpness_factor_})")
+        return (
+            f"{self.__class__.__name__}"
+            + f"(sharpness_factor={self.sharpness_factor_})"
+        )
