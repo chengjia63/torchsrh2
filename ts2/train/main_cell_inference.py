@@ -195,6 +195,10 @@ class SingleCellListInferenceDataset(torch.utils.data.Dataset):
         cell_instances: str,
         transform: Callable,
         tile_size=48,
+        label_key: str = "label",
+        min_cells_per_slide: Optional[int] = None,
+        subsample_k_per_slide: Optional[int] = None,
+        subsample_seed: int = 0,
         process_read_im: Callable = MemmapTileReader(which_set="srh"),
     ):
 
@@ -207,12 +211,12 @@ class SingleCellListInferenceDataset(torch.utils.data.Dataset):
         self.transform_ = transform
         self.process_read_im_ = process_read_im
         self.tile_size_ = tile_size
+        self.label_key_ = label_key
 
         insts = pd.read_csv(cell_instances, dtype=str)
         insts["proposal"] = insts["proposal"].apply(parse_tuple_string)
         insts["tensor_shape"] = insts["tensor_shape"].apply(parse_tuple_string)
         insts["mmap_idx"] = pd.to_numeric(insts["mmap_idx"]).astype(int)
-        self.instances_ = insts
 
         if "nion" in insts.columns:
             self.nion_col = "nion"
@@ -225,8 +229,82 @@ class SingleCellListInferenceDataset(torch.utils.data.Dataset):
                 )
             )
 
+        insts = self._filter_instances_by_min_cells_per_slide(
+            insts,
+            k=min_cells_per_slide,
+        )
+
+        self.instances_ = self._subsample_instances_per_slide(
+            insts,
+            k=subsample_k_per_slide,
+            seed=subsample_seed,
+        )
+
         logging.info(f"Num instances {len(self.instances_)}")
         logging.info(self.instances_[["patient", "mosaic"]].value_counts())
+
+    def _filter_instances_by_min_cells_per_slide(
+        self,
+        insts: pd.DataFrame,
+        k: Optional[int],
+    ) -> pd.DataFrame:
+        if k is None:
+            return insts
+
+        group_cols = [self.nion_col, "mosaic"]
+        slide_counts = (
+            insts.groupby(group_cols, sort=False)
+            .size()
+            .rename("num_cells")
+            .reset_index()
+        )
+        keep_slides = slide_counts[slide_counts["num_cells"] >= k][group_cols]
+        filtered = insts.merge(keep_slides, on=group_cols, how="inner")
+
+        logging.info(
+            "Filtered cell instances by min_cells_per_slide=%d: %d -> %d rows across %d -> %d slides",
+            k,
+            len(insts),
+            len(filtered),
+            len(slide_counts),
+            len(keep_slides),
+        )
+        return filtered.reset_index(drop=True)
+
+    def _subsample_instances_per_slide(
+        self,
+        insts: pd.DataFrame,
+        k: Optional[int],
+        seed: int,
+    ) -> pd.DataFrame:
+        if k is None:
+            return insts
+
+        group_cols = [self.nion_col, "mosaic"]
+
+        insts_with_order = insts.copy()
+        insts_with_order["_row_order"] = np.arange(len(insts_with_order))
+
+        sampled = (
+            insts_with_order.groupby(group_cols, group_keys=False, sort=False)
+            .apply(
+                lambda group: group
+                if len(group) <= k
+                else group.sample(n=k, random_state=seed)
+            )
+            .sort_values("_row_order")
+            .drop(columns="_row_order")
+            .reset_index(drop=True)
+        )
+
+        logging.info(
+            "Subsampled cell instances per slide with k=%d seed=%d: %d -> %d rows",
+            k,
+            seed,
+            len(insts),
+            len(sampled),
+        )
+        return sampled
 
     def __len__(self):
         return len(self.instances_)
@@ -254,9 +332,9 @@ class SingleCellListInferenceDataset(torch.utils.data.Dataset):
 
         out = inst.to_dict()
         out["image"] = self.transform_(im.squeeze()).unsqueeze(0)
-
         out["path"] = f"{out['patch']}#{out['proposal'][0]}_{out['proposal'][1]}"
-        out["label"] = inst["patch_type"]
+        out["label"] = inst[self.label_key_]
+
         return out
 
 
@@ -295,8 +373,7 @@ def main():
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     inf_trainer = pl.Trainer(
-        accelerator=device, devices=1, default_root_dir=eval_root, inference_mode=True
-    )  # deterministic=True)
+        accelerator=device, devices=1, default_root_dir=eval_root, inference_mode=True, deterministic=True)
 
     pred_raw = inf_trainer.predict(con_exp, dataloaders=data_loader)
 

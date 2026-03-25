@@ -1,7 +1,7 @@
 infra:
   exp_name:  ts2/fmi_dinov2_cc_new
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
-  comment: INF_srh7v1sp1dot4m_dev
+  comment: INF_srh7v1tests64_dev
   seed: 1000
   float32_matmul_precision: medium
 
@@ -26,7 +26,9 @@ data:
     which: SingleCellListInferenceDataset
     params:
       data_root: /nfs/turbo/umms-tocho-snr/data/root_histology_db/srh/
-      cell_instances: /nfs/turbo/umms-tocho/data/chengjia/silica_databank/instances_labels/srh7_1dot4m_.csv 
+      cell_instances: /nfs/turbo/umms-tocho/data/chengjia/silica_databank/instances_labels/srh7_test_.csv
+      subsample_k_per_slide: 64
+      min_cells_per_slide: 8
       #/nfs/turbo/umms-tocho/data/data_splits/chengjia/silica_databank/srhum_4m_.csv #srhum_glioma_2m_.csv #srhum_2m.csv
   loader:
     params:
@@ -56,14 +58,13 @@ lightning_module:
       proj_bias: true
       qkv_bias: true
     #pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1/models/eval/training_124999/teacher_checkpoint.pth
+    #pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1/models/eval/training_124999/teacher_checkpoint.pth
     #pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    #
-    #pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    
+    pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
     #pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
 
 testing: {}
-
 
 
 
