@@ -1,7 +1,9 @@
 import json
 import logging
 import os
+from glob import glob
 from os.path import join as opj
+import re
 from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
@@ -637,12 +639,12 @@ def save_eval_outputs(
 
     logging.info("Writing prediction tables for %s", split_name)
     # prediction_df.to_pickle(opj(out_dir, f"{split_name}_predictions.pkl"))
-    # prediction_df.to_csv(opj(out_dir, f"{split_name}_predictions.csv"), index=False)
+    prediction_df.to_csv(opj(out_dir, f"{split_name}_predictions.csv"), index=False)
 
     logging.info("Formatting metric table for %s", split_name)
     metrics_df = pd.DataFrame([metrics])
-    # metrics_df.to_csv(opj(out_dir, f"{split_name}_metrics.csv"), index=False)
-    # plot_confusion(cm, opj(out_dir, f"{split_name}_confusion.png"), class_names)
+    metrics_df.to_csv(opj(out_dir, f"{split_name}_metrics.csv"), index=False)
+    plot_confusion(cm, opj(out_dir, f"{split_name}_confusion.png"), class_names)
     print(f"{split_name} {metric_type} metrics")
     print(metrics_df)
     all_metrics = {
@@ -673,18 +675,42 @@ def save_eval_outputs(
     #    print(f"{split_name} negative-vs-all metrics ({negative_class} vs rest)")
     #    print(pd.DataFrame([all_metrics["negative_vs_all"]["metrics"]]))
 
-    # with open(opj(out_dir, f"{split_name}_all_metrics.json"), "w", encoding="utf-8") as fd:
-    #    json.dump(all_metrics, fd, indent=2)
+    with open(
+        opj(out_dir, f"{split_name}_all_metrics.json"), "w", encoding="utf-8"
+    ) as fd:
+        json.dump(all_metrics, fd, indent=2)
     print(all_metrics)
     return all_metrics
+
+
+def infer_results_dir_from_prediction_path(pred_path: str) -> str:
+    pred_dir = os.path.dirname(pred_path)
+    if os.path.basename(pred_dir) != "predictions":
+        raise ValueError(
+            f"Expected prediction path under a predictions directory, got {pred_path}"
+        )
+    eval_root = os.path.dirname(pred_dir)
+    results_root = opj(eval_root, "results")
+    existing_run_ids = []
+    if os.path.isdir(results_root):
+        for entry in os.listdir(results_root):
+            entry_path = opj(results_root, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            match = re.fullmatch(r"run(\d{4})", entry)
+            if match is not None:
+                existing_run_ids.append(int(match.group(1)))
+
+    next_run_id = 0 if not existing_run_ids else max(existing_run_ids) + 1
+    return opj(results_root, f"run{next_run_id:04d}")
 
 
 def evaluate_run(
     name: str,
     databank_pred_path: str,
     test_pred_path: str,
-    databank_gt_csv_path: str,
-    test_gt_csv_path: str,
+    databank_gt_csv_path: Optional[str],
+    test_gt_csv_path: Optional[str],
     out_dir: str,
     class_names: Optional[List[str]] = None,
     negative_class: Optional[str] = None,
@@ -699,16 +725,31 @@ def evaluate_run(
     test_pred = load_prediction(test_pred_path)
 
     logging.info("Loading GT labels for %s", name)
-    databank_gt_labels = load_labels_from_cell_instances(
-        databank_pred["path"],
-        databank_gt_csv_path,
-        gt_label_column,
-    )
-    test_gt_labels = load_labels_from_cell_instances(
-        test_pred["path"],
-        test_gt_csv_path,
-        gt_label_column,
-    )
+    if databank_gt_csv_path is None:
+        logging.info(
+            "No databank GT CSV provided for %s; using labels from prediction file",
+            name,
+        )
+        databank_gt_labels = databank_pred["label"]
+    else:
+        databank_gt_labels = load_labels_from_cell_instances(
+            databank_pred["path"],
+            databank_gt_csv_path,
+            gt_label_column,
+        )
+
+    if test_gt_csv_path is None:
+        logging.info(
+            "No test GT CSV provided for %s; using labels from prediction file",
+            name,
+        )
+        test_gt_labels = test_pred["label"]
+    else:
+        test_gt_labels = load_labels_from_cell_instances(
+            test_pred["path"],
+            test_gt_csv_path,
+            gt_label_column,
+        )
 
     logging.info("Encoding labels for %s", name)
     databank_pred["label"], test_pred["label"], class_names = encode_prediction_labels(
@@ -831,8 +872,8 @@ def evaluate_run(
         summary["instance_knn_binary"] = binary_instance_metrics
     if binary_mosaic_metrics is not None:
         summary["mosaic_vote_binary"] = binary_mosaic_metrics
-    # with open(opj(out_dir, "summary.json"), "w", encoding="utf-8") as fd:
-    #    json.dump(summary, fd, indent=2)
+    with open(opj(out_dir, "summary.json"), "w", encoding="utf-8") as fd:
+        json.dump(summary, fd, indent=2)
 
     logging.info(
         "Instance metrics for %s:\n%s",
@@ -872,13 +913,125 @@ def evaluate_run(
         )
 
 
+def find_matching_prediction_paths(
+    pattern: str,
+) -> List[str]:
+    if not pattern:
+        raise ValueError("Expected a non-empty glob pattern")
+
+    matches = sorted(set(glob(pattern)))
+    if not matches:
+        raise ValueError(f"No prediction paths matched glob pattern: {pattern}")
+
+    for path in matches:
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"Matched prediction path is not a file: {path}")
+
+    return matches
+
+
+def extract_perturb_key(path: str, prefix: str) -> str:
+    if not prefix:
+        raise ValueError("Expected a non-empty run key prefix")
+
+    key_match = re.search(rf"({re.escape(prefix)}\d+)_", path)
+    if key_match is None:
+        raise ValueError(
+            f"Could not extract run key with prefix {prefix!r} from path: {path}"
+        )
+    return key_match.group(1)
+
+
+def build_runs_from_sets(
+    exp_root: str,
+    ckpt: str,
+    run_sets: List[Dict[str, str]],
+    run_key_prefix: str,
+) -> List[Dict[str, str]]:
+    if not exp_root:
+        raise ValueError("Expected a non-empty exp_root")
+    if not ckpt:
+        raise ValueError("Expected a non-empty ckpt")
+
+    runs: List[Dict[str, str]] = []
+    for run_set in run_sets:
+        required_keys = {
+            "exp_name",
+            "databank_pred_glob",
+            "test_pred_glob",
+        }
+        missing = required_keys - set(run_set)
+        if missing:
+            raise KeyError(f"Run set is missing required keys: {sorted(missing)}")
+
+        exp_name = run_set["exp_name"]
+        base_eval_dir = opj(exp_root, exp_name, "models", "eval", ckpt)
+        databank_glob = opj(
+            base_eval_dir,
+            run_set["databank_pred_glob"],
+            "predictions",
+            "pred.pt",
+        )
+        test_glob = opj(
+            base_eval_dir,
+            run_set["test_pred_glob"],
+            "predictions",
+            "pred.pt",
+        )
+
+        databank_matches = find_matching_prediction_paths(databank_glob)
+        if len(databank_matches) != 1:
+            raise ValueError(
+                f"Expected exactly one databank prediction for run set {exp_name}, "
+                f"found {len(databank_matches)}: {databank_matches}"
+            )
+        test_matches = find_matching_prediction_paths(test_glob)
+        databank_pred_path = databank_matches[0]
+        run_set_runs: List[Dict[str, str]] = []
+        for test_pred_path in test_matches:
+            perturb_key = extract_perturb_key(
+                test_pred_path,
+                prefix=run_key_prefix,
+            )
+            run_set_runs.append(
+                {
+                    "perturb_key": perturb_key,
+                    "name": f"{exp_name}_{perturb_key}",
+                    "databank_pred_path": databank_pred_path,
+                    "test_pred_path": test_pred_path,
+                }
+            )
+        perturb_key_to_test_pred_path = {
+            run["perturb_key"]: run["test_pred_path"] for run in run_set_runs
+        }
+        if len(perturb_key_to_test_pred_path) != len(run_set_runs):
+            raise ValueError(
+                f"Expected unique perturb keys for run set {exp_name}, found duplicates "
+                f"in test_pred_path values: {[run['test_pred_path'] for run in run_set_runs]}"
+            )
+        run_set_runs = sorted(
+            run_set_runs,
+            key=lambda run: (run["perturb_key"], run["test_pred_path"]),
+        )
+        runs.extend(
+            {
+                "name": run["name"],
+                "databank_pred_path": run["databank_pred_path"],
+                "test_pred_path": run["test_pred_path"],
+            }
+            for run in run_set_runs
+        )
+
+    return runs
+
+
 def main() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
     )
     databank_gt_csv_path = "/nfs/turbo/umms-tocho/data/chengjia/silica_databank/instances_labels/srh7_1dot4m_.csv"
     test_gt_csv_path = "/nfs/turbo/umms-tocho/data/chengjia/silica_databank/instances_labels/srh7_test_.csv"
-    out_dir = "."
+
     class_names = [
         "hgg",
         "lgg",
@@ -890,120 +1043,42 @@ def main() -> None:
     ]
     negative_class = "normal"
 
-    runs = [
+    run_sets = [
         {
-            "name": "6778e5d1_May27-15-59-58_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/ec3c473c_Mar23-23-00-56_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/7be0fcb1_Mar25-05-09-32_sd1000_INF_srh7v1tests64_PERTURB00_dev_tune0/predictions/pred.pt",
+            "exp_name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
         {
-            "name": "6778e5d1_May27-15-59-58_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/ec3c473c_Mar23-23-00-56_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/d2c7b426_Mar25-05-11-04_sd1000_INF_srh7v1tests64_PERTURB01_dev_tune1/predictions/pred.pt",
+            "exp_name": "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
         {
-            "name": "6778e5d1_May27-15-59-58_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/ec3c473c_Mar23-23-00-56_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/42bb519e_Mar25-05-12-40_sd1000_INF_srh7v1tests64_PERTURB02_dev_tune2/predictions/pred.pt",
+            "exp_name": "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
         {
-            "name": "6778e5d1_May27-15-59-58_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/ec3c473c_Mar23-23-00-56_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/3702631b_Mar25-05-14-26_sd1000_INF_srh7v1tests64_PERTURB03_dev_tune3/predictions/pred.pt",
+            "exp_name": "1526bfe8_Mar24-15-02-22_sd1000_dev_nomaskobw_lr13_tune0",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
         {
-            "name": "6778e5d1_May27-15-59-58_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/ec3c473c_Mar23-23-00-56_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/896b20cb_Mar25-05-16-00_sd1000_INF_srh7v1tests64_PERTURB04_dev_tune4/predictions/pred.pt",
-        },
-        {
-            "name": "6778e5d1_May27-15-59-58_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/ec3c473c_Mar23-23-00-56_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/7ede382f_Mar25-05-17-29_sd1000_INF_srh7v1tests64_PERTURB05_dev_tune5/predictions/pred.pt",
-        },
-        {
-            "name": "6778e5d1_May27-15-59-58_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/ec3c473c_Mar23-23-00-56_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/916469a0_Mar25-05-19-02_sd1000_INF_srh7v1tests64_PERTURB06_dev_tune6/predictions/pred.pt",
-        },
-        {
-            "name": "6778e5d1_May27-15-59-58_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/ec3c473c_Mar23-23-00-56_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/dbe1130b_Mar25-05-21-05_sd1000_INF_srh7v1tests64_PERTURB07_dev_tune7/predictions/pred.pt",
-        },
-        {
-            "name": "6778e5d1_May27-15-59-58_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/ec3c473c_Mar23-23-00-56_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/29831087_Mar25-05-22-31_sd1000_INF_srh7v1tests64_PERTURB08_dev_tune8/predictions/pred.pt",
-        },
-        {
-            "name": "6778e5d1_May27-15-59-58_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/ec3c473c_Mar23-23-00-56_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/c5142ac3_Mar25-05-24-03_sd1000_INF_srh7v1tests64_PERTURB09_dev_tune9/predictions/pred.pt",
-        },
-        {
-            "name": "6778e5d1_May27-15-59-58_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/ec3c473c_Mar23-23-00-56_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/cf4b34bc_Mar25-05-25-33_sd1000_INF_srh7v1tests64_PERTURB10_dev_tune10/predictions/pred.pt",
-        },
-        {
-            "name": "89d3ad98_May23-13-58-49_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/b5568912_Mar24-03-11-55_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/a692155e_Mar25-05-11-12_sd1000_INF_srh7v1tests64_PERTURB00_dev_tune0/predictions/pred.pt",
-        },
-        {
-            "name": "89d3ad98_May23-13-58-49_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/b5568912_Mar24-03-11-55_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/6e804109_Mar25-05-12-54_sd1000_INF_srh7v1tests64_PERTURB01_dev_tune1/predictions/pred.pt",
-        },
-        {
-            "name": "89d3ad98_May23-13-58-49_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/b5568912_Mar24-03-11-55_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/03c1c6be_Mar25-05-14-13_sd1000_INF_srh7v1tests64_PERTURB02_dev_tune2/predictions/pred.pt",
-        },
-        {
-            "name": "89d3ad98_May23-13-58-49_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/b5568912_Mar24-03-11-55_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/2c1887b1_Mar25-05-15-34_sd1000_INF_srh7v1tests64_PERTURB03_dev_tune3/predictions/pred.pt",
-        },
-        {
-            "name": "89d3ad98_May23-13-58-49_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/b5568912_Mar24-03-11-55_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/d18d2c47_Mar25-05-17-07_sd1000_INF_srh7v1tests64_PERTURB04_dev_tune4/predictions/pred.pt",
-        },
-        {
-            "name": "89d3ad98_May23-13-58-49_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/b5568912_Mar24-03-11-55_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/d44b6c06_Mar25-05-18-57_sd1000_INF_srh7v1tests64_PERTURB05_dev_tune5/predictions/pred.pt",
-        },
-        {
-            "name": "89d3ad98_May23-13-58-49_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/b5568912_Mar24-03-11-55_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/0aff1bf7_Mar25-05-23-04_sd1000_INF_srh7v1tests64_PERTURB07_dev_tune7/predictions/pred.pt",
-        },
-        {
-            "name": "89d3ad98_May23-13-58-49_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/b5568912_Mar24-03-11-55_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/0aff1bf7_Mar25-05-23-04_sd1000_INF_srh7v1tests64_PERTURB07_dev_tune7/predictions/pred.pt",
-        },
-        {
-            "name": "89d3ad98_May23-13-58-49_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/b5568912_Mar24-03-11-55_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/a49f1f75_Mar25-05-24-36_sd1000_INF_srh7v1tests64_PERTURB08_dev_tune8/predictions/pred.pt",
-        },
-        {
-            "name": "89d3ad98_May23-13-58-49_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/b5568912_Mar24-03-11-55_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/7b644521_Mar25-05-25-53_sd1000_INF_srh7v1tests64_PERTURB09_dev_tune9/predictions/pred.pt",
-        },
-        {
-            "name": "89d3ad98_May23-13-58-49_sd1000_dev_tune0",
-            "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/b5568912_Mar24-03-11-55_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-            "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/47fcdde5_Mar25-05-27-37_sd1000_INF_srh7v1tests64_PERTURB10_dev_tune10/predictions/pred.pt",
+            "exp_name": "8751a922_Mar24-15-02-22_sd1000_dev_maskobw_lr13_tune1",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
     ]
+    runs = build_runs_from_sets(
+        exp_root="/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/",
+        ckpt="training_124999",
+        run_sets=run_sets,
+        run_key_prefix="PERTURB",
+    )
 
     for cfg in tqdm(runs, desc="Evaluation runs"):
+        out_dir = infer_results_dir_from_prediction_path(cfg["test_pred_path"])
         evaluate_run(
             databank_gt_csv_path=databank_gt_csv_path,
             test_gt_csv_path=test_gt_csv_path,
