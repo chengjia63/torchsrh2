@@ -20,11 +20,18 @@ def extract_perturbation_percent(test_pred_path: str, run_key_prefix: str) -> in
     return int(match.group(1))
 
 
-def find_latest_summary_dir(test_pred_path: str) -> str:
+def find_latest_summary_dir(
+    test_pred_path: str,
+    run_dir_prefix: str = "run",
+) -> str:
     pred_dir = os.path.dirname(test_pred_path)
     if os.path.basename(pred_dir) != "predictions":
         raise ValueError(
             f"Expected test prediction path under a predictions directory, got {test_pred_path}"
+        )
+    if not re.fullmatch(r"[A-Za-z]+", run_dir_prefix):
+        raise ValueError(
+            f"Expected run_dir_prefix to contain only letters, got {run_dir_prefix!r}"
         )
 
     results_root = opj(os.path.dirname(pred_dir), "results")
@@ -32,11 +39,11 @@ def find_latest_summary_dir(test_pred_path: str) -> str:
         raise FileNotFoundError(f"Results directory does not exist: {results_root}")
 
     run_dirs = []
-    for path in glob(opj(results_root, "run*")):
+    for path in glob(opj(results_root, f"{run_dir_prefix}*")):
         if not os.path.isdir(path):
             continue
         run_name = os.path.basename(path)
-        match = re.fullmatch(r"run(\d{4})", run_name)
+        match = re.fullmatch(rf"{re.escape(run_dir_prefix)}(\d{{4}})", run_name)
         if match is None:
             continue
         summary_path = opj(path, "summary.json")
@@ -46,7 +53,8 @@ def find_latest_summary_dir(test_pred_path: str) -> str:
 
     if not run_dirs:
         raise FileNotFoundError(
-            f"No completed run directories with summary.json found under {results_root}"
+            "No completed result directories with summary.json found under "
+            f"{results_root} for prefix {run_dir_prefix!r}"
         )
 
     return max(run_dirs, key=lambda item: item[0])[1]

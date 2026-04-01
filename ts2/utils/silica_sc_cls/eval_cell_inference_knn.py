@@ -683,11 +683,18 @@ def save_eval_outputs(
     return all_metrics
 
 
-def infer_results_dir_from_prediction_path(pred_path: str) -> str:
+def infer_results_dir_from_prediction_path(
+    pred_path: str,
+    run_dir_prefix: str = "run",
+) -> str:
     pred_dir = os.path.dirname(pred_path)
     if os.path.basename(pred_dir) != "predictions":
         raise ValueError(
             f"Expected prediction path under a predictions directory, got {pred_path}"
+        )
+    if not re.fullmatch(r"[A-Za-z]+", run_dir_prefix):
+        raise ValueError(
+            f"Expected run_dir_prefix to contain only letters, got {run_dir_prefix!r}"
         )
     eval_root = os.path.dirname(pred_dir)
     results_root = opj(eval_root, "results")
@@ -697,12 +704,12 @@ def infer_results_dir_from_prediction_path(pred_path: str) -> str:
             entry_path = opj(results_root, entry)
             if not os.path.isdir(entry_path):
                 continue
-            match = re.fullmatch(r"run(\d{4})", entry)
+            match = re.fullmatch(rf"{re.escape(run_dir_prefix)}(\d{{4}})", entry)
             if match is not None:
                 existing_run_ids.append(int(match.group(1)))
 
     next_run_id = 0 if not existing_run_ids else max(existing_run_ids) + 1
-    return opj(results_root, f"run{next_run_id:04d}")
+    return opj(results_root, f"{run_dir_prefix}{next_run_id:04d}")
 
 
 def evaluate_run(

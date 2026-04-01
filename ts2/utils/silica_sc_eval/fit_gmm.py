@@ -864,21 +864,30 @@ def main() -> None:
         format=logging_format_str,
     )
 
-    pred_path = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/dd7f97e0_Jun06-21-19-30_sd1000_INFDB_NOIN_dev/predictions/pred.pt"
-    out_dir = "silica_gmm_um2m"
-    k_range = [2, 8, 16, 24, 32, 64, 128, 256]
-    dataset_config_path = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/train/config/chengjia/inference_dinov2_scsrhdb.yaml"
-    cell_instances_path = "/nfs/turbo/umms-tocho/data/data_splits/chengjia/silica_databank/srhum_glioma_2m_.csv"
-    label_key = "patch_type"
+    #pred_path = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/dd7f97e0_Jun06-21-19-30_sd1000_INFDB_NOIN_dev/predictions/pred.pt"
 
-    # pred_path = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/46076e81_Mar18-02-40-22_sd1000_INFDB_NOIN_srhum4m_dev/predictions/pred.pt"
-    # out_dir = "silica_gmm_reproduce"
-    # k_range = [2, 8, 16, 24, 32, 64, 96, 128, 192, 256]
-    # dataset_config_path = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/train/config/chengjia/inference_dinov2_scsrhdb.yaml"
-    # cell_instances_path = (
-    #    "/nfs/turbo/umms-tocho/data/data_splits/chengjia/silica_databank/srhum_4m_.csv"
-    # )
-    # label_key = "ttype_cheng"
+
+    #pred_path = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/1526bfe8_Mar24-15-02-22_sd1000_dev_nomaskobw_lr13_tune0/models/eval/training_124999/5dcedee5_Mar26-03-57-38_sd1000_INF_srh7v1sp1dot4m_dev_tune3/predictions/pred.pt"
+    #pred_path = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1/models/eval/training_124999/5bde89e6_Mar26-03-43-01_sd1000_INF_srh7v1sp1dot4m_dev_tune2/predictions/pred.pt"
+    #pred_path = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0/models/eval/training_124999/30a92a4a_Mar26-03-15-32_sd1000_INF_srh7v1sp1dot4m_dev_tune0/predictions/pred.pt"
+    #pred_path = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/8751a922_Mar24-15-02-22_sd1000_dev_maskobw_lr13_tune1/models/eval/training_124999/b227cd29_Mar26-04-11-39_sd1000_INF_srh7v1sp1dot4m_dev_tune4/predictions/pred.pt"
+    pred_path = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0/models/eval/training_124999/4d1045a3_Mar26-03-29-42_sd1000_INF_srh7v1sp1dot4m_dev_tune1/predictions/pred.pt"
+
+    out_dir = "srh7v1sp1dot4m_bead0872"
+
+    k_range = [7, 8, 16, 32, 128, 256]
+
+    run_dir = os.path.dirname(os.path.dirname(pred_path))
+    dataset_config_path = os.path.join(
+        run_dir,
+        "config",
+        "inference_dinov2_scsrhdb.yaml",
+    )
+
+    #cell_instances_path = "/nfs/turbo/umms-tocho/data/data_splits/chengjia/silica_databank/srhum_glioma_2m_.csv"
+    cell_instances_path = "/nfs/turbo/umms-tocho/data/chengjia/silica_databank/instances_labels/srh7_1dot4m_.csv"
+    label_key = "label" #"patch_type"
+
     tsne_n_per_class = 2048
     global_sample_n = None
 
