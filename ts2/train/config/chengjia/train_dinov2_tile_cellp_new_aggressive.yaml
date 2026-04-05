@@ -1,5 +1,5 @@
 infra:
-  exp_name: ts2/fmi_dinov2_cc_fixdset
+  exp_name: ts2/fmi_dinov2_cc_fixdset2
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
   comment: dev
   log_gpu: True
@@ -108,11 +108,11 @@ tune:
   diagonal_items: true
   params:
     infra/comment:
-    - dev_nomaskobw_lr14
-    - dev_maskobw_lr14
+    - nomaskobw_lr43
+    #- dev_mask5090_maskobw_lr43
     dinov2_fair_config/optim/base_lr:
-    - 0.0001
-    - 0.0001
+    - 0.004
+    #- 0.004
     dinov2_fair_config/train/collate/params/mask_outerbias_weight:
     - False
-    - True
+    #- True

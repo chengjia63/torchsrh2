@@ -42,6 +42,8 @@ data:
       common:
         data_root: /nfs/turbo/umms-tocho-snr/data/root_histology_db/srh/
         sc_proposal_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root_gen2
+        remove_background: True
+        mask_size: 64
         tile_size: 64
         num_transforms: 0
         num_samples: 1
@@ -90,6 +92,6 @@ tune:
   diagonal_items: true
   params:
     infra/comment:
-    - dinov2_lr43
+    - dinov2_rmbg_lr43
     dinov2_fair_config/optim/base_lr:
     - 0.004

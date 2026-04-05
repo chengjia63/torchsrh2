@@ -3,6 +3,7 @@ from multiprocessing.sharedctypes import Value
 from typing import Optional, List, Dict, Any
 from abc import ABC
 from os.path import join as opj
+import json
 import pandas
 import numpy as np
 import torch
@@ -259,17 +260,31 @@ class SLHSVSingleTileDatasetDINOV2(SingleLevelHierarchicalDatasetDINOV2):
 
 class SLHSVSingleTileCellProposalDatasetDINOV2(SLHSVSingleTileDatasetDINOV2):
 
-    def __init__(self, sc_proposal_root, **kwargs):
+    def __init__(
+        self,
+        sc_proposal_root,
+        remove_background: bool = False,
+        mask_size: int = 64,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         assert not kwargs.get("balance_instance_class")
         assert not kwargs.get("num_sample_wo_replacement")
 
+        self.sc_proposal_root_ = sc_proposal_root
+        self.remove_background_ = remove_background
+        self.mask_size_ = mask_size
+        assert self.tile_size <= self.mask_size_
+        self.mask_crop_start_ = (self.mask_size_ - self.tile_size) // 2
+        self.mask_crop_end_ = self.mask_crop_start_ + self.tile_size
+
         self.proposals_ = {}
+        self.mask_info_ = {}
+        self.mask_memmaps_ = {}
 
         for i in tqdm(self.instances_):
             s = i["name"]
             slide_meta = opj(sc_proposal_root, f"{s}-meta.csv")
-
             assert os.path.exists(opj(sc_proposal_root, f"{s}-meta.csv"))
 
             try:
@@ -294,7 +309,9 @@ class SLHSVSingleTileCellProposalDatasetDINOV2(SLHSVSingleTileDatasetDINOV2):
             cp_filt = pd.DataFrame(
                 {
                     "patch": cp_filt["patch"],
-                    "proposal": zip(cp_filt["centroid_r"], cp_filt["centroid_c"]),
+                    "proposal": list(
+                        zip(cp_filt["centroid_r"], cp_filt["centroid_c"], cp_filt.index)
+                    ),
                 }
             )
 
@@ -310,8 +327,9 @@ class SLHSVSingleTileCellProposalDatasetDINOV2(SLHSVSingleTileDatasetDINOV2):
             i["patches"] = [j for j in i["patches"] if j["patch_name"] in patch_keep]
 
             self.proposals_.update({s: cp_filt})
+            if self.remove_background_:
+                self.mask_info_[s] = self._load_mask_info(s)
 
-        # import pdb; pdb.set_trace()
         for i in self.instances_:
             if not len(i["patches"]):
                 print(i["name"])
@@ -323,21 +341,58 @@ class SLHSVSingleTileCellProposalDatasetDINOV2(SLHSVSingleTileDatasetDINOV2):
             + f"num slide with proposals {len(self.proposals_)}"
         )
 
+    def _load_mask_info(self, slide_name: str):
+        memmap_path = opj(self.sc_proposal_root_, f"{slide_name}-masks.dat")
+        meta_path = opj(self.sc_proposal_root_, f"{slide_name}-maskmeta.json")
+        with open(meta_path) as fd:
+            meta = json.load(fd)
+        return {"path": memmap_path, "shape": tuple(meta["tensor_shape"])}
+
+    def _get_mask_memmap(self, slide_name: str):
+        if slide_name not in self.mask_memmaps_:
+            mask_info = self.mask_info_[slide_name]
+            self.mask_memmaps_[slide_name] = np.memmap(
+                mask_info["path"],
+                dtype="uint8",
+                mode="r",
+                shape=tuple(mask_info["shape"]),
+            )
+        return self.mask_memmaps_[slide_name]
+
+    def _sample_patch_and_proposal(self, inst: Dict):
+        im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
+        patch = inst["patches"][im_id[0]]
+        patch_name = patch["patch_name"]
+        proposal = random.sample(
+            self.proposals_[inst["name"]][patch_name],
+            k=1,
+        )[0]
+        return [patch["patch_idx"]], patch_name, proposal
+
+    def _get_cell_mask(self, slide_name: str, mask_idx: int):
+        mask_fd = self._get_mask_memmap(slide_name)
+        if self.tile_size != self.mask_size_:
+            mask = torch.from_numpy(
+                np.array(
+                    mask_fd[
+                        mask_idx,
+                        self.mask_crop_start_:self.mask_crop_end_,
+                        self.mask_crop_start_:self.mask_crop_end_,
+                    ],
+                    copy=False,
+                )
+            )
+        else:
+            mask = torch.from_numpy(np.array(mask_fd[mask_idx], copy=False))
+        return (mask > 0).to(torch.float32)
+
     @torch.no_grad()
     def read_images(self, inst: Dict):
         """Read in a list of patches, different patches and transformations"""
 
-        # patches_list = inst["patches"]
-        im_id = random.sample(range(len(inst["patches"])), self.num_samples_)
-        # mmap_id = [patches_list[i % 1000]["patch_idx"] for i in im_id]
-
+        im_id, _, proposal = self._sample_patch_and_proposal(inst)
         tensor_shape = tuple(self.tensor_shape_map[inst["name"]]["shape"])
-        rc_idx = random.sample(
-            self.proposals_[inst["name"]][inst["patches"][im_id[0]]["patch_name"]], k=1
-        )[0]
-        rc_idx = (rc_idx[0] - self.tile_size // 2, rc_idx[1] - self.tile_size // 2)
-        # rc_idx = (np.random.randint(tensor_shape[1]-self.tile_size),
-        #          np.random.randint(tensor_shape[2]-self.tile_size))
+        rc_idx = (proposal[0] - self.tile_size // 2, proposal[1] - self.tile_size // 2)
 
         images = self.process_read_im_(
             self.make_im_path(self.tensor_shape_map[inst["name"]]["path"]),
@@ -347,7 +402,10 @@ class SLHSVSingleTileCellProposalDatasetDINOV2(SLHSVSingleTileDatasetDINOV2):
             self.tile_size,
         )
 
-        im_id = None
+        if self.remove_background_:
+            cell_mask = self._get_cell_mask(inst["name"], int(proposal[2]))
+            images = images * cell_mask[None, None, ...]
+
         assert self.transform_ is not None
         images = self.transform_(images.squeeze())
         return images
