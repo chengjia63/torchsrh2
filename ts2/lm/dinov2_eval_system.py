@@ -32,8 +32,9 @@ class Dinov2EvalSystem(pl.LightningModule):
 
     @torch.inference_mode()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        #if batch_idx==5:
-        #    torch.save(batch, f"{uuid.uuid4().hex[:8]}.pt")
+
+        #torch.save(batch, f"eval_batch_{uuid.uuid4().hex[:8]}.pt")
+        #exit(99)
         
         if batch["image"].shape[1] == 1:
             if self.get_image_attn:
