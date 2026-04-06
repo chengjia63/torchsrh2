@@ -360,28 +360,50 @@ def main() -> None:
         "1526bfe8": "Silica, full image iBOT, LR1e-3",
         "8751a922": "Silica, inside iBOT, LR1e-3",
     }
-    run_sets = [
-        {
-            "exp_name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",
-            "pred_glob": "*INF_srh7v1test_celldist_nn*",
-        },
-        {
-            "exp_name": "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0",
-            "pred_glob": "*INF_srh7v1test_celldist_nn*",
-        },
-        {
-            "exp_name": "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1",
-            "pred_glob": "*INF_srh7v1test_celldist_nn*",
-        },
-        {
-            "exp_name": "1526bfe8_Mar24-15-02-22_sd1000_dev_nomaskobw_lr13_tune0",
-            "pred_glob": "*INF_srh7v1test_celldist_nn*",
-        },
-        {
-            "exp_name": "8751a922_Mar24-15-02-22_sd1000_dev_maskobw_lr13_tune1",
-            "pred_glob": "*INF_srh7v1test_celldist_nn*",
-        },
-    ]
+    #run_sets = [
+    #    {
+    #        "exp_name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",
+    #        "pred_glob": "*INF_srh7v1test_celldist_nn*",
+    #    },
+    #    {
+    #        "exp_name": "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0",
+    #        "pred_glob": "*INF_srh7v1test_celldist_nn*",
+    #    },
+    #    {
+    #        "exp_name": "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1",
+    #        "pred_glob": "*INF_srh7v1test_celldist_nn*",
+    #    },
+    #    {
+    #        "exp_name": "1526bfe8_Mar24-15-02-22_sd1000_dev_nomaskobw_lr13_tune0",
+    #        "pred_glob": "*INF_srh7v1test_celldist_nn*",
+    #    },
+    #    {
+    #        "exp_name": "8751a922_Mar24-15-02-22_sd1000_dev_maskobw_lr13_tune1",
+    #        "pred_glob": "*INF_srh7v1test_celldist_nn*",
+    #    },
+    #]
+    #run_sets = [
+    #    {
+    #        "exp_name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",
+    #        "pred_glob": "*INF_srh7v1test_celldist_ap*",
+    #    },
+    #    {
+    #        "exp_name": "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0",
+    #        "pred_glob": "*INF_srh7v1test_celldist_ap*",
+    #    },
+    #    {
+    #        "exp_name": "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1",
+    #        "pred_glob": "*INF_srh7v1test_celldist_ap*",
+    #    },
+    #    {
+    #        "exp_name": "1526bfe8_Mar24-15-02-22_sd1000_dev_nomaskobw_lr13_tune0",
+    #        "pred_glob": "*INF_srh7v1test_celldist_ap*",
+    #    },
+    #    {
+    #        "exp_name": "8751a922_Mar24-15-02-22_sd1000_dev_maskobw_lr13_tune1",
+    #        "pred_glob": "*INF_srh7v1test_celldist_ap*",
+    #    },
+    #]
     run_sets = [
         {
             "exp_name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",

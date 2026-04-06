@@ -242,7 +242,7 @@ def save_chart(chart: alt.Chart, out_stem: str, formats: List[str]) -> None:
 
 
 def main() -> None:
-    exp_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/"
+    exp_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2"
     ckpt = "training_124999"
     run_key_prefix = "PERTURB"
     out_stem = "cell_inference_knn_perturbation"
@@ -251,30 +251,16 @@ def main() -> None:
     height = 300
     run_sets = [
         {
-            "exp_name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",
+            "exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0",
             "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
             "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
         {
-            "exp_name": "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0",
+            "exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0",
             "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
             "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
-        {
-            "exp_name": "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1",
-            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        },
-        {
-            "exp_name": "1526bfe8_Mar24-15-02-22_sd1000_dev_nomaskobw_lr13_tune0",
-            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        },
-        {
-            "exp_name": "8751a922_Mar24-15-02-22_sd1000_dev_maskobw_lr13_tune1",
-            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        },
+
     ]
     panels = [
         {
@@ -303,6 +289,8 @@ def main() -> None:
         },
     ]
     display_name_by_exp = {
+        "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0": "DINOv2 lr4e-3",
+        "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0": "Silica FullIm iBOT lr4e-3",
         "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0": "Dino",
         "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0": "Silica NoMaskOBW lr4e-3",
         "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1": "Silica MaskOBW lr4e-3",

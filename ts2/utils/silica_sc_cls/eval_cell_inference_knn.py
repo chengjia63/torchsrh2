@@ -1052,33 +1052,44 @@ def main() -> None:
 
     run_sets = [
         {
-            "exp_name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",
+            "exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0",
             "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
             "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
         {
-            "exp_name": "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0",
+            "exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0",
             "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
             "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
-        {
-            "exp_name": "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1",
-            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        },
-        {
-            "exp_name": "1526bfe8_Mar24-15-02-22_sd1000_dev_nomaskobw_lr13_tune0",
-            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        },
-        {
-            "exp_name": "8751a922_Mar24-15-02-22_sd1000_dev_maskobw_lr13_tune1",
-            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        },
+
+        #{
+        #    "exp_name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        #},
+        #{
+        #    "exp_name": "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        #},
+        #{
+        #    "exp_name": "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        #},
+        #{
+        #    "exp_name": "1526bfe8_Mar24-15-02-22_sd1000_dev_nomaskobw_lr13_tune0",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        #},
+        #{
+        #    "exp_name": "8751a922_Mar24-15-02-22_sd1000_dev_maskobw_lr13_tune1",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        #},
     ]
     runs = build_runs_from_sets(
-        exp_root="/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/",
+        exp_root="/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/",
         ckpt="training_124999",
         run_sets=run_sets,
         run_key_prefix="PERTURB",
