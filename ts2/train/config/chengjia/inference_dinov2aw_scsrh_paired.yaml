@@ -1,0 +1,137 @@
+infra:
+  exp_name:  ts2/fmi_dinov2_cc_new
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
+  comment: INF_srh7v1tests64_closepairs8_dev
+  seed: 1000
+  float32_matmul_precision: medium
+
+data:
+  xform_params:
+    which_set: srh
+    base_aug_params:
+      laser_noise_config: null
+      get_third_channel_params:
+        mode: three_channels
+        subtracted_base: 0.07629394531
+      to_uint8: False
+    strong_aug_params:
+      aug_list:
+      - which: center_crop_always_apply
+        params:
+          size: 48
+      #- which: srh_instance_norm_always_apply
+      #  params: {}
+      - which: resize_always_apply
+        params:
+            size: 518
+      aug_prob: 1
+  test_dataset:
+    which: SingleCellListInferenceDataset
+    params:
+      data_root: /nfs/turbo/umms-tocho-snr/data/root_histology_db/srh/
+      cell_instances: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_sc_cls/celldist_nn8/celldist_stats_sampled_pair_instances.csv 
+  loader:
+    params:
+      test:
+        pin_memory: False
+        persistent_workers: False
+        prefetch_factor: 8
+        num_workers: 7
+        batch_size: 256
+        drop_last: False
+        shuffle: False
+
+lightning_module:
+  which: Dinov2EvalSystem
+  params:
+    model_hyperparams:
+      arch: vit_small
+      img_size: 518
+      patch_size: 14
+      block_chunks: 0
+      ffn_bias: true
+      ffn_layer: mlp
+      num_register_tokens: 0
+      interpolate_antialias: false
+      interpolate_offset: 0.1
+      layerscale: 1.0e-05
+      proj_bias: true
+      qkv_bias: true
+    pretrained_weights: TODO
+testing: {}
+
+tune:
+  diagonal_items: True
+  params:
+    infra/comment:
+    - INF_srh7v1test_cellnbr_dgt12_dle16_nge1
+    - INF_srh7v1test_cellnbr_dgt12_dle20_nge1
+    - INF_srh7v1test_cellnbr_dgt12_dle24_nge1
+    - INF_srh7v1test_cellnbr_dgt12_dle28_nge1
+    - INF_srh7v1test_cellnbr_dgt12_dle32_nge1
+    - INF_srh7v1test_cellnbr_dgt12_dle36_nge1
+    - INF_srh7v1test_cellnbr_dgt12_dle40_nge1
+    - INF_srh7v1test_cellnbr_dgt12_dle44_nge1
+    - INF_srh7v1test_cellnbr_dgt12_dle48_nge1
+    - INF_srh7v1test_cellnbr_dgt12_dle64_nge1
+    - INF_srh7v1test_cellnbrring_dgt4_dle8_nge1
+    - INF_srh7v1test_cellnbrring_dgt8_dle12_nge1
+    - INF_srh7v1test_cellnbrring_dgt12_dle16_nge1
+    - INF_srh7v1test_cellnbrring_dgt16_dle20_nge1
+    - INF_srh7v1test_cellnbrring_dgt20_dle24_nge1
+    - INF_srh7v1test_cellnbrring_dgt24_dle28_nge1
+    - INF_srh7v1test_cellnbrring_dgt28_dle32_nge1
+    - INF_srh7v1test_cellnbrring_dgt32_dle36_nge1
+    - INF_srh7v1test_cellnbrring_dgt36_dle40_nge1
+    - INF_srh7v1test_cellnbrring_dgt40_dle44_nge1
+    - INF_srh7v1test_cellnbrring_dgt44_dle48_nge1
+    - INF_srh7v1test_cellnbrring_dgt60_dle64_nge1
+  
+    lightning_module/params/pretrained_weights:
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth
+
+    data/test_dataset/params/cell_instances:
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt12_dle16_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt12_dle20_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt12_dle24_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt12_dle28_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt12_dle32_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt12_dle36_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt12_dle40_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt12_dle44_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt12_dle48_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt12_dle64_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt4_dle8_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt8_dle12_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt12_dle16_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt16_dle20_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt20_dle24_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt24_dle28_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt28_dle32_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt32_dle36_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt36_dle40_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt40_dle44_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt44_dle48_nge1/sampled_neighborhood_instances.csv
+    - /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_scnn/out/cellnbr_stats_nbr_8192_dgt60_dle64_nge1/sampled_neighborhood_instances.csv
+    
