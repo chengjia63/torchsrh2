@@ -1,0 +1,72 @@
+infra:
+  exp_name:  ts2/fmi_dinov2_cc_new
+  log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
+  comment: INF_srh7v1sp1dot4m_dev
+  seed: 1000
+  float32_matmul_precision: medium
+
+data:
+  xform_params:
+    which_set: srh
+    base_aug_params:
+      laser_noise_config: null
+      get_third_channel_params:
+        mode: three_channels
+        subtracted_base: 0.07629394531
+      to_uint8: False
+    strong_aug_params:
+      aug_list:
+      - which: center_crop_always_apply
+        params:
+          size: 48
+      - which: resize_always_apply
+        params:
+            size: 518
+      #- which: srh_instance_norm_always_apply
+      #  params: {}
+      aug_prob: 1
+  test_dataset:
+    which: SingleCellListInferenceDataset
+    params:
+      data_root: /nfs/turbo/umms-tocho-snr/data/root_histology_db/srh/
+      cell_instances: /nfs/turbo/umms-tocho/data/chengjia/silica_databank/instances_labels/srh7_1dot4m_.csv
+      #/nfs/turbo/umms-tocho/data/data_splits/chengjia/silica_databank/srhum_4m_.csv #srhum_glioma_2m_.csv #srhum_2m.csv
+  loader:
+    params:
+      test:
+        pin_memory: False
+        persistent_workers: False
+        prefetch_factor: 8
+        num_workers: 7
+        batch_size: 256
+        drop_last: False
+        shuffle: False
+
+lightning_module:
+  which: Dinov2EvalSystem
+  params:
+    model_hyperparams:
+      arch: vit_small
+      img_size: 518
+      patch_size: 14
+      block_chunks: 0
+      ffn_bias: true
+      ffn_layer: mlp
+      num_register_tokens: 0
+      interpolate_antialias: false
+      interpolate_offset: 0.1
+      layerscale: 1.0e-05
+      proj_bias: true
+      qkv_bias: true
+    pretrained_weights: TODO
+    #pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    #pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/teacher_checkpoint.pth
+
+testing: {}
+
+
+tune:
+  diagonal_items: True
+  params:
+    lightning_module/params/pretrained_weights:
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/a2706135_dinov2/models/eval/training_124999/teacher_checkpoint.pth

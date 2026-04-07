@@ -440,12 +440,14 @@ def main() -> None:
     )
     exp_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/"
     ckpt = "training_124999"
-    eval_key_prefix = "cellnbrring"
+    #eval_key_prefix = "cellnbrring"
+    eval_key_prefix = "cellnbr"
     neighborhood_map_csv_path_template = (
         "out/cellnbr_stats_nbr_8192_dgt{dist_min}_dle{dist_max}_nge1/"
         "sampled_neighborhood_map.csv"
     )
     exp_name_label_map = {
+        "a2706135": "DINOv2, Meta",
         "04e0bf39": "DINOv2, LR4e-3",
         "ca187b7c": "Silica, full image iBOT, LR4e-3",
         # "3122d0c0": "DINOv2, LR4e-3",
@@ -461,6 +463,10 @@ def main() -> None:
         },
         {
             "exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0",
+            "pred_glob": f"*INF_srh7v1test_{eval_key_prefix}_*",
+        },
+        {
+            "exp_name": "a2706135_dinov2",
             "pred_glob": f"*INF_srh7v1test_{eval_key_prefix}_*",
         },
         # {

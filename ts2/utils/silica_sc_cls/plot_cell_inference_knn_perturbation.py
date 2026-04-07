@@ -260,6 +260,11 @@ def main() -> None:
             "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
             "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
+        {
+            "exp_name": "a2706135_dinov2",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        },
 
     ]
     panels = [
@@ -289,6 +294,7 @@ def main() -> None:
         },
     ]
     display_name_by_exp = {
+        "a2706135_dinov2": "DINOv2 Meta",
         "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0": "DINOv2 lr4e-3",
         "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0": "Silica FullIm iBOT lr4e-3",
         "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0": "Dino",

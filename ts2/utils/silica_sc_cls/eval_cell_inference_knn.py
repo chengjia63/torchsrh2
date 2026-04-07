@@ -1051,16 +1051,22 @@ def main() -> None:
     negative_class = "normal"
 
     run_sets = [
+        #{
+        #    "exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        #},
+        #{
+        #    "exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        #},
         {
-            "exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0",
+            "exp_name": "a2706135_dinov2",
             "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
             "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
-        {
-            "exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0",
-            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        },
+
 
         #{
         #    "exp_name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",
