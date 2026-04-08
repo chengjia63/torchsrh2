@@ -400,4 +400,4 @@ phase_c:
     "svs/20260322-51874",
     "svs/20260327-52063",
   ]
-fsx_annot: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/np_slide_ingest/annot_fsx/data/fsx_annot.csv
+fsx_annot: /nfs/turbo/umms-tocho-snr/exp/chengjia/artifacts/ns/scanning/annot_fsx/data/fsx_annot.csv
