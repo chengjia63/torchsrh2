@@ -204,6 +204,119 @@ def process_metadata_a_match(cf):
     return out
 
 
+def get_filename(path):
+    if not isinstance(path, str) or not path:
+        return ""
+    return re.split(r"[\\/]", path)[-1]
+
+
+def get_filename_stem(path):
+    return os.path.splitext(get_filename(path))[0]
+
+
+def path_relative_to(path, root):
+    path_abs = os.path.abspath(path)
+    root_abs = os.path.abspath(root)
+    if os.path.commonpath([path_abs, root_abs]) != root_abs:
+        return path
+    return os.path.relpath(path_abs, root_abs)
+
+
+def list_phase_c_svs_files(svs_dirs, svs_root):
+    rows = []
+    for svs_dir in svs_dirs:
+        if not os.path.isdir(svs_dir):
+            raise NotADirectoryError(f"Phase C SVS directory does not exist: {svs_dir}")
+
+        for fn in os.listdir(svs_dir):
+            svs_path = opj(svs_dir, fn)
+            if os.path.isfile(svs_path) and fn.lower().endswith(".svs"):
+                rows.append(
+                    {
+                        "phase_c_filename": fn,
+                        "path": path_relative_to(svs_path, svs_root),
+                    }
+                )
+
+    svs_files = pd.DataFrame(rows)
+    if svs_files.empty:
+        return pd.DataFrame(columns=["phase_c_filename", "path"])
+
+    duplicated_fns = svs_files.loc[
+        svs_files["phase_c_filename"].duplicated(), "phase_c_filename"
+    ]
+    if len(duplicated_fns):
+        raise ValueError(
+            "Phase C SVS filenames must be unique. Duplicates: "
+            f"{sorted(duplicated_fns.unique().tolist())}"
+        )
+
+    return svs_files
+
+
+def process_metadata_phase_c(cf):
+    phase_c_cf = cf.get("phase_c")
+    if not phase_c_cf or (
+        not phase_c_cf.get("metadata") and not phase_c_cf.get("svs_dirs")
+    ):
+        return pd.DataFrame(columns=cf["infra"]["meta_col_order"])
+    if not phase_c_cf.get("metadata") or not phase_c_cf.get("svs_dirs"):
+        raise ValueError("Phase C config must set both metadata and svs_dirs")
+
+    metas = read_cat_csvs_with_fn_keep_fn(phase_c_cf["metadata"]).copy()
+    if "File Location" not in metas.columns:
+        raise KeyError('Phase C metadata must include column "File Location"')
+
+    metas["phase_c_filename"] = metas["File Location"].apply(get_filename)
+    empty_file_location = metas["phase_c_filename"] == ""
+    if empty_file_location.any():
+        raise ValueError(
+            "Phase C metadata has empty File Location values in rows: "
+            f"{metas.index[empty_file_location].tolist()}"
+        )
+
+    duplicated_meta_fns = metas.loc[
+        metas["phase_c_filename"].duplicated(), "phase_c_filename"
+    ]
+    if len(duplicated_meta_fns):
+        raise ValueError(
+            "Phase C metadata filenames must be unique. Duplicates: "
+            f"{sorted(duplicated_meta_fns.unique().tolist())}"
+        )
+
+    metas = metas.rename(
+        columns={
+            "Barcode ID": "Barcode",
+            "Accession / ID #": "UM Accession",
+            "Outside Acc#": "Outside Accession",
+            "Block ID": "Block",
+            "Organ": "Site/Organ",
+        }
+    )
+
+    svs_root = opj(cf["infra"]["neuroslides_root"], "svs")
+    svs_files = list_phase_c_svs_files(phase_c_cf["svs_dirs"], svs_root)
+    out = pd.merge(
+        left=metas,
+        right=svs_files,
+        on="phase_c_filename",
+        how="outer",
+    )
+
+    out["mxa_code"] = out["phase_c_filename"].apply(get_filename_stem)
+    out["m_num"] = 0
+    out["x_num"] = 0
+    out["a_num"] = 0
+    out["tile"] = ""
+    out["comment"] = ""
+    out["Diagnosis"] = ""
+    out["original_path"] = out["File Location"]
+
+    return out[cf["infra"]["meta_col_order"] + ["original_path"]].sort_values(
+        "mxa_code"
+    )
+
+
 def normalize_metadata_paths(df):
     def proc_path_str(x):
         if isinstance(x, str):
@@ -227,21 +340,39 @@ def normalize_metadata_paths(df):
     return df
 
 
-def process_metadata(cf):
-    first_batch_all_meta = process_metadata_mx_match(cf)
-    mxa_batch_mxmatch_allmeta, mxa_batch_mamatch_allmeta = process_metadata_mxa_match(
-        cf
+def log_phase_c_stats(phase_c_allmeta):
+    log_section("Phase C stats")
+    logging.info("Rows: %d", len(phase_c_allmeta))
+    logging.info(
+        "Unique UM Accession values: %d",
+        len(phase_c_allmeta["UM Accession"].drop_duplicates()),
     )
-    mxa_newnormal_allmeta = process_metadata_a_match(cf)
+    logging.info(
+        "Rows with UM Accession: %d",
+        phase_c_allmeta["UM Accession"].notna().sum(),
+    )
+    logging.info("Rows with scanned path: %d", phase_c_allmeta["path"].notna().sum())
+    logging.info("Rows missing scanned path: %d", phase_c_allmeta["path"].isna().sum())
+
+
+def process_metadata(cf):
+    first_batch_allmeta = process_metadata_mx_match(cf)
+    mxa_mxmatch_allmeta, mxa_amatch_allmeta = process_metadata_mxa_match(cf)
+    amatch_allmeta = process_metadata_a_match(cf)
+    phase_c_allmeta = process_metadata_phase_c(cf)
+    log_phase_c_stats(phase_c_allmeta)
 
     all_meta = pd.concat(
         [
-            first_batch_all_meta,
-            mxa_batch_mxmatch_allmeta,
-            mxa_batch_mamatch_allmeta,
-            mxa_newnormal_allmeta,
+            first_batch_allmeta,
+            mxa_mxmatch_allmeta,
+            mxa_amatch_allmeta,
+            amatch_allmeta,
+            phase_c_allmeta,
         ]
     ).sort_values(["a_num", "m_num", "x_num"])
+    if "original_path" not in all_meta.columns:
+        all_meta["original_path"] = ""
 
     all_meta = normalize_metadata_paths(all_meta)
     return all_meta
@@ -305,9 +436,26 @@ def normalize_config_paths(cf):
                 for path in cf[section_name][key]
             ]
 
+    if "phase_c" in cf:
+        cf["phase_c"]["metadata"] = [
+            join_neuroslides_path(neuroslides_root, path)
+            for path in cf["phase_c"]["metadata"]
+        ]
+        cf["phase_c"]["svs_dirs"] = [
+            join_neuroslides_path(neuroslides_root, path)
+            for path in cf["phase_c"]["svs_dirs"]
+        ]
+
 
 def format_table(df):
-    return df.to_string(index=False)
+    with pd.option_context("display.max_colwidth", None):
+        return df.to_string(index=False)
+
+
+def resolve_svs_path(svs_root, path):
+    if os.path.isabs(path):
+        return path
+    return opj(svs_root, path)
 
 
 def log_section(title):
@@ -317,14 +465,37 @@ def log_section(title):
     logging.info("=" * 88)
 
 
-def log_check(title, df, note=None):
+def path_parent_dir(path):
+    if not isinstance(path, str) or not path:
+        return ""
+    return os.path.dirname(path)
+
+
+def log_check(title, df, note=None, sort_by=None, directory_column=None):
     logging.info("")
     logging.info("- %s", title)
     if note:
         logging.info("  Note: %s", note)
-    logging.info("  Rows: %d", len(df))
-    if len(df):
-        logging.warning("\n%s", format_table(df))
+
+    out_df = df
+    if sort_by is not None:
+        out_df = out_df.sort_values(sort_by, na_position="last")
+
+    if len(out_df):
+        logging.error("  Rows: %d", len(out_df))
+        print(format_table(out_df))
+
+        if directory_column is not None:
+            directories = sorted(
+                {
+                    directory
+                    for directory in out_df[directory_column].apply(path_parent_dir)
+                    if directory
+                }
+            )
+            logging.error("  Directories containing these files:")
+            print("\n".join(directories))
+
     else:
         logging.info("  OK")
 
@@ -347,13 +518,10 @@ def main():
         + "x"
     )
 
-    all_meta.drop("qr_meta_fn", axis=1).to_csv(
-        f'{cf["infra"]["out_fn"]}.csv', index=False
-    )
+    export_cols = [col for col in cf["infra"]["meta_col_order"] if col != "qr_meta_fn"]
+    all_meta[export_cols].to_csv(f'{cf["infra"]["out_fn"]}.csv', index=False)
     logging.info("Wrote CSV: %s.csv", cf["infra"]["out_fn"])
-    all_meta.drop("qr_meta_fn", axis=1).to_excel(
-        f'{cf["infra"]["out_fn"]}.xlsx', index=False
-    )
+    all_meta[export_cols].to_excel(f'{cf["infra"]["out_fn"]}.xlsx', index=False)
     logging.info("Wrote Excel: %s.xlsx", cf["infra"]["out_fn"])
 
     pd.set_option("display.max_rows", None)
@@ -361,10 +529,19 @@ def main():
     log_section("Sanity checks - these tables should all be empty")
 
     kns = all_meta[all_meta["path"].isna()]
-    log_check("Known but not scanned - need to rescan", kns)
+    log_check(
+        "Known but not scanned - need to rescan",
+        kns[["original_path"]],
+        sort_by="original_path",
+    )
 
     snk = all_meta[all_meta["UM Accession"].isna()]
-    log_check("Scanned but not known - need to upload / check LabPortal CSV", snk)
+    log_check(
+        "Scanned but not known - need to upload / check LabPortal CSV",
+        snk,
+        sort_by="path",
+        directory_column="path",
+    )
 
     snkb = all_meta[all_meta["Block"].isna()]
     log_check("Missing block", snkb)
@@ -373,7 +550,7 @@ def main():
     log_check("Select Stain values", check_select_stain)
 
     ms_mx = (
-        all_meta[(all_meta["m_num"] != -1) & (all_meta["x_num"] != -1)]
+        all_meta[(all_meta["m_num"] > 0) & (all_meta["x_num"] > 0)]
         .groupby(["m_num", "x_num"])
         .filter(lambda x: len(x) > 1)
     )
@@ -391,7 +568,7 @@ def main():
     log_check("Multiple scans by A numbers only - need to decide which to keep", ms_a)
 
     m_msu = (
-        all_meta.loc[all_meta["m_num"] != -1, ["m_num", "UM Accession"]]
+        all_meta.loc[all_meta["m_num"] > 0, ["m_num", "UM Accession"]]
         .drop_duplicates()
         .groupby("m_num")
         .filter(lambda x: len(x) > 1)
@@ -399,7 +576,7 @@ def main():
     log_check("M maps to multiple SU - need to give them a new M number", m_msu)
 
     su_mm = (
-        all_meta.loc[all_meta["m_num"] != -1, ["m_num", "UM Accession"]]
+        all_meta.loc[all_meta["m_num"] > 0, ["m_num", "UM Accession"]]
         .drop_duplicates()
         .groupby("UM Accession")
         .filter(lambda x: len(x) > 1)
@@ -420,14 +597,16 @@ def main():
     missing_path_meta = []
     for i, s in tqdm(all_meta.iterrows(), total=len(all_meta)):
         if type(s["path"]) == str:
-            spath = opj(svs_root, s["path"])
+            spath = resolve_svs_path(svs_root, s["path"])
             if not os.path.exists(spath):
                 missing_svs.append(spath)
         else:
             missing_path_meta.append(s["mxa_code"])
 
     if missing_path_meta:
-        logging.warning("Skipped rows missing path metadata: %d", len(missing_path_meta))
+        logging.warning(
+            "Skipped rows missing path metadata: %d", len(missing_path_meta)
+        )
         logging.warning("\n%s", "\n".join(missing_path_meta))
 
     if missing_svs:
@@ -436,9 +615,6 @@ def main():
         raise FileNotFoundError(f"Missing {len(missing_svs)} SVS files")
 
     logging.info("All referenced SVS files exist")
-    import pdb
-
-    pdb.set_trace()
 
 
 if __name__ == "__main__":
