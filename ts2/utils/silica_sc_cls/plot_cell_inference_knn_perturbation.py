@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 
 import altair as alt
 import pandas as pd
+from tqdm import tqdm
 
 from ts2.utils.silica_sc_cls.eval_cell_inference_knn import build_runs_from_sets
 
@@ -75,6 +76,7 @@ def build_metrics_df(
     run_sets: List[Dict[str, str]],
     panels: List[Dict[str, object]],
     display_name_by_exp: Dict[str, str],
+    run_dir_prefix: str = "run",
 ) -> pd.DataFrame:
     runs = build_runs_from_sets(
         exp_root=exp_root,
@@ -84,8 +86,10 @@ def build_metrics_df(
     )
 
     rows = []
-    for run in runs:
-        summary_dir = find_latest_summary_dir(run["test_pred_path"])
+    for run in tqdm(runs, desc="Loading SC-CLS summaries"):
+        summary_dir = find_latest_summary_dir(
+            run["test_pred_path"], run_dir_prefix=run_dir_prefix
+        )
         summary = load_summary(summary_dir)
 
         exp_name = run["name"].rsplit(f"_{run_key_prefix}", maxsplit=1)[0]
@@ -227,7 +231,9 @@ def build_chart(
 def save_chart(chart: alt.Chart, out_stem: str, formats: List[str]) -> None:
     out_dir = os.path.dirname(out_stem)
     if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
+        if not os.path.isdir(out_dir):
+            os.makedirs(out_dir, exist_ok=True)
+            print(f"Created output directory: {out_dir}")
 
     for fmt in formats:
         out_path = f"{out_stem}.{fmt}"
@@ -245,6 +251,7 @@ def main() -> None:
     exp_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2"
     ckpt = "training_124999"
     run_key_prefix = "PERTURB"
+    run_dir_prefix = "run"
     out_stem = "cell_inference_knn_perturbation"
     formats = ["html", "png", "pdf"]
     width = 250
@@ -265,7 +272,21 @@ def main() -> None:
             "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
             "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
-
+        {
+            "exp_name": "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        },
+        {
+            "exp_name": "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        },
+        {
+            "exp_name": "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        },
     ]
     panels = [
         {
@@ -297,18 +318,18 @@ def main() -> None:
         "a2706135_dinov2": "DINOv2 Meta",
         "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0": "DINOv2 lr4e-3",
         "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0": "Silica FullIm iBOT lr4e-3",
-        "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0": "Dino",
-        "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0": "Silica NoMaskOBW lr4e-3",
-        "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1": "Silica MaskOBW lr4e-3",
-        "1526bfe8_Mar24-15-02-22_sd1000_dev_nomaskobw_lr13_tune0": "Silica NoMaskOBW lr1e-3",
-        "8751a922_Mar24-15-02-22_sd1000_dev_maskobw_lr13_tune1": "Silica MaskOBW lr1e-3",
+        "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0": "DINOv2 lr4e-3 RmBg",
+        "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1": "Silica Inside iBOT lr4e-3",
+        "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0": "Silica FullIm iBOT lr1e-3",
     }
+
     color_range = ["#d62728", "#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd"]
 
     metrics_df = build_metrics_df(
         exp_root=exp_root,
         ckpt=ckpt,
         run_key_prefix=run_key_prefix,
+        run_dir_prefix=run_dir_prefix,
         run_sets=run_sets,
         panels=panels,
         display_name_by_exp=display_name_by_exp,
@@ -324,7 +345,9 @@ def main() -> None:
     csv_path = f"{out_stem}.csv"
     out_dir = os.path.dirname(csv_path)
     if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
+        if not os.path.isdir(out_dir):
+            os.makedirs(out_dir, exist_ok=True)
+            print(f"Created output directory: {out_dir}")
     metrics_df.to_csv(csv_path, index=False)
 
     save_chart(chart, out_stem=out_stem, formats=formats)

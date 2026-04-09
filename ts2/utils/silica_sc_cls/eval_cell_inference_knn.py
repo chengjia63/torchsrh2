@@ -1049,50 +1049,63 @@ def main() -> None:
         "schwan",
     ]
     negative_class = "normal"
-
+    run_dir_prefix = "debug"
     run_sets = [
-        #{
+        # {
         #    "exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0",
         #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
         #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        #},
-        #{
+        # },
+        # {
         #    "exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0",
         #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
         #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        #},
+        # },
+        # {
+        #    "exp_name": "a2706135_dinov2",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        # },
+        # {
+        #    "exp_name": "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        # },
+        # {
+        #    "exp_name": "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        # },
         {
-            "exp_name": "a2706135_dinov2",
+            "exp_name": "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0",
             "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
             "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        },
-
-
-        #{
+        }
+        # {
         #    "exp_name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",
         #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
         #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        #},
-        #{
+        # },
+        # {
         #    "exp_name": "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0",
         #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
         #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        #},
-        #{
+        # },
+        # {
         #    "exp_name": "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1",
         #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
         #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        #},
-        #{
+        # },
+        # {
         #    "exp_name": "1526bfe8_Mar24-15-02-22_sd1000_dev_nomaskobw_lr13_tune0",
         #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
         #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        #},
-        #{
+        # },
+        # {
         #    "exp_name": "8751a922_Mar24-15-02-22_sd1000_dev_maskobw_lr13_tune1",
         #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
         #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        #},
+        # },
     ]
     runs = build_runs_from_sets(
         exp_root="/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/",
@@ -1102,7 +1115,9 @@ def main() -> None:
     )
 
     for cfg in tqdm(runs, desc="Evaluation runs"):
-        out_dir = infer_results_dir_from_prediction_path(cfg["test_pred_path"])
+        out_dir = infer_results_dir_from_prediction_path(
+            cfg["test_pred_path"], run_dir_prefix=run_dir_prefix
+        )
         evaluate_run(
             databank_gt_csv_path=databank_gt_csv_path,
             test_gt_csv_path=test_gt_csv_path,

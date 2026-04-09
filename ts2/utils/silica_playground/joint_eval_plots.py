@@ -4,6 +4,7 @@ from typing import Dict, List
 
 import altair as alt
 import pandas as pd
+from PIL import Image
 from tqdm import tqdm
 
 from ts2.utils.silica_sc_cls.plot_cell_inference_knn_perturbation import (
@@ -12,7 +13,10 @@ from ts2.utils.silica_sc_cls.plot_cell_inference_knn_perturbation import (
 )
 from ts2.utils.silica_scnn.eval_patch_proposal_neighborhood_embeddings import (
     build_runs_from_sets as build_scnn_runs_from_sets,
-    evaluate_run as evaluate_scnn_run,
+)
+from ts2.utils.silica_scnn.plot_patch_proposal_neighborhood_embeddings import (
+    find_latest_scnn_summary_path,
+    load_scnn_summary,
 )
 
 
@@ -21,6 +25,7 @@ def build_scnn_metrics_df(
     ckpt: str,
     run_sets: List[Dict[str, str]],
     neighborhood_map_csv_path_template: str,
+    default_pred_glob: str | None,
     eval_key_prefix: str,
     display_name_by_exp: Dict[str, str],
 ) -> pd.DataFrame:
@@ -29,12 +34,14 @@ def build_scnn_metrics_df(
         ckpt=ckpt,
         run_sets=run_sets,
         neighborhood_map_csv_path_template=neighborhood_map_csv_path_template,
+        default_pred_glob=default_pred_glob,
         eval_key_prefix=eval_key_prefix,
     )
 
     rows: list[dict[str, object]] = []
-    for run in tqdm(runs, desc="Evaluating SCNN neighborhood runs"):
-        summary = evaluate_scnn_run(**run)
+    for run in tqdm(runs, desc="Loading SCNN neighborhood summaries"):
+        summary_path = find_latest_scnn_summary_path(run["pred_path"])
+        summary = load_scnn_summary(summary_path)
         exp_name = str(summary["exp_name"])
         rows.append(
             {
@@ -220,13 +227,13 @@ def build_chart(
             "scnn_value:Q",
             title=scnn_axis_title,
             axis=alt.Axis(ticks=False),
-            scale=alt.Scale(domain=[0, 1]),
+            scale=alt.Scale(zero=False),
         ),
         y=alt.Y(
             "cls_value:Q",
             title=cls_axis_title,
             axis=alt.Axis(ticks=False),
-            scale=alt.Scale(domain=[0.4, 0.9]),
+            scale=alt.Scale(zero=False),
         ),
         color=alt.Color(
             "model:N",
@@ -259,13 +266,195 @@ def build_chart(
     )
 
 
+def build_selection_specs(
+    selected_cls_metric_names: List[str],
+    selected_perturbations: List[int],
+    selected_distance_lower_bounds: List[int],
+    selected_distance_upper_bounds: List[int],
+    selected_num_neighbors: int = 1,
+) -> List[Dict[str, int | str | None]]:
+    return [
+        {
+            "selected_cls_metric_name": selected_cls_metric_name,
+            "selected_perturbation": selected_perturbation,
+            "selected_distance_lower_bound": selected_distance_lower_bound,
+            "selected_distance_upper_bound": selected_distance_upper_bound,
+            "selected_num_neighbors": selected_num_neighbors,
+        }
+        for selected_cls_metric_name in selected_cls_metric_names
+        for selected_perturbation in selected_perturbations
+        for selected_distance_lower_bound in selected_distance_lower_bounds
+        for selected_distance_upper_bound in selected_distance_upper_bounds
+    ]
+
+
+def build_out_stem(
+    base_out_stem: str,
+    cls_metric_title: str,
+    selected_perturbation: int,
+    selected_distance_lower_bound: int,
+    selected_distance_upper_bound: int,
+) -> str:
+    return (
+        f"{base_out_stem}_{cls_metric_title.lower().replace('/', '_').replace(' ', '_')}"
+        f"_p{selected_perturbation:02d}"
+        f"_d{selected_distance_lower_bound:02d}_{selected_distance_upper_bound:02d}"
+    )
+
+
+def stitch_png_grid(
+    png_paths_grid: List[List[str]],
+    out_path: str,
+) -> None:
+    assert png_paths_grid, "Expected at least one PNG row to stitch"
+    assert png_paths_grid[0], "Expected at least one PNG column to stitch"
+
+    image_grid = []
+    for row_paths in png_paths_grid:
+        image_row = []
+        for png_path in row_paths:
+            assert os.path.isfile(png_path), f"Missing PNG chart: {png_path}"
+            image_row.append(Image.open(png_path).convert("RGBA"))
+        image_grid.append(image_row)
+
+    tile_width = max(image.width for row in image_grid for image in row)
+    tile_height = max(image.height for row in image_grid for image in row)
+    grid_width = tile_width * len(image_grid[0])
+    grid_height = tile_height * len(image_grid)
+
+    canvas = Image.new("RGBA", (grid_width, grid_height), (255, 255, 255, 255))
+    for row_idx, image_row in enumerate(image_grid):
+        assert len(image_row) == len(image_grid[0]), "Expected rectangular PNG grid"
+        for col_idx, image in enumerate(image_row):
+            canvas.paste(image, (col_idx * tile_width, row_idx * tile_height))
+
+    canvas.save(out_path)
+
+
+def save_summary_png_grids(
+    selected_cls_metric_names: List[str],
+    selected_perturbations: List[int],
+    selected_distance_lower_bounds: List[int],
+    selected_distance_upper_bounds: List[int],
+    base_out_stem: str,
+) -> None:
+    png_paths_grid = [
+        [
+            build_out_stem(
+                base_out_stem=base_out_stem,
+                cls_metric_title=selected_cls_metric_name,
+                selected_perturbation=selected_perturbation,
+                selected_distance_lower_bound=selected_distance_lower_bound,
+                selected_distance_upper_bound=selected_distance_upper_bound,
+            )
+            + ".png"
+            for selected_cls_metric_name in selected_cls_metric_names
+            for selected_distance_lower_bound in selected_distance_lower_bounds
+        ]
+        for selected_perturbation in selected_perturbations
+        for selected_distance_upper_bound in selected_distance_upper_bounds
+    ]
+    out_path = f"{base_out_stem}_grid.png"
+    stitch_png_grid(png_paths_grid=png_paths_grid, out_path=out_path)
+
+
+def save_selection_outputs(
+    cls_metrics_df: pd.DataFrame,
+    scnn_metrics_df: pd.DataFrame,
+    cls_metric_configs: Dict[str, Dict[str, object]],
+    selection_specs: List[Dict[str, int | str | None]],
+    color_range: List[str],
+    width: int,
+    height: int,
+    formats: List[str],
+    base_out_stem: str,
+) -> None:
+    for spec in tqdm(selection_specs, desc="Saving joint eval plots"):
+        cls_metric_title = str(spec["selected_cls_metric_name"])
+        cls_metric_key = str(cls_metric_configs[cls_metric_title]["metric_key"])
+        selected_perturbation = int(spec["selected_perturbation"])
+        selected_distance_lower_bound = int(spec["selected_distance_lower_bound"])
+        selected_distance_upper_bound = int(spec["selected_distance_upper_bound"])
+        selected_num_neighbors = spec["selected_num_neighbors"]
+
+        cls_selected_df = select_cls_points(
+            cls_metrics_df=cls_metrics_df,
+            selected_perturbation=selected_perturbation,
+            cls_metric_title=cls_metric_title,
+        )
+        scnn_selected_df = select_scnn_points(
+            scnn_metrics_df=scnn_metrics_df,
+            selected_distance_lower_bound=selected_distance_lower_bound,
+            selected_distance_upper_bound=selected_distance_upper_bound,
+            selected_num_neighbors=selected_num_neighbors,
+        )
+        merged_df = merge_selected_points(
+            cls_selected_df=cls_selected_df,
+            scnn_selected_df=scnn_selected_df,
+        )
+
+        out_stem = build_out_stem(
+            base_out_stem=base_out_stem,
+            cls_metric_title=cls_metric_title,
+            selected_perturbation=selected_perturbation,
+            selected_distance_lower_bound=selected_distance_lower_bound,
+            selected_distance_upper_bound=selected_distance_upper_bound,
+        )
+        out_dir = os.path.dirname(out_stem)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+
+        chart = build_chart(
+            merged_df=merged_df,
+            cls_axis_title=f"{cls_metric_title} {cls_metric_key.upper()}",
+            scnn_axis_title="Mean Neighborhood Embedding Cosine Distance",
+            color_range=color_range,
+            width=width,
+            height=height,
+        ).properties(
+            title=(
+                "CLS vs SCNN Selected Evaluation Points "
+                f"({cls_metric_title}, "
+                f"PERTURB={selected_perturbation}, "
+                f"dgt={selected_distance_lower_bound}, "
+                f"dle={selected_distance_upper_bound})"
+            )
+        )
+
+        merged_df.to_csv(f"{out_stem}.csv", index=False)
+        save_chart(chart, out_stem=out_stem, formats=formats)
+
+
 def main() -> None:
+    # 1. Specify all parameters.
     exp_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2"
     ckpt = "training_124999"
 
-    selected_perturbation = 5
-    selected_distance_lower_bound = 20
-    selected_distance_upper_bound = 24
+    cls_run_key_prefix = "PERTURB"
+    cls_databank_pred_glob = "*_INF_srh7v1sp1dot4m_*"
+    cls_test_pred_glob = "*_INF_srh7v1tests64_PERTURB*_*"
+
+    scnn_eval_key_prefix = "cellnbrring"
+    scnn_default_pred_glob = f"*INF_srh7v1test_{scnn_eval_key_prefix}_*"
+    scnn_neighborhood_map_csv_path_template = (
+        "../silica_scnn/out/cellnbr_stats_nbr_8192_dgt{dist_min}_dle{dist_max}_nge1/"
+        "sampled_neighborhood_map.csv"
+    )
+    color_range = ["#d62728", "#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd"]
+    width = 420
+    height = 420
+    formats = ["html", "png", "pdf"]
+    base_out_stem = "cls_nbr"
+
+    selected_cls_metric_names = [
+        "SRH7 Cell",
+        "SRH7 Slide",
+        "Tumor/Normal Cell",
+        "Tumor/Normal Slide",
+    ]
+    selected_perturbations = [0, 5]
+    selected_distance_lower_bounds = [20]
+    selected_distance_upper_bounds = [24]
     selected_num_neighbors = 1
 
     experiment_configs = [
@@ -274,8 +463,20 @@ def main() -> None:
             "display_name": "DINOv2 lr4e-3",
         },
         {
+            "exp_name": "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0",
+            "display_name": "DINOv2 lr4e-3 RmBg",
+        },
+        {
             "exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0",
             "display_name": "Silica FullIm iBOT lr4e-3",
+        },
+        {
+            "exp_name": "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1",
+            "display_name": "Silica Inside iBOT lr4e-3",
+        },
+        {
+            "exp_name": "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0",
+            "display_name": "Silica FullIm iBOT lr1e-3",
         },
         {
             "exp_name": "a2706135_dinov2",
@@ -283,7 +484,6 @@ def main() -> None:
         },
     ]
 
-    cls_metric_name = "SRH7 Slide"
     cls_metric_configs = {
         "SRH7 Cell": {
             "summary_key": "instance_knn",
@@ -306,26 +506,33 @@ def main() -> None:
             "baseline": None,
         },
     }
-    if cls_metric_name not in cls_metric_configs:
+
+    display_name_by_exp = {
+        cfg["exp_name"]: cfg["display_name"] for cfg in experiment_configs
+    }
+
+    selection_specs = build_selection_specs(
+        selected_cls_metric_names=selected_cls_metric_names,
+        selected_perturbations=selected_perturbations,
+        selected_distance_lower_bounds=selected_distance_lower_bounds,
+        selected_distance_upper_bounds=selected_distance_upper_bounds,
+        selected_num_neighbors=selected_num_neighbors,
+    )
+    selected_cls_metric_name_set = {
+        str(spec["selected_cls_metric_name"]) for spec in selection_specs
+    }
+    unknown_cls_metric_names = selected_cls_metric_name_set - set(cls_metric_configs)
+    if unknown_cls_metric_names:
         raise ValueError(
-            f"Unknown cls_metric_name={cls_metric_name!r}. "
+            f"Unknown selected_cls_metric_name values: {sorted(unknown_cls_metric_names)}. "
             f"Available options: {sorted(cls_metric_configs)}"
         )
-    cls_metric_config = cls_metric_configs[cls_metric_name]
-    cls_metric_title = cls_metric_name
-    cls_metric_key = cls_metric_config["metric_key"]
-    cls_panels = [{"title": cls_metric_title, **cls_metric_config}]
-    cls_run_key_prefix = "PERTURB"
-    cls_databank_pred_glob = "*_INF_srh7v1sp1dot4m_*"
-    cls_test_pred_glob = "*_INF_srh7v1tests64_PERTURB*_*"
+    cls_panels = [
+        {"title": metric_name, **cls_metric_configs[metric_name]}
+        for metric_name in selected_cls_metric_names
+    ]
 
-    scnn_eval_key_prefix = "cellnbrring"
-    scnn_pred_glob = f"*INF_srh7v1test_{scnn_eval_key_prefix}_*"
-    scnn_neighborhood_map_csv_path_template = (
-        "../silica_scnn/out/cellnbr_stats_nbr_8192_dgt{dist_min}_dle{dist_max}_nge1/"
-        "sampled_neighborhood_map.csv"
-    )
-
+    # 2. Build everything for CLS.
     cls_run_sets = [
         {
             "exp_name": cfg["exp_name"],
@@ -334,27 +541,6 @@ def main() -> None:
         }
         for cfg in experiment_configs
     ]
-    scnn_run_sets = [
-        {
-            "exp_name": cfg["exp_name"],
-            "pred_glob": scnn_pred_glob,
-        }
-        for cfg in experiment_configs
-    ]
-    display_name_by_exp = {
-        cfg["exp_name"]: cfg["display_name"] for cfg in experiment_configs
-    }
-    color_range = ["#d62728", "#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd"]
-    width = 420
-    height = 420
-    out_stem = (
-        "cls_vs_scnn_selected_points_"
-        f"p{selected_perturbation:02d}_"
-        f"d{selected_distance_lower_bound:02d}_{selected_distance_upper_bound:02d}"
-    )
-
-    formats = ["html", "png", "pdf"]
-
     cls_metrics_df = build_cls_curve_metrics_df(
         exp_root=exp_root,
         ckpt=ckpt,
@@ -363,60 +549,43 @@ def main() -> None:
         panels=cls_panels,
         display_name_by_exp=display_name_by_exp,
     )
+
+    # 3. Build everything for SCNN.
+    scnn_run_sets = [
+        {
+            "exp_name": cfg["exp_name"],
+        }
+        for cfg in experiment_configs
+    ]
     scnn_metrics_df = build_scnn_metrics_df(
         exp_root=exp_root,
         ckpt=ckpt,
         run_sets=scnn_run_sets,
         neighborhood_map_csv_path_template=scnn_neighborhood_map_csv_path_template,
+        default_pred_glob=scnn_default_pred_glob,
         eval_key_prefix=scnn_eval_key_prefix,
         display_name_by_exp=display_name_by_exp,
     )
 
-    cls_selected_df = select_cls_points(
+    # 4. Plot.
+    save_selection_outputs(
         cls_metrics_df=cls_metrics_df,
-        selected_perturbation=selected_perturbation,
-        cls_metric_title=cls_metric_title,
-    )
-    scnn_selected_df = select_scnn_points(
         scnn_metrics_df=scnn_metrics_df,
-        selected_distance_lower_bound=selected_distance_lower_bound,
-        selected_distance_upper_bound=selected_distance_upper_bound,
-        selected_num_neighbors=selected_num_neighbors,
-    )
-    merged_df = merge_selected_points(
-        cls_selected_df=cls_selected_df,
-        scnn_selected_df=scnn_selected_df,
-    )
-
-    chart = build_chart(
-        merged_df=merged_df,
-        cls_axis_title=f"{cls_metric_title} {cls_metric_key.upper()}",
-        scnn_axis_title="Mean Neighborhood Embedding Cosine Distance",
+        cls_metric_configs=cls_metric_configs,
+        selection_specs=selection_specs,
         color_range=color_range,
         width=width,
         height=height,
-    ).properties(
-        title=(
-            "CLS vs SCNN Selected Evaluation Points "
-            f"(PERTURB={selected_perturbation}, "
-            f"dgt={selected_distance_lower_bound}, "
-            f"dle={selected_distance_upper_bound})"
-        )
+        formats=formats,
+        base_out_stem=base_out_stem,
     )
-
-    out_dir = os.path.dirname(out_stem)
-    if out_dir:
-        os.makedirs(out_dir, exist_ok=True)
-
-    cls_metrics_df.to_csv(f"{out_stem}_cls_curve.csv", index=False)
-    scnn_metrics_df.to_csv(f"{out_stem}_scnn_curve.csv", index=False)
-    merged_df.to_csv(f"{out_stem}_selected_points.csv", index=False)
-    save_chart(chart, out_stem=out_stem, formats=formats)
-
-    print(f"Saved CLS curve table to {out_stem}_cls_curve.csv")
-    print(f"Saved SCNN curve table to {out_stem}_scnn_curve.csv")
-    print(f"Saved merged selected points to {out_stem}_selected_points.csv")
-    print("Saved chart files: " + ", ".join(f"{out_stem}.{fmt}" for fmt in formats))
+    save_summary_png_grids(
+        selected_cls_metric_names=selected_cls_metric_names,
+        selected_perturbations=selected_perturbations,
+        selected_distance_lower_bounds=selected_distance_lower_bounds,
+        selected_distance_upper_bounds=selected_distance_upper_bounds,
+        base_out_stem=base_out_stem,
+    )
 
 
 if __name__ == "__main__":

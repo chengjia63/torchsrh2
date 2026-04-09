@@ -5,13 +5,13 @@ import re
 from os.path import join as opj
 from typing import Any, Dict
 
-import altair as alt
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
 from ts2.utils.silica_sc_cls.eval_cell_inference_knn import (
     find_matching_prediction_paths,
+    infer_results_dir_from_prediction_path,
     load_prediction,
 )
 
@@ -34,10 +34,9 @@ def load_neighborhood_map(neighborhood_map_csv_path: str) -> pd.DataFrame:
             "Neighborhood map CSV is missing required columns: "
             f"{sorted(missing_columns)}"
         )
-    if neighborhoods_df.empty:
-        raise ValueError(
-            f"Neighborhood map CSV has no rows: {neighborhood_map_csv_path}"
-        )
+    assert (
+        not neighborhoods_df.empty
+    ), f"Neighborhood map CSV has no rows: {neighborhood_map_csv_path}"
     return neighborhoods_df
 
 
@@ -46,41 +45,41 @@ def build_runs_from_sets(
     ckpt: str,
     run_sets: list[dict[str, str]],
     neighborhood_map_csv_path_template: str,
+    default_pred_glob: str | None = None,
     eval_key_prefix: str = "cellnbr",
 ) -> list[dict[str, str]]:
-    if not exp_root:
-        raise ValueError("Expected a non-empty exp_root")
-    if not ckpt:
-        raise ValueError("Expected a non-empty ckpt")
-    if not neighborhood_map_csv_path_template:
-        raise ValueError("Expected a non-empty neighborhood_map_csv_path_template")
-    if not eval_key_prefix:
-        raise ValueError("Expected a non-empty eval_key_prefix")
+    assert exp_root, "Expected a non-empty exp_root"
+    assert ckpt, "Expected a non-empty ckpt"
+    assert (
+        neighborhood_map_csv_path_template
+    ), "Expected a non-empty neighborhood_map_csv_path_template"
+    assert eval_key_prefix, "Expected a non-empty eval_key_prefix"
 
     runs: list[dict[str, str]] = []
     for run_set in run_sets:
-        required_keys = {"exp_name", "pred_glob"}
+        required_keys = {"exp_name"}
         missing = required_keys - set(run_set)
         if missing:
             raise KeyError(f"Run set is missing required keys: {sorted(missing)}")
 
         exp_name = run_set["exp_name"]
+        pred_glob = run_set.get("pred_glob", default_pred_glob)
+        assert pred_glob, f"Expected pred_glob for run set {exp_name}"
         pattern = opj(
             exp_root,
             exp_name,
             "models",
             "eval",
             ckpt,
-            run_set["pred_glob"],
+            pred_glob,
             "predictions",
             "pred.pt",
         )
         matches = find_matching_prediction_paths(pattern)
-        if not matches:
-            raise ValueError(
-                f"Expected at least one prediction for run set {exp_name}, "
-                f"found 0 with pattern: {pattern}"
-            )
+        assert matches, (
+            f"Expected at least one prediction for run set {exp_name}, "
+            f"found 0 with pattern: {pattern}"
+        )
 
         run_set_runs: list[dict[str, str]] = []
         for pred_path in matches:
@@ -106,11 +105,10 @@ def build_runs_from_sets(
         eval_key_to_pred_path = {
             run["eval_key"]: run["pred_path"] for run in run_set_runs
         }
-        if len(eval_key_to_pred_path) != len(run_set_runs):
-            raise ValueError(
-                f"Found duplicate eval_key values for run set {exp_name}: "
-                f"{[run['pred_path'] for run in run_set_runs]}"
-            )
+        assert len(eval_key_to_pred_path) == len(run_set_runs), (
+            f"Found duplicate eval_key values for run set {exp_name}: "
+            f"{[run['pred_path'] for run in run_set_runs]}"
+        )
         runs.extend(sorted(run_set_runs, key=lambda run: run["name"]))
     return runs
 
@@ -118,15 +116,13 @@ def build_runs_from_sets(
 def extract_eval_key(
     pred_path: str, eval_key_prefix: str = "cellnbr"
 ) -> dict[str, str]:
-    if not eval_key_prefix:
-        raise ValueError("Expected a non-empty eval_key_prefix")
+    assert eval_key_prefix, "Expected a non-empty eval_key_prefix"
     pattern = rf"{re.escape(eval_key_prefix)}_dgt(\d+)_dle(\d+)_nge(\d+)"
     match = re.search(pattern, pred_path)
-    if match is None:
-        raise ValueError(
-            "Could not extract evaluation key from prediction path. "
-            f"Expected '{eval_key_prefix}_dgt..._dle..._nge...' in: {pred_path}"
-        )
+    assert match is not None, (
+        "Could not extract evaluation key from prediction path. "
+        f"Expected '{eval_key_prefix}_dgt..._dle..._nge...' in: {pred_path}"
+    )
     dgt = int(match.group(1))
     dle = int(match.group(2))
     nge = int(match.group(3))
@@ -143,10 +139,9 @@ def extract_eval_key(
 
 
 def split_eval_key_digits(eval_key_digits: str) -> tuple[int, int]:
-    if len(eval_key_digits) != 4:
-        raise ValueError(
-            f"Expected eval_key_digits to have length 4, got: {eval_key_digits}"
-        )
+    assert (
+        len(eval_key_digits) == 4
+    ), f"Expected eval_key_digits to have length 4, got: {eval_key_digits}"
     left = int(eval_key_digits[:2])
     right = int(eval_key_digits[2:])
     return left, right
@@ -167,8 +162,7 @@ def resolve_neighborhood_map_csv_path(
 
 def extract_exp_key(exp_name: str) -> str:
     exp_key = exp_name.split("_", 1)[0]
-    if not exp_key:
-        raise ValueError(f"Could not extract exp_key from exp_name: {exp_name}")
+    assert exp_key, f"Could not extract exp_key from exp_name: {exp_name}"
     return exp_key
 
 
@@ -181,8 +175,8 @@ def build_embedding_frame(pred: Dict[str, Any]) -> pd.DataFrame:
     )
     if path_df["path"].duplicated().any():
         dup_paths = path_df.loc[path_df["path"].duplicated(), "path"].tolist()
-        raise ValueError(
-            "Prediction file contains duplicate paths: " + ", ".join(dup_paths[:10])
+        assert False, "Prediction file contains duplicate paths: " + ", ".join(
+            dup_paths[:10]
         )
 
     embeddings = pred["embeddings"].cpu().numpy().astype(np.float32, copy=False)
@@ -201,22 +195,19 @@ def explode_neighborhood_pairs(neighborhoods_df: pd.DataFrame) -> pd.DataFrame:
     for _, row in base_df.iterrows():
         neighbor_paths = json.loads(row["neighbor_paths_json"])
         neighbor_distances = json.loads(row["neighbor_distances_json"])
-        if len(neighbor_paths) != len(neighbor_distances):
-            raise ValueError(
-                "neighbor_paths_json and neighbor_distances_json length mismatch for "
-                f"neighborhood_index={row['neighborhood_index']}"
-            )
-        if len(neighbor_paths) == 0:
-            raise ValueError(
-                f"Neighborhood has zero neighbors: neighborhood_index={row['neighborhood_index']}"
-            )
+        assert len(neighbor_paths) == len(neighbor_distances), (
+            "neighbor_paths_json and neighbor_distances_json length mismatch for "
+            f"neighborhood_index={row['neighborhood_index']}"
+        )
+        assert (
+            len(neighbor_paths) > 0
+        ), f"Neighborhood has zero neighbors: neighborhood_index={row['neighborhood_index']}"
 
         num_neighbors = int(row["num_neighbors"]) if "num_neighbors" in row else None
-        if num_neighbors is not None and num_neighbors != len(neighbor_paths):
-            raise ValueError(
-                f"num_neighbors mismatch for neighborhood_index={row['neighborhood_index']}: "
-                f"expected {num_neighbors}, got {len(neighbor_paths)}"
-            )
+        assert num_neighbors is None or num_neighbors == len(neighbor_paths), (
+            f"num_neighbors mismatch for neighborhood_index={row['neighborhood_index']}: "
+            f"expected {num_neighbors}, got {len(neighbor_paths)}"
+        )
 
         for neighbor_path, pixel_distance in zip(
             neighbor_paths, neighbor_distances, strict=True
@@ -231,8 +222,7 @@ def explode_neighborhood_pairs(neighborhoods_df: pd.DataFrame) -> pd.DataFrame:
             )
 
     pair_df = pd.DataFrame(rows)
-    if pair_df.empty:
-        raise ValueError("Neighborhood map produced no anchor-neighbor rows")
+    assert not pair_df.empty, "Neighborhood map produced no anchor-neighbor rows"
     return pair_df
 
 
@@ -259,12 +249,11 @@ def attach_pair_embeddings(pair_df: pd.DataFrame, emb_df: pd.DataFrame) -> pd.Da
 
     missing_anchor = int(merged["anchor_embedding"].isna().sum())
     missing_neighbor = int(merged["neighbor_embedding"].isna().sum())
-    if missing_anchor or missing_neighbor:
-        raise ValueError(
-            "Could not match all neighborhood paths to embeddings: "
-            f"missing anchor_path={missing_anchor}, "
-            f"missing neighbor_path={missing_neighbor}"
-        )
+    assert not (missing_anchor or missing_neighbor), (
+        "Could not match all neighborhood paths to embeddings: "
+        f"missing anchor_path={missing_anchor}, "
+        f"missing neighbor_path={missing_neighbor}"
+    )
     return merged
 
 
@@ -275,17 +264,17 @@ def compute_pair_embedding_metrics(pair_df: pd.DataFrame) -> pd.DataFrame:
     emb_neighbor = np.stack(pair_df["neighbor_embedding"].to_list()).astype(
         np.float32, copy=False
     )
-    if emb_anchor.shape != emb_neighbor.shape:
-        raise ValueError(
-            "Embedding shape mismatch: "
-            f"anchor={tuple(emb_anchor.shape)}, neighbor={tuple(emb_neighbor.shape)}"
-        )
+    assert emb_anchor.shape == emb_neighbor.shape, (
+        "Embedding shape mismatch: "
+        f"anchor={tuple(emb_anchor.shape)}, neighbor={tuple(emb_neighbor.shape)}"
+    )
 
     emb_anchor_norm = np.linalg.norm(emb_anchor, axis=1)
     emb_neighbor_norm = np.linalg.norm(emb_neighbor, axis=1)
     denom = emb_anchor_norm * emb_neighbor_norm
-    if np.any(denom <= 0):
-        raise ValueError("Found non-positive embedding norm while computing cosine")
+    assert not np.any(
+        denom <= 0
+    ), "Found non-positive embedding norm while computing cosine"
     cosine_similarity = np.sum(emb_anchor * emb_neighbor, axis=1) / denom
     cosine_distance = 1.0 - cosine_similarity
 
@@ -317,17 +306,14 @@ def summarize_neighborhood_metrics(
         agg_df, on="neighborhood_index", how="left", validate="one_to_one"
     )
     if "num_neighbors" in out_df.columns:
-        if not np.array_equal(
+        assert np.array_equal(
             out_df["num_neighbors"].to_numpy(dtype=np.int64, copy=False),
             out_df["computed_num_neighbors"].to_numpy(dtype=np.int64, copy=False),
-        ):
-            raise ValueError(
-                "Computed neighborhood sizes do not match input num_neighbors values"
-            )
+        ), "Computed neighborhood sizes do not match input num_neighbors values"
     else:
         out_df["num_neighbors"] = out_df["computed_num_neighbors"]
 
-    if (
+    assert not (
         out_df[
             [
                 "num_neighbors",
@@ -338,29 +324,15 @@ def summarize_neighborhood_metrics(
         .isna()
         .any()
         .any()
-    ):
-        raise ValueError("Failed to compute neighborhood metrics for all rows")
+    ), "Failed to compute neighborhood metrics for all rows"
     return out_df.drop(columns=["computed_num_neighbors"])
 
 
 def build_summary(
     out_df: pd.DataFrame,
-    neighborhood_map_csv_path: str,
-    pred_path: str,
-    exp_name: str | None = None,
-    name: str | None = None,
-    eval_key: str | None = None,
-    celldist_mode: str | None = None,
-    eval_key_digits: str | None = None,
-    dist_min: int | None = None,
-    dist_max: int | None = None,
-    dgt: int | None = None,
-    dle: int | None = None,
-    nge: int | None = None,
+    metadata: dict[str, float | int | str | None],
 ) -> dict[str, float | int | str]:
     summary: dict[str, float | int | str] = {
-        "neighborhood_map_csv_path": neighborhood_map_csv_path,
-        "pred_path": pred_path,
         "num_neighborhoods": int(len(out_df)),
         "mean_num_neighbors": float(out_df["num_neighbors"].mean()),
         "mean_neighbor_pixel_distance": float(
@@ -373,27 +345,25 @@ def build_summary(
             out_df["mean_neighbor_embedding_cosine_distance"].median()
         ),
     }
-    if exp_name is not None:
-        summary["exp_name"] = exp_name
-    if name is not None:
-        summary["name"] = name
-    if eval_key is not None:
-        summary["eval_key"] = eval_key
-    if celldist_mode is not None:
-        summary["celldist_mode"] = celldist_mode
-    if eval_key_digits is not None:
-        summary["eval_key_digits"] = eval_key_digits
-    if dist_min is not None:
-        summary["dist_min"] = dist_min
-    if dist_max is not None:
-        summary["dist_max"] = dist_max
-    if dgt is not None:
-        summary["dgt"] = dgt
-    if dle is not None:
-        summary["dle"] = dle
-    if nge is not None:
-        summary["nge"] = nge
+    summary.update(metadata)
     return summary
+
+
+def save_evaluation_outputs(
+    out_df: pd.DataFrame,
+    summary: dict[str, float | int | str | None],
+    pred_path: str,
+) -> str:
+    out_dir = infer_results_dir_from_prediction_path(pred_path)
+    os.makedirs(out_dir, exist_ok=True)
+
+    out_df.to_csv(opj(out_dir, "out_df.csv"), index=False)
+    out_df.to_json(opj(out_dir, "out_df.json"), orient="records", indent=2)
+    pd.DataFrame([summary]).to_csv(opj(out_dir, "summary.csv"), index=False)
+    with open(opj(out_dir, "summary.json"), "w", encoding="utf-8") as fd:
+        json.dump(summary, fd, indent=2)
+
+    return out_dir
 
 
 def evaluate_run(
@@ -409,7 +379,7 @@ def evaluate_run(
     dgt: int | None = None,
     dle: int | None = None,
     nge: int | None = None,
-) -> dict[str, float | int | str]:
+) -> tuple[pd.DataFrame, dict[str, float | int | str]]:
     neighborhoods_df = load_neighborhood_map(neighborhood_map_csv_path)
     pred = load_prediction(pred_path)
     emb_df = build_embedding_frame(pred)
@@ -417,21 +387,24 @@ def evaluate_run(
     pair_df = attach_pair_embeddings(pair_df, emb_df)
     pair_df = compute_pair_embedding_metrics(pair_df)
     out_df = summarize_neighborhood_metrics(neighborhoods_df, pair_df)
-    return build_summary(
+    summary = build_summary(
         out_df=out_df,
-        neighborhood_map_csv_path=neighborhood_map_csv_path,
-        pred_path=pred_path,
-        exp_name=exp_name,
-        name=name,
-        eval_key=eval_key,
-        celldist_mode=celldist_mode,
-        eval_key_digits=eval_key_digits,
-        dist_min=dist_min,
-        dist_max=dist_max,
-        dgt=dgt,
-        dle=dle,
-        nge=nge,
+        metadata={
+            "neighborhood_map_csv_path": neighborhood_map_csv_path,
+            "pred_path": pred_path,
+            "exp_name": exp_name,
+            "name": name,
+            "eval_key": eval_key,
+            "celldist_mode": celldist_mode,
+            "eval_key_digits": eval_key_digits,
+            "dist_min": dist_min,
+            "dist_max": dist_max,
+            "dgt": dgt,
+            "dle": dle,
+            "nge": nge,
+        },
     )
+    return out_df, summary
 
 
 def main() -> None:
@@ -440,55 +413,21 @@ def main() -> None:
     )
     exp_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/"
     ckpt = "training_124999"
-    #eval_key_prefix = "cellnbrring"
-    eval_key_prefix = "cellnbr"
+    eval_key_prefix = "cellnbrring"  # "cellnbr" #
+    default_pred_glob = f"*INF_srh7v1test_{eval_key_prefix}_*"
+
     neighborhood_map_csv_path_template = (
         "out/cellnbr_stats_nbr_8192_dgt{dist_min}_dle{dist_max}_nge1/"
         "sampled_neighborhood_map.csv"
     )
-    exp_name_label_map = {
-        "a2706135": "DINOv2, Meta",
-        "04e0bf39": "DINOv2, LR4e-3",
-        "ca187b7c": "Silica, full image iBOT, LR4e-3",
-        # "3122d0c0": "DINOv2, LR4e-3",
-        # "bead0872": "Silica, full image iBOT, LR4e-3",
-        # "1dfffb8f": "Silica, inside iBOT, LR4e-3",
-        # "1526bfe8": "Silica, full image iBOT, LR1e-3",
-        # "8751a922": "Silica, inside iBOT, LR1e-3",
-    }
+
     run_sets = [
-        {
-            "exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0",
-            "pred_glob": f"*INF_srh7v1test_{eval_key_prefix}_*",
-        },
-        {
-            "exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0",
-            "pred_glob": f"*INF_srh7v1test_{eval_key_prefix}_*",
-        },
-        {
-            "exp_name": "a2706135_dinov2",
-            "pred_glob": f"*INF_srh7v1test_{eval_key_prefix}_*",
-        },
-        # {
-        #    "exp_name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",
-        #    "pred_glob": "*INF_srh7v1test_cellnbr*",
-        # },
-        # {
-        #    "exp_name": "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0",
-        #    "pred_glob": "*INF_srh7v1test_cellnbr*",
-        # },
-        # {
-        #    "exp_name": "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1",
-        #    "pred_glob": "*INF_srh7v1test_cellnbr*",
-        # },
-        # {
-        #    "exp_name": "1526bfe8_Mar24-15-02-22_sd1000_dev_nomaskobw_lr13_tune0",
-        #    "pred_glob": "*INF_srh7v1test_cellnbr*",
-        # },
-        # {
-        #    "exp_name": "8751a922_Mar24-15-02-22_sd1000_dev_maskobw_lr13_tune1",
-        #    "pred_glob": "*INF_srh7v1test_cellnbr*",
-        # },
+        {"exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0"},
+        {"exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0"},
+        {"exp_name": "a2706135_dinov2"},
+        {"exp_name": "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0"},
+        {"exp_name": "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1"},
+        {"exp_name": "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0"},
     ]
 
     runs = build_runs_from_sets(
@@ -496,115 +435,16 @@ def main() -> None:
         ckpt=ckpt,
         run_sets=run_sets,
         neighborhood_map_csv_path_template=neighborhood_map_csv_path_template,
+        default_pred_glob=default_pred_glob,
         eval_key_prefix=eval_key_prefix,
     )
 
-    summaries: list[dict[str, float | int | str]] = []
     for run in tqdm(runs, desc="Evaluating runs"):
         print(f"Evaluating {run['name']}")
-        summaries.append(evaluate_run(**run))
-
-    if not summaries:
-        raise ValueError("Expected at least one run summary to aggregate")
-
-    summary_df = pd.DataFrame(summaries).sort_values(
-        by=["name", "celldist_mode", "dgt", "dle", "nge"],
-        kind="stable",
-    )
-    plot_df = summary_df[
-        [
-            "exp_name",
-            "dgt",
-            "dle",
-            "nge",
-            "mean_neighbor_embedding_cosine_distance",
-        ]
-    ].copy()
-    plot_df["exp_key"] = plot_df["exp_name"].map(extract_exp_key)
-    plot_df["exp"] = plot_df["exp_key"].map(exp_name_label_map)
-    missing_labels = plot_df.loc[plot_df["exp"].isna(), "exp_name"].unique()
-    if len(missing_labels) > 0:
-        raise ValueError(
-            "Missing exp_name legend labels for: " + ", ".join(sorted(missing_labels))
+        out_df, summary = evaluate_run(**run)
+        save_evaluation_outputs(
+            out_df=out_df, summary=summary, pred_path=run["pred_path"]
         )
-    plot_df = plot_df.sort_values(
-        by=["exp", "dgt", "dle", "nge"],
-        kind="stable",
-    ).reset_index(drop=True)
-    x_values = sorted(
-        set(plot_df["dgt"].unique().tolist()) | set(plot_df["dle"].unique().tolist())
-    )
-    x_encoding = alt.X(
-        "dle:Q",
-        title="Distance bound",
-        axis=alt.Axis(values=x_values, tickSize=0),
-    )
-    y_encoding = alt.Y(
-        "mean_neighbor_embedding_cosine_distance:Q",
-        title="mean_neighbor_embedding_cosine_distance",
-        axis=alt.Axis(tickSize=0),
-        scale=alt.Scale(zero=False),
-    )
-    tooltip = [
-        "exp:N",
-        "exp_name:N",
-        "dgt:Q",
-        "dle:Q",
-        "nge:Q",
-        "mean_neighbor_embedding_cosine_distance:Q",
-    ]
-    color_encoding = alt.Color("exp:N", title="Experiment")
-
-    interval_base = alt.Chart(plot_df).encode(
-        y=y_encoding,
-        color=color_encoding,
-        tooltip=tooltip,
-    )
-    interval_rules = interval_base.mark_rule(strokeWidth=3, opacity=0.6).encode(
-        x=alt.X(
-            "dgt:Q",
-            title="Distance bound",
-            axis=alt.Axis(values=x_values, tickSize=0),
-            scale=alt.Scale(zero=False),
-        ),
-        x2="dle:Q",
-        detail=["exp:N", "dgt:Q", "dle:Q", "nge:Q"],
-    )
-    interval_chart = interval_rules
-
-    endpoint_base = alt.Chart(plot_df).encode(
-        x=x_encoding,
-        y=y_encoding,
-        color=color_encoding,
-        tooltip=tooltip,
-    )
-    endpoint_lines = endpoint_base.mark_line(strokeWidth=3).encode(
-        detail="exp:N",
-        order=alt.Order("dle:Q"),
-    )
-    endpoint_points = endpoint_base.mark_point(size=70, filled=True)
-    endpoint_chart = endpoint_lines + endpoint_points
-
-    interval_chart = interval_chart.properties(
-        title="Mean Neighborhood Embedding Cosine Distance by [dgt, dle]",
-        width=400,
-        height=400,
-    )
-    endpoint_chart = endpoint_chart.properties(
-        title="Mean Neighborhood Embedding Cosine Distance by dle",
-        width=400,
-        height=400,
-    )
-
-    interval_chart_out_path = "neighborhood_embedding_cosine_distance_interval"
-    interval_chart.save(f"{interval_chart_out_path}.html")
-    interval_chart.save(f"{interval_chart_out_path}.pdf")
-    interval_chart.save(f"{interval_chart_out_path}.png")
-
-    endpoint_chart_out_path = "neighborhood_embedding_cosine_distance_by_dle"
-    endpoint_chart.save(f"{endpoint_chart_out_path}.html")
-    endpoint_chart.save(f"{endpoint_chart_out_path}.pdf")
-    endpoint_chart.save(f"{endpoint_chart_out_path}.png")
 
 
 if __name__ == "__main__":
