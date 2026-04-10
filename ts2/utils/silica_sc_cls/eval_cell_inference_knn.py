@@ -1076,8 +1076,13 @@ def main() -> None:
         #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
         #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         # },
+        #{
+        #    "exp_name": "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        #}
         {
-            "exp_name": "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0",
+            "exp_name": "4fb55301_Apr09-01-59-24_sd1000_nomaskobw_lr54_tune0",
             "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
             "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         }
@@ -1130,36 +1135,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
-    #    {
-    #        "name": "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0",
-    #        "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0/models/eval/training_124999/c5408b55_Mar24-10-50-44_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-    #        "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0/models/eval/training_124999/63196916_Mar24-11-09-21_sd1000_INF_srh7v1test_dev/predictions/pred.pt",
-    #    },
-    #    {
-    #        "name": "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1",
-    #        "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1/models/eval/training_124999/331492fd_Mar24-11-32-12_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-    #        "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1/models/eval/training_124999/e17e378d_Mar24-11-49-56_sd1000_INF_srh7v1test_dev/predictions/pred.pt",
-    #    },
-    #    {
-    #        "name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",
-    #        "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0/models/eval/training_124999/728ba2bc_Mar24-00-36-25_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-    #        "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset/3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0/models/eval/training_124999/5791644f_Mar24-00-57-48_sd1000_INF_srh7v1test_dev/predictions/pred.pt",
-    #    },
-
-    #        {
-    #        "name": "6778e5d1_May27-15-59-58_sd1000_dev_tune0",
-    #        #"databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/ec3c473c_Mar23-23-00-56_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-    #        "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/91ae79af_Mar25-04-30-35_sd1000_INF_srh7v1sp1dot4m_perturbed_dev/predictions/pred.pt",
-    #        "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/c7929ff4_Mar25-04-12-15_sd1000_INF_srh7v1tests64_dev/predictions/pred.pt",
-    #        #"test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/d8354750_Mar25-01-43-09_sd1000_INF_srh7v1tests64_dev/predictions/pred.pt",
-    #        #"test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/6778e5d1_May27-15-59-58_sd1000_dev_tune0/models/eval/training_124999/01b41ec3_Mar23-23-18-24_sd1000_INF_srh7v1test_dev/predictions/pred.pt",
-    #    },
-    #    {
-    #        "name": "89d3ad98_May23-13-58-49_sd1000_dev_tune0",
-    #        #"databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/b5568912_Mar24-03-11-55_sd1000_INF_srh7v1sp1dot4m_dev/predictions/pred.pt",
-    #        "databank_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/0eb38b4c_Mar25-04-27-24_sd1000_INF_srh7v1sp1dot4m_perturbed_dev/predictions/pred.pt",
-    #        "test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/bbf81b9c_Mar25-04-09-02_sd1000_INF_srh7v1tests64_dev/predictions/pred.pt",
-    #        #"test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/fdca610e_Mar24-03-30-54_sd1000_INF_srh7v1test_dev/predictions/pred.pt",
-    #        #"test_pred_path": "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_new/89d3ad98_May23-13-58-49_sd1000_dev_tune0/models/eval/training_124999/5beb42c2_Mar25-01-48-48_sd1000_INF_srh7v1tests64_dev/predictions/pred.pt",
-    #    },
