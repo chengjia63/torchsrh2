@@ -287,6 +287,11 @@ def main() -> None:
             "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
             "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
+        {
+            "exp_name": "4fb55301_Apr09-01-59-24_sd1000_nomaskobw_lr54_tune0",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        },
     ]
     panels = [
         {
@@ -321,6 +326,7 @@ def main() -> None:
         "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0": "DINOv2 lr4e-3 RmBg",
         "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1": "Silica Inside iBOT lr4e-3",
         "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0": "Silica FullIm iBOT lr1e-3",
+        "4fb55301_Apr09-01-59-24_sd1000_nomaskobw_lr54_tune0": "Silica FullIM iBOT lr5e-4",
     }
 
     color_range = ["#d62728", "#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd"]

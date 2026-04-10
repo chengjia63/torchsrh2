@@ -1049,7 +1049,7 @@ def main() -> None:
         "schwan",
     ]
     negative_class = "normal"
-    run_dir_prefix = "debug"
+    run_dir_prefix = "run"
     run_sets = [
         # {
         #    "exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0",

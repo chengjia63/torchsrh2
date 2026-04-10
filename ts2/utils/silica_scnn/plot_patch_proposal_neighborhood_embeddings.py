@@ -16,10 +16,10 @@ from ts2.utils.silica_scnn.eval_patch_proposal_neighborhood_embeddings import (
 
 def infer_latest_summary_json_path(pred_path: str) -> str:
     pred_dir = os.path.dirname(pred_path)
-    assert os.path.basename(pred_dir) == "predictions", pred_path
+    assert os.path.basename(pred_dir) == "predictions"
     eval_root = os.path.dirname(pred_dir)
     summary_json_paths = glob(opj(eval_root, "results", "run*", "summary.json"))
-    assert summary_json_paths, pred_path
+    assert summary_json_paths
     return max(summary_json_paths, key=os.path.getmtime)
 
 
@@ -31,9 +31,9 @@ def load_scnn_summary(summary_path: str) -> dict:
     assert os.path.isfile(summary_path), f"Missing SCNN summary.json: {summary_path}"
     with open(summary_path, "r", encoding="utf-8") as fd:
         summary = json.load(fd)
-    assert isinstance(summary, dict), (
-        f"Expected SCNN summary at {summary_path} to be a dict, got {type(summary)}"
-    )
+    assert isinstance(
+        summary, dict
+    ), f"Expected SCNN summary at {summary_path} to be a dict, got {type(summary)}"
     return summary
 
 
@@ -175,7 +175,7 @@ def main() -> None:
     )
     exp_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/"
     ckpt = "training_124999"
-    eval_key_prefix = "cellnbr"  # "cellnbrring"  #
+    eval_key_prefix = "cellnbrring"  #"cellnbr"  # 
     default_pred_glob = f"*INF_srh7v1test_{eval_key_prefix}_*"
 
     neighborhood_map_csv_path_template = (
@@ -190,6 +190,7 @@ def main() -> None:
         "ca187b7c": "Silica FullIm iBOT lr4e-3",
         "844ffd45": "Silica Inside iBOT lr4e-3",
         "b1a0cbe3": "Silica FullIm iBOT lr1e-3",
+        "4fb55301": "Silica FullIm iBOT lr5e-4",
     }
     run_sets = [
         {"exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0"},
@@ -198,6 +199,7 @@ def main() -> None:
         {"exp_name": "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0"},
         {"exp_name": "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1"},
         {"exp_name": "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0"},
+        {"exp_name": "4fb55301_Apr09-01-59-24_sd1000_nomaskobw_lr54_tune0"},
     ]
     runs = build_runs_from_sets(
         exp_root=exp_root,

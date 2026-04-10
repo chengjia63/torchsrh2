@@ -413,7 +413,7 @@ def main() -> None:
     )
     exp_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/"
     ckpt = "training_124999"
-    eval_key_prefix = "cellnbrring"  # "cellnbr" #
+    eval_key_prefix = "cellnbr" #"cellnbrring"  # 
     default_pred_glob = f"*INF_srh7v1test_{eval_key_prefix}_*"
 
     neighborhood_map_csv_path_template = (
@@ -422,12 +422,13 @@ def main() -> None:
     )
 
     run_sets = [
-        {"exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0"},
-        {"exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0"},
-        {"exp_name": "a2706135_dinov2"},
-        {"exp_name": "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0"},
-        {"exp_name": "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1"},
-        {"exp_name": "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0"},
+        #{"exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0"},
+        #{"exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0"},
+        #{"exp_name": "a2706135_dinov2"},
+        #{"exp_name": "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0"},
+        #{"exp_name": "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1"},
+        #{"exp_name": "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0"},
+        {"exp_name": "4fb55301_Apr09-01-59-24_sd1000_nomaskobw_lr54_tune0"},
     ]
 
     runs = build_runs_from_sets(
