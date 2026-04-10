@@ -108,10 +108,10 @@ tune:
   diagonal_items: true
   params:
     infra/comment:
-    - nomaskobw_lr54
+    - nomaskobw_lr14
     - maskobw_lr13
     dinov2_fair_config/optim/base_lr:
-    - 0.0005
+    - 0.0001
     - 0.001
     dinov2_fair_config/train/collate/params/mask_outerbias_weight:
     - False
