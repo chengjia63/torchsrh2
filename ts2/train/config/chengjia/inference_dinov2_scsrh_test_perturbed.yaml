@@ -121,16 +121,14 @@ tune:
       - [1.0, 1.0]
 
     lightning_module/params/pretrained_weights:
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0/models/eval/training_124999/teacher_checkpoint.pth
-    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0/models/eval/training_124999/teacher_checkpoint.pth
-
-
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0/models/eval/training_124999/teacher_checkpoint.pth
+    - /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0/models/eval/training_124999/teacher_checkpoint.pth

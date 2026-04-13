@@ -109,10 +109,10 @@ tune:
   params:
     infra/comment:
     - nomaskobw_lr23
-    - maskobw_lr13
+    - maskobw_lr54
     dinov2_fair_config/optim/base_lr:
     - 0.002
-    - 0.001
+    - 0.0005
     dinov2_fair_config/train/collate/params/mask_outerbias_weight:
     - False
     - True
