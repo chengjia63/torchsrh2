@@ -10,6 +10,10 @@ import pandas as pd
 from tqdm import tqdm
 
 from ts2.utils.silica_sc_cls.eval_cell_inference_knn import build_runs_from_sets
+from ts2.utils.silica_model_registry import (
+    DISPLAY_NAME_BY_EXP,
+    build_display_name_color_range,
+)
 
 
 def extract_perturbation_percent(test_pred_path: str, run_key_prefix: str) -> int:
@@ -141,10 +145,16 @@ def make_panel(
     width: int,
     height: int,
     color_scale: alt.Scale,
+    y_domain: Optional[List[float]] = None,
 ) -> alt.Chart:
     plot_df = metrics_df[
         ["perturbation", "model", "exp_name", "summary_dir", title]
     ].rename(columns={title: "value"})
+    y_scale = (
+        alt.Scale(zero=False)
+        if y_domain is None
+        else alt.Scale(zero=False, domain=y_domain)
+    )
 
     lines = (
         alt.Chart(plot_df)
@@ -158,7 +168,7 @@ def make_panel(
             y=alt.Y(
                 "value:Q",
                 title="MCA",
-                scale=alt.Scale(zero=False),
+                scale=y_scale,
                 axis=alt.Axis(ticks=False),
             ),
             color=alt.Color(
@@ -194,17 +204,46 @@ def make_panel(
     return chart.properties(title=title, width=width, height=height)
 
 
+def compute_zoom_y_domain(
+    metrics_df: pd.DataFrame,
+    title: str,
+    half_width: float = 0.1,
+) -> List[float]:
+    values = metrics_df[title].dropna()
+    if values.empty:
+        raise ValueError(f"No values found for panel {title!r}")
+    if half_width <= 0:
+        raise ValueError(f"Expected positive half_width, got {half_width}")
+
+    median = float(values.median())
+    zoom_min = max(0.0, median - half_width)
+    zoom_max = min(1.0, median + half_width)
+
+    if zoom_min >= zoom_max:
+        raise ValueError(
+            f"Invalid zoom range computed for panel {title!r} from median {median} and half_width {half_width}"
+        )
+
+    return [zoom_min, zoom_max]
+
+
 def build_chart(
     metrics_df: pd.DataFrame,
     panels: List[Dict[str, object]],
+    color_domain: List[str],
     color_range: List[str],
     width: int,
     height: int,
+    y_domains: Optional[Dict[str, List[float]]] = None,
 ) -> alt.Chart:
-    model_domain = list(metrics_df["model"].drop_duplicates())
+    if len(color_range) < len(color_domain):
+        raise ValueError(
+            f"Color range has {len(color_range)} colors for {len(color_domain)} models. "
+            "Add more colors or choose a larger palette."
+        )
     color_scale = alt.Scale(
-        domain=model_domain,
-        range=color_range[: len(model_domain)],
+        domain=color_domain,
+        range=color_range[: len(color_domain)],
     )
 
     return (
@@ -217,6 +256,9 @@ def build_chart(
                     width=width,
                     height=height,
                     color_scale=color_scale,
+                    y_domain=(
+                        None if y_domains is None else y_domains.get(panel["title"])
+                    ),
                 )
                 for panel in panels
             ]
@@ -251,8 +293,8 @@ def main() -> None:
     exp_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2"
     ckpt = "training_124999"
     run_key_prefix = "PERTURB"
-    run_dir_prefix = "run"
-    out_stem = "cell_inference_knn_perturbation"
+    run_dir_prefix = "run"  # "linear"  #
+    out_stem = "cell_inference_linear_perturbation"  # "cell_inference_knn_perturbation"
     formats = ["html", "png", "pdf"]
     width = 250
     height = 300
@@ -292,6 +334,26 @@ def main() -> None:
             "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
             "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
+        {
+            "exp_name": "326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        },
+        {
+            "exp_name": "10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        },
+        {
+            "exp_name": "716f4772_Apr12-03-21-26_sd1000_maskobw_lr13_tune1",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        },
+        {
+            "exp_name": "28d7879f_Apr13-02-20-13_sd1000_maskobw_lr54_tune1",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        },
     ]
     panels = [
         {
@@ -319,18 +381,32 @@ def main() -> None:
             "baseline": 0.958,
         },
     ]
-    display_name_by_exp = {
-        "a2706135_dinov2": "DINOv2 Meta",
-        "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0": "DINOv2 lr4e-3",
-        "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0": "Silica FullIm iBOT lr4e-3",
-        "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0": "DINOv2 lr4e-3 RmBg",
-        "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1": "Silica Inside iBOT lr4e-3",
-        "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0": "Silica FullIm iBOT lr1e-3",
-        "4fb55301_Apr09-01-59-24_sd1000_nomaskobw_lr54_tune0": "Silica FullIM iBOT lr5e-4",
-    }
-
-    color_range = ["#d62728", "#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd"]
-
+    panels_ = [
+        {
+            "title": "SRH7 Cell",
+            "summary_key": "instance",
+            "metric_key": "mca",
+            "baseline": None,
+        },
+        {
+            "title": "SRH7 Slide",
+            "summary_key": "mosaic_vote",
+            "metric_key": "mca",
+            "baseline": 0.855,
+        },
+        {
+            "title": "Tumor/Normal Cell",
+            "summary_key": "instance_binary",
+            "metric_key": "mca",
+            "baseline": None,
+        },
+        {
+            "title": "Tumor/Normal Slide",
+            "summary_key": "mosaic_vote_binary",
+            "metric_key": "mca",
+            "baseline": 0.958,
+        },
+    ]
     metrics_df = build_metrics_df(
         exp_root=exp_root,
         ckpt=ckpt,
@@ -338,14 +414,37 @@ def main() -> None:
         run_dir_prefix=run_dir_prefix,
         run_sets=run_sets,
         panels=panels,
-        display_name_by_exp=display_name_by_exp,
+        display_name_by_exp=DISPLAY_NAME_BY_EXP,
+    )
+    color_domain, color_range = build_display_name_color_range(
+        [
+            DISPLAY_NAME_BY_EXP[run_set["exp_name"]]
+            for run_set in run_sets
+            if run_set["exp_name"] in DISPLAY_NAME_BY_EXP
+        ]
     )
     chart = build_chart(
         metrics_df,
         panels=panels,
+        color_domain=color_domain,
         color_range=color_range,
         width=width,
         height=height,
+    )
+    zoom_y_domains = {
+        panel["title"]: compute_zoom_y_domain(
+            metrics_df, title=panel["title"], half_width=0.1
+        )
+        for panel in panels
+    }
+    zoom_chart = build_chart(
+        metrics_df,
+        panels=panels,
+        color_domain=color_domain,
+        color_range=color_range,
+        width=width,
+        height=height,
+        y_domains=zoom_y_domains,
     )
 
     csv_path = f"{out_stem}.csv"
@@ -357,8 +456,14 @@ def main() -> None:
     metrics_df.to_csv(csv_path, index=False)
 
     save_chart(chart, out_stem=out_stem, formats=formats)
+    zoom_out_stem = f"{out_stem}_zoomin"
+    save_chart(zoom_chart, out_stem=zoom_out_stem, formats=formats)
     print(f"Saved metrics table to {csv_path}")
     print("Saved chart files: " + ", ".join(f"{out_stem}.{fmt}" for fmt in formats))
+    print(
+        "Saved zoomed chart files: "
+        + ", ".join(f"{zoom_out_stem}.{fmt}" for fmt in formats)
+    )
 
 
 if __name__ == "__main__":

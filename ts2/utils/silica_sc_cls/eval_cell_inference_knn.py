@@ -1076,40 +1076,35 @@ def main() -> None:
         #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
         #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         # },
-        #{
+        # {
         #    "exp_name": "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0",
         #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
         #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        #}
-        {
-            "exp_name": "4fb55301_Apr09-01-59-24_sd1000_nomaskobw_lr54_tune0",
-            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        }
+        # }
         # {
-        #    "exp_name": "3122d0c0_Mar20-19-19-03_sd1000_dev_dinov2_lr43_tune0",
+        #    "exp_name": "4fb55301_Apr09-01-59-24_sd1000_nomaskobw_lr54_tune0",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        # }
+        # {
+        #    "exp_name": "326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0",
         #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
         #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         # },
         # {
-        #    "exp_name": "bead0872_Mar22-23-45-20_sd1000_dev_nomaskobw_lr43_tune0",
+        #    "exp_name": "10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0",
         #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
         #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         # },
         # {
-        #    "exp_name": "1dfffb8f_Mar22-23-45-20_sd1000_dev_maskobw_lr43_tune1",
-        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        #   "exp_name": "716f4772_Apr12-03-21-26_sd1000_maskobw_lr13_tune1",
+        #   "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #   "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         # },
         # {
-        #    "exp_name": "1526bfe8_Mar24-15-02-22_sd1000_dev_nomaskobw_lr13_tune0",
-        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        # },
-        # {
-        #    "exp_name": "8751a922_Mar24-15-02-22_sd1000_dev_maskobw_lr13_tune1",
-        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        #     "exp_name": "28d7879f_Apr13-02-20-13_sd1000_maskobw_lr54_tune1",
+        #     "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #     "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         # },
     ]
     runs = build_runs_from_sets(

@@ -232,7 +232,9 @@ def run_linear_eval(
     )
     instance_df, instance_metrics, mosaic_df, mosaic_metrics = evaluate_logits(
         test_pred,
-        predict_logits(model, test_pred["embeddings"], cfg["batch_size"], cfg["device"]),
+        predict_logits(
+            model, test_pred["embeddings"], cfg["batch_size"], cfg["device"]
+        ),
         class_names,
     )
     return (
@@ -256,9 +258,13 @@ def save_trial_outputs(
     os.makedirs(trial_dir, exist_ok=True)
     history_df.to_csv(opj(trial_dir, "training_history.csv"), index=False)
     if binary_history_df is not None:
-        binary_history_df.to_csv(opj(trial_dir, "training_history_binary.csv"), index=False)
+        binary_history_df.to_csv(
+            opj(trial_dir, "training_history_binary.csv"), index=False
+        )
     for split_name, prediction_df, metrics in outputs:
-        prediction_df.to_csv(opj(trial_dir, f"{split_name}_predictions.csv"), index=False)
+        prediction_df.to_csv(
+            opj(trial_dir, f"{split_name}_predictions.csv"), index=False
+        )
         pd.DataFrame([metrics["metrics"]]).to_csv(
             opj(trial_dir, f"{split_name}_metrics.csv"),
             index=False,
@@ -295,7 +301,7 @@ def run_linear_trial(
     binary_test_pred: Optional[Dict[str, Any]],
     binary_class_names: Optional[List[str]],
 ) -> Dict[str, Any]:
-    logging.info(    "Training %s",    cfg["trial_name"])
+    logging.info("Training %s", cfg["trial_name"])
     model, history_df, instance_out, mosaic_out = run_linear_eval(
         databank_pred,
         test_pred,
@@ -571,7 +577,9 @@ def evaluate_run(
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     databank_gt_csv_path = "/nfs/turbo/umms-tocho/data/chengjia/silica_databank/instances_labels/srh7_1dot4m_.csv"
     test_gt_csv_path = "/nfs/turbo/umms-tocho/data/chengjia/silica_databank/instances_labels/srh7_test_.csv"
 
@@ -595,25 +603,40 @@ def main() -> None:
     }
     run_sets = [
         {
-           "exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0",
-           "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-           "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
-        },
-        {
-            "exp_name": "4fb55301_Apr09-01-59-24_sd1000_nomaskobw_lr54_tune0",
+            "exp_name": "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0",
             "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
             "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
         {
-           "exp_name": "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0",
-           "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-           "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+            "exp_name": "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
         {
-           "exp_name": "a2706135_dinov2",
-           "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
-           "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+            "exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0",
+            "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+            "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
         },
+        # {
+        #   "exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0",
+        #   "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #   "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        # },
+        # {
+        #    "exp_name": "4fb55301_Apr09-01-59-24_sd1000_nomaskobw_lr54_tune0",
+        #    "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #    "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        # },
+        # {
+        #   "exp_name": "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0",
+        #   "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #   "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        # },
+        # {
+        #   "exp_name": "a2706135_dinov2",
+        #   "databank_pred_glob": "*_INF_srh7v1sp1dot4m_*",
+        #   "test_pred_glob": "*_INF_srh7v1tests64_PERTURB*_*",
+        # },
     ]
     runs = build_runs_from_sets(
         exp_root="/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/",
