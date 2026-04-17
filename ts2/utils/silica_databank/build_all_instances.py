@@ -160,10 +160,10 @@ def main() -> None:
     data_root = "/nfs/turbo/umms-tocho-snr/data/root_histology_db/srh"
     sc_proposal_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/scsrh_repl_root_gen2"
     #cached_parser_dir = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1/7b5f27a8_slide_train"
-    cached_parser_dir = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1_diagnostic/962e2262_slide_test"
-    #cached_parser_dir = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srhum/bf99b89c_slide_all"
-    output_csv = "./test_srh7v1_diagnostic_test_all_instances.csv"
-    tile_size = 64
+    #cached_parser_dir = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srh7v1_diagnostic/962e2262_slide_test"
+    cached_parser_dir = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/data/tsmeta/srhum/bf99b89c_slide_all"
+    output_csv = "./test_srh7um_all_instances_t48.csv"
+    tile_size = 48
 
     out_df = build_all_instances(
         data_root=data_root,

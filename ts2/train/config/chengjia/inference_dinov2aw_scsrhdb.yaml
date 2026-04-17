@@ -1,7 +1,8 @@
 infra:
   exp_name:  ts2/fmi_dinov2_cc_new
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
-  comment: INF_srh7v1sp1dot4m_dev
+  #comment: INF_srh7v1sp1dot4m_dev
+  comment: INF_srhumglioma2m_dev
   seed: 1000
   float32_matmul_precision: medium
 
@@ -29,8 +30,8 @@ data:
     which: SingleCellListInferenceDataset
     params:
       data_root: /nfs/turbo/umms-tocho-snr/data/root_histology_db/srh/
-      cell_instances: /nfs/turbo/umms-tocho/data/chengjia/silica_databank/instances_labels/srh7_1dot4m_.csv
-      #/nfs/turbo/umms-tocho/data/data_splits/chengjia/silica_databank/srhum_4m_.csv #srhum_glioma_2m_.csv #srhum_2m.csv
+      #cell_instances: /nfs/turbo/umms-tocho/data/chengjia/silica_databank/instances_labels/srh7_1dot4m_.csv
+      cell_instances: /nfs/turbo/umms-tocho/data/chengjia/silica_databank/instances_labels/srhum_glioma_2m_.csv
   loader:
     params:
       test:
