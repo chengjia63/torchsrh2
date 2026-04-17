@@ -21,7 +21,23 @@ matches=$(
 )
 
 if [ -n "$matches" ]; then
-    echo "Commit blocked: staged Python files contain active debugger calls." >&2
-    printf '%s\n' "$matches" >&2
+    red_bold='\033[1;31m'
+    yellow_bold='\033[1;33m'
+    reset='\033[0m'
+
+    printf >&2 '\n'
+    printf >&2 "${red_bold}####################${reset}\n"
+    printf >&2 "${red_bold}#                  #${reset}\n"
+    printf >&2 "${red_bold}# STOP  STOP  STOP #${reset}\n"
+    printf >&2 "${red_bold}#                  #${reset}\n"
+    printf >&2 "${red_bold}#  COMMIT BLOCKED  #${reset}\n"
+    printf >&2 "${red_bold}#                  #${reset}\n"
+    printf >&2 "${red_bold}# STOP  STOP  STOP #${reset}\n"
+    printf >&2 "${red_bold}#                  #${reset}\n"
+    printf >&2 "${red_bold}####################${reset}\n"
+    printf >&2 "${yellow_bold}ACTIVE DEBUGGER CALLS FOUND${reset}\n"
+    printf >&2 "${yellow_bold}Remove these before committing:${reset}\n"
+    printf '%s\n\n' "$matches" >&2
+    printf >&2 "To bypass: git commit --no-verify\n\n"
     exit 1
 fi
