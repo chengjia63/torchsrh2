@@ -1,0 +1,127 @@
+infra:
+  out_root: ./debug_out_256
+  static_infra_out_root: /scratch/tocho_root/tocho0/chengjia/silica/common
+  device: cuda
+  num_mosaic_per_task: 20
+  cache_stages: "P"  # Patch, Celldet, Repr, Gmm, Viz
+cell_detection:
+  ckpt_path: /nfs/turbo/umms-tocho-snr/exp/chengjia/ds_reretrain/1e4/439971b1_Apr30-17-27-52_sd1000_ALLDATA_/models/ckpt-epoch19-step5500-loss0.00.ckpt
+
+data_xform:
+  which_set: srh
+  base_aug_params:
+    laser_noise_config: null
+    get_third_channel_params:
+      mode: three_channels
+      subtracted_base: 0.07629394531
+    to_uint8: false
+  strong_aug_params:
+    aug_list:
+      - which: center_crop_always_apply
+        params:
+          size: 48
+    aug_prob: 1
+
+silica:
+  model_hyperparams:
+    arch: vit_small
+    img_size: 48
+    patch_size: 4
+    block_chunks: 4
+    ffn_bias: true
+    ffn_layer: mlp
+    num_register_tokens: 0
+    interpolate_antialias: false
+    interpolate_offset: 0.1
+    layerscale: 1.0e-05
+    proj_bias: true
+    qkv_bias: true
+  pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0/models/eval/training_124999/teacher_checkpoint.pth
+
+gmm:
+  gmm_ckpt: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_sc_eval/srhumglioma2m_b1a0cbe3
+  k: 256
+  negative_label: normal
+  zero_components: []
+  mixture_hard: false
+  point_hard: false
+
+
+data:
+  data_root: /nfs/turbo/umms-tocho/data/db_nio_mouse/mouse # /nfs/turbo/umms-tocho/root_srh_db/UM #
+  mosaic_runs:
+  #- NIO_UM_937b/4
+  #- NIO_UM_950/3
+  - nio_mouse_1/1
+  - nio_mouse_1/10
+  - nio_mouse_1/11
+  - nio_mouse_1/12
+  - nio_mouse_1/13
+  - nio_mouse_1/14
+  - nio_mouse_1/2
+  - nio_mouse_1/3
+  - nio_mouse_1/4
+  - nio_mouse_1/5
+  - nio_mouse_1/6
+  - nio_mouse_1/7
+  - nio_mouse_1/8
+  - nio_mouse_1/9
+  - nio_mouse_2/1
+  - nio_mouse_2/2
+  - nio_mouse_2/3
+  - nio_mouse_2/4
+  - nio_mouse_3/1
+  - nio_mouse_3/2
+  - nio_mouse_3/3
+  - nio_mouse_3/4
+  - nio_mouse_3/5
+  - nio_mouse_3/6
+  - nio_mouse_3/7
+  - nio_mouse_4/1
+  - nio_mouse_4/2
+  - nio_mouse_4/3
+  - nio_mouse_4/4
+  - nio_mouse_4/5
+  - nio_mouse_4/6
+  - nio_mouse_4/7
+  - nio_mouse_4b/1
+  - nio_mouse_5/1
+  - nio_mouse_5/2
+  - nio_mouse_5/3
+  - nio_mouse_5/4
+  - nio_mouse_5/5
+  - nio_mouse_5/6
+  - nio_mouse_6/1
+  - nio_mouse_6/10
+  - nio_mouse_6/11
+  - nio_mouse_6/2
+  - nio_mouse_6/3
+  - nio_mouse_6/4
+  - nio_mouse_6/5
+  - nio_mouse_6/6
+  - nio_mouse_6/7
+  - nio_mouse_6/8
+  - nio_mouse_6/9
+  - nio_mouse_6b/1
+  - nio_mouse_7/1
+  - nio_mouse_7/10
+  - nio_mouse_7/2
+  - nio_mouse_7/3
+  - nio_mouse_7/4
+  - nio_mouse_7/5
+  - nio_mouse_7/6
+  - nio_mouse_7/7
+  - nio_mouse_7/8
+  - nio_mouse_7/9
+  - nio_mouse_7b/1
+  - nio_mouse_7b/2
+  - nio_mouse_8/1
+  - nio_mouse_8/10
+  - nio_mouse_8/2
+  - nio_mouse_8/3
+  - nio_mouse_8/4
+  - nio_mouse_8/5
+  - nio_mouse_8/6
+  - nio_mouse_8/7
+  - nio_mouse_8/8
+  - nio_mouse_8/9

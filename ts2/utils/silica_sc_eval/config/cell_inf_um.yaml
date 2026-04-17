@@ -1,0 +1,114 @@
+infra:
+  out_root: ./debug_out_1024 #/scratch/tocho_root/tocho0/chengjia/silica/b1a0cbe3_k32
+  static_infra_out_root: /scratch/tocho_root/tocho0/chengjia/silica/common
+  device: cuda
+  num_mosaic_per_task: 64
+  cache_stages: "PC"  # Patch, Celldet, Repr, Gmm, Viz
+cell_detection:
+  ckpt_path: /nfs/turbo/umms-tocho-snr/exp/chengjia/ds_reretrain/1e4/439971b1_Apr30-17-27-52_sd1000_ALLDATA_/models/ckpt-epoch19-step5500-loss0.00.ckpt
+
+data_xform:
+  which_set: srh
+  base_aug_params:
+    laser_noise_config: null
+    get_third_channel_params:
+      mode: three_channels
+      subtracted_base: 0.07629394531
+    to_uint8: false
+  strong_aug_params:
+    aug_list:
+      - which: center_crop_always_apply
+        params:
+          size: 48
+    aug_prob: 1
+
+silica:
+  model_hyperparams:
+    arch: vit_small
+    img_size: 48
+    patch_size: 4
+    block_chunks: 4
+    ffn_bias: true
+    ffn_layer: mlp
+    num_register_tokens: 0
+    interpolate_antialias: false
+    interpolate_offset: 0.1
+    layerscale: 1.0e-05
+    proj_bias: true
+    qkv_bias: true
+  pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0/models/eval/training_124999/teacher_checkpoint.pth
+
+gmm:
+  gmm_ckpt: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_sc_eval/srhumglioma2m_largek_b1a0cbe3
+  k: 1024
+  negative_label: normal
+  zero_components: []
+  mixture_hard: false
+  point_hard: false
+
+data:
+  data_root: /nfs/turbo/umms-tocho/root_srh_db/UM
+  mosaic_runs:
+  - NIO_UM_1011/1
+  - NIO_UM_1011/2
+  - NIO_UM_1011/3
+  - NIO_UM_1011/4
+  - NIO_UM_1011/5
+  - NIO_UM_1016/1
+  - NIO_UM_1028/2
+  - NIO_UM_1047/1
+  - NIO_UM_1047/2
+  - NIO_UM_1047/3
+  - NIO_UM_1101/2
+  - NIO_UM_1113/1
+  - NIO_UM_1113b/1
+  - NIO_UM_1113b/2
+  - NIO_UM_1114/1
+  - NIO_UM_1114/2
+  - NIO_UM_1114/3
+  - NIO_UM_1118/3
+  - NIO_UM_1123/3
+  - NIO_UM_1125/1
+  - NIO_UM_1125/2
+  - NIO_UM_1126/1
+  - NIO_UM_1126/3
+  - NIO_UM_1132/1
+  - NIO_UM_1132/3
+  - NIO_UM_1141/1
+  - NIO_UM_1147/2
+  - NIO_UM_1160/2
+  - NIO_UM_1165/5
+  - NIO_UM_1165/6
+  - NIO_UM_1166/1
+  - NIO_UM_1166/2
+  - NIO_UM_1166/3
+  - NIO_UM_1173/3
+  - NIO_UM_1177/2
+  - NIO_UM_1193/2
+  - NIO_UM_1193/3
+  - NIO_UM_1209/5
+  - NIO_UM_724/2
+  - NIO_UM_724/6
+  - NIO_UM_724/7
+  - NIO_UM_724/8
+  - NIO_UM_916/1
+  - NIO_UM_929/1
+  - NIO_UM_929/2
+  - NIO_UM_929/3
+  - NIO_UM_937/2
+  - NIO_UM_937/3
+  - NIO_UM_937b/1
+  - NIO_UM_937b/4
+  - NIO_UM_938/2
+  - NIO_UM_940/2
+  - NIO_UM_941/1
+  - NIO_UM_944/1
+  - NIO_UM_944/4
+  - NIO_UM_948/1
+  - NIO_UM_950/1
+  - NIO_UM_950/2
+  - NIO_UM_950/3
+  - NIO_UM_969/2
+  - NIO_UM_995/1
+  - NIO_UM_995/2
+  - NIO_UM_998/1
