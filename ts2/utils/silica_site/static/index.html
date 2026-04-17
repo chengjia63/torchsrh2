@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Silica | MLiNS Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
+    <script>
+      window.SILICA_PORTAL = {
+        slidesUrl: "/api/slides",
+        portalAssetBaseUrl: "/portal-assets",
+        dziAssetBaseUrl: "/dzi-assets",
+        openSeadragonPrefix:
+          "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/",
+      };
+    </script>
+    <script defer src="/static/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="topbar-brand">Silica</div>
+        <div class="topbar-picker">
+          <div class="topbar-filter-pill" role="group" aria-label="Portal filters">
+            <div class="topbar-filter-segment">
+              <span class="topbar-select-label" aria-hidden="true">Tumor</span>
+              <select
+                id="diagnosisSelect"
+                class="topbar-select topbar-segment-select"
+                aria-label="Filter by diagnosis"
+              >
+                <option>Diagnosis</option>
+              </select>
+            </div>
+            <div class="topbar-filter-divider" aria-hidden="true"></div>
+            <div class="topbar-filter-segment">
+              <span class="topbar-select-label" aria-hidden="true">Infiltration</span>
+              <select
+                id="infiltrationSelect"
+                class="topbar-select topbar-segment-select"
+                aria-label="Filter by infiltration"
+              >
+                <option>Infiltration</option>
+              </select>
+            </div>
+            <div class="topbar-filter-divider" aria-hidden="true"></div>
+            <div class="topbar-filter-segment">
+              <span class="topbar-select-label" aria-hidden="true">Slide</span>
+              <select
+                id="slideSelect"
+                class="topbar-select topbar-segment-select"
+                aria-label="Select slide"
+              >
+                <option>Slide</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div id="topbarClusterLabel" class="topbar-cluster-label">GMM K -</div>
+        <div id="topbarStatus" class="status-dot is-working" aria-hidden="true"></div>
+      </div>
+    </header>
+    <div class="page-shell">
+      <main class="layout">
+        <aside class="sidebar">
+          <div class="sidebar-scroll">
+            <section class="panel-card info-card">
+              <div class="info-grid">
+                <div class="metric-row">
+                  <span class="metric-label">Slide Cells</span>
+                  <strong id="totalCellCount">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Slide score</span>
+                  <strong id="slideMeanTumorScore">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Viewport Cells</span>
+                  <strong id="visibleCellCount">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Viewport score</span>
+                  <strong id="meanTumorScore">-</strong>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel-card controls-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Overlays</h2>
+                </div>
+              </div>
+
+              <div class="control-group">
+                <div class="toggle-grid">
+                  <label class="toggle-chip">
+                    <input type="checkbox" id="toggleDots" checked />
+                    <span class="toggle-label">Dots</span>
+                  </label>
+                  <label class="toggle-chip">
+                    <input type="checkbox" id="toggleBoxes" />
+                    <span class="toggle-label">48x48 box</span>
+                  </label>
+                  <label class="toggle-chip">
+                    <input type="checkbox" id="toggleScoreText" />
+                    <span class="toggle-label">Cell score</span>
+                  </label>
+                  <label class="toggle-chip">
+                    <input type="checkbox" id="toggleClusterText" />
+                    <span class="toggle-label">Cell cluster</span>
+                  </label>
+                  <label class="toggle-chip">
+                    <input type="checkbox" id="toggleContributionText" />
+                    <span class="toggle-label">Cluster contribution</span>
+                  </label>
+                </div>
+                <div class="slider-card">
+                  <div class="slider-row">
+                    <span class="slider-label">Dot size</span>
+                    <strong id="dotSizeValue" class="slider-value">4.0px</strong>
+                  </div>
+                  <input
+                    type="range"
+                    id="dotSizeSlider"
+                    min="1"
+                    max="8"
+                    step="0.1"
+                    value="4"
+                    aria-label="Adjust dot size"
+                  />
+                </div>
+              </div>
+
+              <div class="hint-box">
+                Labels appear only when you zoom in enough to keep the view legible.
+              </div>
+            </section>
+
+            <section class="panel-card scale-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Score scale</h2>
+                </div>
+              </div>
+              <div class="control-group">
+                <div class="legend-strip">
+                  <span>Tumor</span>
+                  <div class="legend-gradient"></div>
+                  <span>Normal</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel-card score-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Score Data</h2>
+                  <p>Tumor scoring statistics for the current view.</p>
+                </div>
+              </div>
+              <div class="chart-block">
+                <div class="mini-chart-header">
+                  <h3>Score Histogram</h3>
+                  <p>Tumor likelihood across visible cells.</p>
+                </div>
+                <canvas id="scoreHistogram"></canvas>
+              </div>
+            </section>
+
+            <section class="panel-card cluster-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Cluster Assignment</h2>
+                  <p>Dominant cluster mix for what is currently on screen.</p>
+                </div>
+              </div>
+              <div class="summary-grid compact-grid">
+                <div class="summary-item">
+                  <span class="summary-label">Top cluster</span>
+                  <strong id="topCluster">-</strong>
+                </div>
+                <div class="summary-item">
+                  <span class="summary-label">Viewport bounds</span>
+                  <code id="viewportBounds">-</code>
+                </div>
+              </div>
+              <div class="chart-block">
+                <div class="mini-chart-header">
+                  <h3>Cluster Histogram</h3>
+                  <p>Dominant cluster counts in the current view.</p>
+                </div>
+                <canvas id="clusterHistogram"></canvas>
+              </div>
+            </section>
+
+            <section class="panel-card cluster-filter-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Cluster Filter</h2>
+                </div>
+              </div>
+              <div class="control-group">
+                <div class="group-title">Toggle cells by top contributing cluster</div>
+                <div id="clusterFilterControls" class="cluster-filter-grid"></div>
+              </div>
+            </section>
+          </div>
+        </aside>
+
+        <section class="viewer-panel panel-card">
+          <div class="viewer-frame">
+            <div id="viewer"></div>
+            <canvas id="overlayCanvas"></canvas>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
