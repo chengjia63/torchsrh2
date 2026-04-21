@@ -191,10 +191,11 @@ def build_endpoint_chart(
 
 
 def save_chart_outputs(chart: alt.TopLevelMixin, out_path_prefix: str) -> None:
-    logging.info("Saving chart to %s.[html|pdf|png]", out_path_prefix)
+    logging.info("Saving chart to %s.[html|pdf|png|svg]", out_path_prefix)
     chart.save(f"{out_path_prefix}.html")
-    chart.save(f"{out_path_prefix}.pdf")
     chart.save(f"{out_path_prefix}.png")
+    chart.save(f"{out_path_prefix}.pdf")
+    chart.save(f"{out_path_prefix}.svg")
 
 
 def main() -> None:
@@ -213,16 +214,16 @@ def main() -> None:
 
     run_sets = [
         {"exp_name": "04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0"},
-        {"exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0"},
+        #{"exp_name": "ca187b7c_Apr05-03-07-13_sd1000_nomaskobw_lr43_tune0"},
         {"exp_name": "a2706135_dinov2"},
         {"exp_name": "78d57cfc_Apr06-12-13-26_sd1000_dinov2_rmbg_lr43_tune0"},
-        {"exp_name": "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1"},
+        #{"exp_name": "844ffd45_Apr06-12-07-47_sd1000_maskobw_lr43_tune1"},
         {"exp_name": "b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0"},
-        {"exp_name": "4fb55301_Apr09-01-59-24_sd1000_nomaskobw_lr54_tune0"},
-        {"exp_name": "326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0"},
-        {"exp_name": "10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0"},
-        {"exp_name": "716f4772_Apr12-03-21-26_sd1000_maskobw_lr13_tune1"},
-        {"exp_name": "28d7879f_Apr13-02-20-13_sd1000_maskobw_lr54_tune1"},
+        #{"exp_name": "4fb55301_Apr09-01-59-24_sd1000_nomaskobw_lr54_tune0"},
+        #{"exp_name": "326a6384_Apr10-15-07-23_sd1000_nomaskobw_lr14_tune0"},
+        #{"exp_name": "10d41c43_Apr11-02-05-16_sd1000_nomaskobw_lr23_tune0"},
+        #{"exp_name": "716f4772_Apr12-03-21-26_sd1000_maskobw_lr13_tune1"},
+        #{"exp_name": "28d7879f_Apr13-02-20-13_sd1000_maskobw_lr54_tune1"},
     ]
     runs = build_runs_from_sets(
         exp_root=exp_root,
