@@ -1,9 +1,9 @@
 infra:
-  out_root: ./debug_out_256
+  out_root: ./debug_out_1024
   static_infra_out_root: /scratch/tocho_root/tocho0/chengjia/silica/common
   device: cuda
-  num_mosaic_per_task: 20
-  cache_stages: "P"  # Patch, Celldet, Repr, Gmm, Viz
+  #num_mosaic_per_task: 20
+  cache_stages: "PCR"  # Patch, Celldet, Repr, Gmm, Viz
 cell_detection:
   ckpt_path: /nfs/turbo/umms-tocho-snr/exp/chengjia/ds_reretrain/1e4/439971b1_Apr30-17-27-52_sd1000_ALLDATA_/models/ckpt-epoch19-step5500-loss0.00.ckpt
 
@@ -39,8 +39,9 @@ silica:
   pretrained_weights: /nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/b1a0cbe3_Apr07-21-09-04_sd1000_nomaskobw_lr13_tune0/models/eval/training_124999/teacher_checkpoint.pth
 
 gmm:
-  gmm_ckpt: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_sc_eval/srhumglioma2m_b1a0cbe3
-  k: 256
+  #gmm_ckpt: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_sc_eval/srhumglioma2m_b1a0cbe3
+  gmm_ckpt: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_sc_eval/srhumglioma2m_largek_b1a0cbe3
+  k: 1024
   negative_label: normal
   zero_components: []
   mixture_hard: false
