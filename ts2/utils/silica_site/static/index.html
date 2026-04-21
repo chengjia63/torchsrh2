@@ -26,7 +26,7 @@
   <body>
     <header class="topbar">
       <div class="topbar-inner">
-        <div class="topbar-brand">Silica</div>
+        <a href="/" class="topbar-brand">Silica</a>
         <div class="topbar-picker">
           <div class="topbar-filter-pill" role="group" aria-label="Portal filters">
             <div class="topbar-filter-segment">
@@ -63,8 +63,18 @@
             </div>
           </div>
         </div>
-        <div id="topbarClusterLabel" class="topbar-cluster-label">GMM K -</div>
-        <div id="topbarStatus" class="status-dot is-working" aria-hidden="true"></div>
+        <div class="topbar-experiment-picker">
+          <div class="topbar-experiment-pill">
+            <span class="topbar-select-label" aria-hidden="true">Experiment</span>
+            <select
+              id="experimentSelect"
+              class="topbar-select topbar-segment-select topbar-experiment-select"
+              aria-label="Select experiment"
+            >
+              <option>Experiment</option>
+            </select>
+          </div>
+        </div>
       </div>
     </header>
     <div class="page-shell">
@@ -110,6 +120,10 @@
                     <span class="toggle-label">48x48 box</span>
                   </label>
                   <label class="toggle-chip">
+                    <input type="checkbox" id="togglePartitionFill" />
+                    <span class="toggle-label">Partition fill</span>
+                  </label>
+                  <label class="toggle-chip">
                     <input type="checkbox" id="toggleScoreText" />
                     <span class="toggle-label">Cell score</span>
                   </label>
@@ -119,22 +133,37 @@
                   </label>
                   <label class="toggle-chip">
                     <input type="checkbox" id="toggleContributionText" />
-                    <span class="toggle-label">Cluster contribution</span>
+                    <span class="toggle-label">Cluster contrib</span>
                   </label>
                 </div>
-                <div class="slider-card">
+                <div id="dotSizeCard" class="slider-card">
                   <div class="slider-row">
                     <span class="slider-label">Dot size</span>
-                    <strong id="dotSizeValue" class="slider-value">4.0px</strong>
+                    <strong id="dotSizeValue" class="slider-value">32.0px</strong>
                   </div>
                   <input
                     type="range"
                     id="dotSizeSlider"
-                    min="1"
-                    max="8"
-                    step="0.1"
-                    value="4"
+                    min="2"
+                    max="48"
+                    step="0.5"
+                    value="32"
                     aria-label="Adjust dot size"
+                  />
+                </div>
+                <div id="partitionAlphaCard" class="slider-card" hidden>
+                  <div class="slider-row">
+                    <span class="slider-label">Partition alpha</span>
+                    <strong id="partitionAlphaValue" class="slider-value">25%</strong>
+                  </div>
+                  <input
+                    type="range"
+                    id="partitionAlphaSlider"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value="25"
+                    aria-label="Adjust partition alpha"
                   />
                 </div>
               </div>
@@ -142,6 +171,34 @@
               <div class="hint-box">
                 Labels appear only when you zoom in enough to keep the view legible.
               </div>
+            </section>
+
+            <section class="panel-card viewport-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Viewport</h2>
+                  <p>Adjust center and zoom using normalized viewer values.</p>
+                </div>
+              </div>
+              <form id="viewportBoundsForm" class="control-group" autocomplete="off">
+                <div class="bounds-grid bounds-grid-three">
+                  <label class="bounds-field">
+                    <span class="summary-label">Center X</span>
+                    <input type="number" id="viewportInputVx" min="0" max="1" step="0.01" />
+                  </label>
+                  <label class="bounds-field">
+                    <span class="summary-label">Center Y</span>
+                    <input type="number" id="viewportInputVy" min="0" max="1" step="0.01" />
+                  </label>
+                  <label class="bounds-field">
+                    <span class="summary-label">View Height</span>
+                    <input type="number" id="viewportInputVz" min="0.01" max="1" step="0.01" />
+                  </label>
+                </div>
+                <div class="bounds-actions">
+                  <span id="viewportEditorStatus" class="bounds-status" aria-live="polite"></span>
+                </div>
+              </form>
             </section>
 
             <section class="panel-card scale-panel">
@@ -182,14 +239,10 @@
                   <p>Dominant cluster mix for what is currently on screen.</p>
                 </div>
               </div>
-              <div class="summary-grid compact-grid">
+              <div class="summary-grid single-column-grid compact-grid">
                 <div class="summary-item">
                   <span class="summary-label">Top cluster</span>
                   <strong id="topCluster">-</strong>
-                </div>
-                <div class="summary-item">
-                  <span class="summary-label">Viewport bounds</span>
-                  <code id="viewportBounds">-</code>
                 </div>
               </div>
               <div class="chart-block">
@@ -208,8 +261,19 @@
                 </div>
               </div>
               <div class="control-group">
-                <div class="group-title">Toggle cells by top contributing cluster</div>
-                <div id="clusterFilterControls" class="cluster-filter-grid"></div>
+                <div class="group-title">Show only clusters</div>
+                <label class="cluster-filter-entry" for="clusterFilterInput">
+                  <span class="summary-label">Comma-separated cluster ids</span>
+                  <input
+                    type="text"
+                    id="clusterFilterInput"
+                    class="cluster-filter-input"
+                    placeholder="Leave empty for all"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </label>
+                <div id="clusterFilterStatus" class="bounds-status" aria-live="polite"></div>
               </div>
             </section>
           </div>

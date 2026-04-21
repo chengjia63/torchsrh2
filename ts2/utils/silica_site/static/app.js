@@ -1,5 +1,6 @@
 const state = {
   slides: [],
+  availableExperiments: [],
   filterOptions: {
     diagnosis: [],
     infiltration: [],
@@ -16,13 +17,23 @@ const state = {
   cells: null,
   viewer: null,
   currentSlideKey: null,
+  currentExperiment: null,
+  pendingExperiment: null,
   navigatorVisible: true,
+  navigatorHovered: false,
   navigatorHideTimer: null,
   topbarStatusHideTimer: null,
   pendingViewportState: null,
   redrawPending: false,
+  sidebarRedrawPending: false,
+  sidebarRedrawTimer: null,
+  viewportQuerySyncTimer: null,
+  viewportApplyTimer: null,
   slideLoadToken: 0,
-  dotRadiusOffset: 0,
+  dotDiameterImagePx: null,
+  pendingDotRadiusValue: null,
+  pendingClusterFilterIds: null,
+  partitionFillAlpha: 0.25,
   activeClusterFilters: new Set(),
   topbarSelectionRevealed: false,
 };
@@ -32,12 +43,31 @@ const SCORE_LABEL_VIEW_WIDTH_RATIO = 0.34;
 const CLUSTER_LABEL_VIEW_WIDTH_RATIO = 0.28;
 const CONTRIBUTION_LABEL_VIEW_WIDTH_RATIO = 0.24;
 const FILTER_ALL_VALUE = "__all__";
-const DOT_RADIUS_MIN = 1;
-const DOT_RADIUS_MAX = 8;
 const CELL_BOX_SIZE_PX = 48;
 const MIN_SCREEN_BOX_SIZE_PX = 8;
-const CLUSTER_FILTER_MIN_COUNT = 20;
-const INITIAL_VIEW_ZOOM_MULTIPLIER = 1.18;
+const DOT_DIAMETER_IMAGE_MIN = 2;
+const DOT_DIAMETER_IMAGE_MAX = CELL_BOX_SIZE_PX;
+const DEFAULT_DOT_DIAMETER_IMAGE_PX = 32;
+const DEFAULT_PARTITION_FILL_ALPHA = 0.25;
+const PARTITION_SAMPLE_STEP_PX = 8;
+const PARTITION_ZOOMED_OUT_SAMPLE_STEP_PX = 4;
+const PARTITION_HIGH_RES_VIEW_WIDTH_RATIO = 0.2;
+const PARTITION_BUCKET_SIZE_PX = 56;
+const PARTITION_VIEW_MARGIN_PX = PARTITION_SAMPLE_STEP_PX * 6;
+const SIDEBAR_REDRAW_DELAY_MS = 90;
+const OVERLAY_QUERY_PARAM = "overlays";
+const EXPERIMENT_QUERY_PARAM = "experiment";
+const LEGACY_EXPERIMENT_QUERY_PARAM = "k";
+const DOT_SIZE_QUERY_PARAM = "dot";
+const PARTITION_ALPHA_QUERY_PARAM = "alpha";
+const CLUSTER_QUERY_PARAM = "clusters";
+const VIEWPORT_X_QUERY_PARAM = "vx";
+const VIEWPORT_Y_QUERY_PARAM = "vy";
+const VIEWPORT_ZOOM_QUERY_PARAM = "vz";
+const DEFAULT_VIEWPORT_CENTER_X = 0.5;
+const DEFAULT_VIEWPORT_CENTER_Y = 0.5;
+const DEFAULT_VIEWPORT_HEIGHT_RATIO = 1.0;
+const VIEWPORT_AUTO_APPLY_DELAY_MS = 220;
 const INFILTRATION_LABELS = {
   "0": "Normal (0)",
   "1": "Atypical Cells (1)",
@@ -50,22 +80,31 @@ document.addEventListener("DOMContentLoaded", () => {
   void bootstrapPortal().catch((error) => {
     console.error(error);
     setTopbarStatus("loading");
-    document.getElementById("viewportBounds").textContent = String(error);
+    setViewportEditorStatus(String(error));
   });
 });
 
 async function bootstrapPortal() {
   setTopbarStatus("loading");
+  applyUiStateFromQuery();
   const slidesPayload = await fetchJson(window.SILICA_PORTAL.slidesUrl);
   state.slides = normalizeSlidesPayload(slidesPayload.slides);
+  state.availableExperiments = normalizeExperimentNames(slidesPayload.experiments);
   state.filterOptions = resolveFilterOptions(slidesPayload.filters, state.slides);
   if (state.slides.length === 0) {
     throw new Error("No slides were returned by /api/slides");
   }
+  const initialSlideKey = resolveInitialSlideKey(slidesPayload.default_slide_key);
+  state.currentExperiment = resolveInitialExperiment(
+    slidesPayload.default_experiment,
+    initialSlideKey,
+  );
+  state.pendingExperiment = null;
   populateFilterSelectors();
   populateSlideSelector();
+  populateExperimentSelector(initialSlideKey);
   bindControls();
-  await changeSlide(resolveInitialSlideKey(slidesPayload.default_slide_key), {
+  await changeSlide(initialSlideKey, {
     syncEmptyFilters: true,
   });
   initializeViewer();
@@ -118,9 +157,21 @@ function normalizeSlidesPayload(rawSlides) {
 
   return rawSlides.map((slide) => ({
     ...slide,
+    available_experiments: normalizeExperimentNames(slide.available_experiments),
     diagnosis: normalizeFilterValue(slide.diagnosis),
     infiltration: normalizeFilterValue(slide.infiltration),
   }));
+}
+
+function normalizeExperimentNames(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return sortFilterValues(
+    values
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean),
+  );
 }
 
 function resolveFilterOptions(rawFilters, slides) {
@@ -168,9 +219,6 @@ function populateSlideHeader() {
   document.getElementById("totalCellCount").textContent = formatInteger(
     state.cells.cell_count,
   );
-  document.getElementById("topbarClusterLabel").textContent = `GMM K ${formatInteger(
-    state.cells.num_clusters,
-  )}`;
   const slideMeanTumorScore =
     state.cells.tumor_score.reduce((sum, value) => sum + value, 0) /
     state.cells.tumor_score.length;
@@ -201,85 +249,127 @@ function getSortedClustersByCount() {
   });
 }
 
-function getClusterFilterGroups() {
-  const sortedClusters = getSortedClustersByCount();
-  const groups = [];
-  const otherClusterIds = [];
-  let otherCount = 0;
-
-  for (const [cluster, count] of sortedClusters) {
-    if (count < CLUSTER_FILTER_MIN_COUNT) {
-      otherClusterIds.push(cluster);
-      otherCount += count;
-      continue;
-    }
-    groups.push({
-      key: `cluster-${cluster}`,
-      label: `C${cluster} (${formatInteger(count)})`,
-      clusterIds: [cluster],
-    });
-  }
-
-  if (otherClusterIds.length > 0) {
-    groups.push({
-      key: "cluster-others",
-      label: `Others (${formatInteger(otherCount)})`,
-      clusterIds: otherClusterIds,
-    });
-  }
-
-  return groups;
-}
-
 function getAllClusterIds() {
   return getSortedClustersByCount().map(([cluster]) => cluster);
 }
 
-function areAllClustersSelected() {
-  const allClusterIds = getAllClusterIds();
-  return (
-    allClusterIds.length > 0 &&
-    allClusterIds.every((cluster) => state.activeClusterFilters.has(cluster))
-  );
+function formatClusterFilterValue(clusterIds) {
+  return [...clusterIds].sort((left, right) => left - right).join(",");
 }
 
-function populateClusterFilterControls() {
-  const container = document.getElementById("clusterFilterControls");
-  if (!container || !state.cells) {
+function setClusterFilterStatus(message) {
+  const status = document.getElementById("clusterFilterStatus");
+  if (!status) {
+    return;
+  }
+  status.textContent = message || "";
+}
+
+function syncClusterFilterEditor() {
+  const input = document.getElementById("clusterFilterInput");
+  if (!input) {
     return;
   }
 
-  const clusterGroups = getClusterFilterGroups();
-
-  container.replaceChildren();
-
-  const allLabel = document.createElement("label");
-  allLabel.className = "toggle-chip cluster-filter-chip cluster-filter-chip-all";
-  const allInput = document.createElement("input");
-  allInput.type = "checkbox";
-  allInput.dataset.cluster = "all";
-  allInput.checked = areAllClustersSelected();
-  const allText = document.createElement("span");
-  allText.className = "toggle-label";
-  allText.textContent = "All";
-  allLabel.append(allInput, allText);
-  container.appendChild(allLabel);
-
-  for (const group of clusterGroups) {
-    const label = document.createElement("label");
-    label.className = "toggle-chip cluster-filter-chip";
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.dataset.clusterGroup = group.key;
-    input.checked = group.clusterIds.every((cluster) =>
-      state.activeClusterFilters.has(cluster),
-    );
-    const text = document.createElement("span");
-    text.className = "toggle-label";
-    text.textContent = group.label;
-    label.append(input, text);
-    container.appendChild(label);
+  if (!state.cells) {
+    if (state.pendingClusterFilterIds === "none") {
+      input.value = "none";
+      setClusterFilterStatus("Showing no clusters.");
+      return;
+    }
+    if (Array.isArray(state.pendingClusterFilterIds)) {
+      input.value = formatClusterFilterValue(state.pendingClusterFilterIds);
+      setClusterFilterStatus(
+        `Pending ${formatInteger(state.pendingClusterFilterIds.length)} cluster filter(s).`,
+      );
+      return;
+    }
+    input.value = "";
+    setClusterFilterStatus("Leave empty for all clusters.");
+    return;
   }
+
+  const allClusterIds = getAllClusterIds();
+  const selectedClusterIds = Array.from(state.activeClusterFilters).sort((left, right) => left - right);
+  if (selectedClusterIds.length === 0) {
+    input.value = "none";
+    setClusterFilterStatus("Showing no clusters.");
+    return;
+  }
+  if (
+    allClusterIds.length > 0 &&
+    allClusterIds.every((clusterId) => state.activeClusterFilters.has(clusterId))
+  ) {
+    input.value = "";
+    setClusterFilterStatus(`Showing all ${formatInteger(allClusterIds.length)} clusters.`);
+    return;
+  }
+
+  input.value = formatClusterFilterValue(selectedClusterIds);
+  setClusterFilterStatus(
+    `Showing ${formatInteger(selectedClusterIds.length)} of ${formatInteger(
+      allClusterIds.length,
+    )} clusters.`,
+  );
+}
+
+function applyClusterFilterInputValue() {
+  if (!state.cells) {
+    return;
+  }
+  const input = document.getElementById("clusterFilterInput");
+  if (!input) {
+    return;
+  }
+
+  const allClusterIds = getAllClusterIds();
+  const rawValue = input.value.trim();
+  const normalizedValue = rawValue.toLowerCase();
+  if (!rawValue || normalizedValue === "all") {
+    state.activeClusterFilters = new Set(allClusterIds);
+    syncClusterFilterEditor();
+    syncUiStateQuery();
+    scheduleRedraw();
+    scheduleSidebarRedraw({ immediate: true });
+    return;
+  }
+  if (normalizedValue === "none") {
+    state.activeClusterFilters = new Set();
+    syncClusterFilterEditor();
+    syncUiStateQuery();
+    scheduleRedraw();
+    scheduleSidebarRedraw({ immediate: true });
+    return;
+  }
+
+  const requestedClusterIds = rawValue
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => Number.parseInt(value, 10))
+    .filter((value) => Number.isInteger(value));
+  if (requestedClusterIds.length === 0) {
+    state.activeClusterFilters = new Set(allClusterIds);
+    syncClusterFilterEditor();
+    setClusterFilterStatus("No valid cluster ids in list. Showing all clusters.");
+    syncUiStateQuery();
+    scheduleRedraw();
+    scheduleSidebarRedraw({ immediate: true });
+    return;
+  }
+  const validClusterIds = [...new Set(requestedClusterIds)].filter((clusterId) =>
+    allClusterIds.includes(clusterId),
+  );
+
+  state.activeClusterFilters =
+    validClusterIds.length > 0 ? new Set(validClusterIds) : new Set(allClusterIds);
+  syncClusterFilterEditor();
+  if (validClusterIds.length === 0) {
+    setClusterFilterStatus("No matching cluster ids in list. Showing all clusters.");
+  }
+  syncUiStateQuery();
+  scheduleRedraw();
+  scheduleSidebarRedraw({ immediate: true });
 }
 
 function populateSlideSelector() {
@@ -376,6 +466,77 @@ function getSlideEntry(slideKey) {
   return state.slides.find((slide) => slide.key === slideKey) || null;
 }
 
+function getSlideAvailableExperiments(slideKey) {
+  return getSlideEntry(slideKey)?.available_experiments ?? [];
+}
+
+function resolveInitialExperiment(defaultExperiment, slideKey) {
+  const slideAvailableExperiments = getSlideAvailableExperiments(slideKey);
+  const candidateExperiments = [
+    state.pendingExperiment,
+    typeof defaultExperiment === "string" ? defaultExperiment.trim() : "",
+    slideAvailableExperiments[0],
+    state.availableExperiments[0],
+  ].filter(Boolean);
+
+  for (const experimentName of candidateExperiments) {
+    if (
+      slideAvailableExperiments.length === 0 ||
+      slideAvailableExperiments.includes(experimentName)
+    ) {
+      return experimentName;
+    }
+  }
+  return null;
+}
+
+function ensureValidCurrentExperiment(slideKey = state.currentSlideKey) {
+  const slideAvailableExperiments = getSlideAvailableExperiments(slideKey);
+  if (slideAvailableExperiments.length === 0) {
+    state.currentExperiment = null;
+    return null;
+  }
+  if (slideAvailableExperiments.includes(state.currentExperiment)) {
+    return state.currentExperiment;
+  }
+  const fallbackExperiment = slideAvailableExperiments[0];
+  state.currentExperiment = fallbackExperiment;
+  return fallbackExperiment;
+}
+
+function populateExperimentSelector(slideKey = state.currentSlideKey) {
+  const select = document.getElementById("experimentSelect");
+  if (!select) {
+    return;
+  }
+
+  const slideAvailableExperiments = getSlideAvailableExperiments(slideKey);
+  const resolvedExperiment = ensureValidCurrentExperiment(slideKey);
+  select.replaceChildren();
+
+  if (state.availableExperiments.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "Experiment";
+    select.appendChild(option);
+    select.disabled = true;
+    return;
+  }
+
+  for (const experimentName of state.availableExperiments) {
+    const option = document.createElement("option");
+    option.value = experimentName;
+    option.textContent = experimentName;
+    option.disabled = !slideAvailableExperiments.includes(experimentName);
+    select.appendChild(option);
+  }
+
+  select.disabled = slideAvailableExperiments.length === 0;
+  if (resolvedExperiment !== null) {
+    select.value = resolvedExperiment;
+  }
+}
+
 function getFilteredSlidesFor(filters) {
   return state.slides.filter((slide) => {
     if (filters.diagnosis && slide.diagnosis !== filters.diagnosis) {
@@ -467,61 +628,100 @@ function bindControls() {
   document.getElementById("slideSelect").addEventListener("change", (event) => {
     revealTopbarSelectionLabels();
     if (event.target.value) {
+      syncUiStateQuery(event.target.value);
       void changeSlide(event.target.value, { syncEmptyFilters: true });
     }
   });
-  document
-    .getElementById("clusterFilterControls")
-    .addEventListener("change", (event) => {
-      const input = event.target.closest("input[type='checkbox']");
-      if (!input) {
-        return;
-      }
-      const rawClusterGroup = input.dataset.clusterGroup ?? input.dataset.cluster;
-      if (rawClusterGroup === "all") {
-        if (input.checked) {
-          state.activeClusterFilters = new Set(getAllClusterIds());
-        } else {
-          state.activeClusterFilters = new Set();
-        }
-      } else {
-        const group = getClusterFilterGroups().find(
-          (candidate) => candidate.key === rawClusterGroup,
-        );
-        if (!group) {
-          return;
-        }
-        const nextSelected = new Set(state.activeClusterFilters);
-        if (input.checked) {
-          for (const cluster of group.clusterIds) {
-            nextSelected.add(cluster);
-          }
-        } else {
-          for (const cluster of group.clusterIds) {
-            nextSelected.delete(cluster);
-          }
-        }
-        state.activeClusterFilters = nextSelected;
-      }
-      populateClusterFilterControls();
-      scheduleRedraw();
-    });
+  document.getElementById("experimentSelect").addEventListener("change", (event) => {
+    const requestedExperiment = String(event.target.value ?? "").trim();
+    if (!requestedExperiment) {
+      return;
+    }
+    if (!getSlideAvailableExperiments(state.currentSlideKey).includes(requestedExperiment)) {
+      populateExperimentSelector(state.currentSlideKey);
+      return;
+    }
+    state.currentExperiment = requestedExperiment;
+    syncUiStateQuery();
+    if (state.currentSlideKey) {
+      void changeSlide(state.currentSlideKey);
+    }
+  });
+  const clusterFilterInput = document.getElementById("clusterFilterInput");
+  clusterFilterInput.addEventListener("change", () => {
+    applyClusterFilterInputValue();
+  });
+  clusterFilterInput.addEventListener("blur", () => {
+    applyClusterFilterInputValue();
+  });
+  clusterFilterInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+    event.preventDefault();
+    applyClusterFilterInputValue();
+  });
 
   for (const input of document.querySelectorAll("input[type='checkbox']")) {
-    input.addEventListener("change", scheduleRedraw);
+    input.addEventListener("change", () => {
+      syncUiStateQuery();
+      scheduleRedraw();
+    });
   }
+  document.getElementById("toggleDots").addEventListener("change", () => {
+    syncOverlayControlVisibility();
+  });
+  document.getElementById("togglePartitionFill").addEventListener("change", () => {
+    syncOverlayControlVisibility();
+  });
   document.getElementById("dotSizeSlider").addEventListener("input", (event) => {
     const sliderValue = Number(event.target.value);
     if (!Number.isFinite(sliderValue)) {
       return;
     }
-    const autoRadius = getAutoDotRadius(getCurrentViewWidthRatio());
-    state.dotRadiusOffset = sliderValue - autoRadius;
-    updateDotSizeControl(sliderValue);
+    const clampedSliderValue = clampNumber(
+      sliderValue,
+      DOT_DIAMETER_IMAGE_MIN,
+      DOT_DIAMETER_IMAGE_MAX,
+    );
+    state.dotDiameterImagePx = clampedSliderValue;
+    state.pendingDotRadiusValue = null;
+    updateDotSizeControl(clampedSliderValue);
+    syncUiStateQuery();
     scheduleRedraw();
   });
+  document.getElementById("partitionAlphaSlider").addEventListener("input", (event) => {
+    const sliderValue = Number(event.target.value);
+    if (!Number.isFinite(sliderValue)) {
+      return;
+    }
+    state.partitionFillAlpha = clampNumber(sliderValue / 100, 0, 1);
+    updatePartitionAlphaControl(state.partitionFillAlpha);
+    syncUiStateQuery();
+    scheduleRedraw();
+  });
+  const viewportForm = document.getElementById("viewportBoundsForm");
+  viewportForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+  });
+  for (const inputId of ["viewportInputVx", "viewportInputVy", "viewportInputVz"]) {
+    const input = document.getElementById(inputId);
+    input.addEventListener("input", () => {
+      scheduleViewportAutoApply();
+    });
+    input.addEventListener("change", () => {
+      scheduleViewportAutoApply({ immediate: true });
+    });
+  }
 
+  syncOverlayControlVisibility();
+  syncClusterFilterEditor();
+  updateDotSizeControl(state.pendingDotRadiusValue ?? DEFAULT_DOT_DIAMETER_IMAGE_PX);
+  updatePartitionAlphaControl(state.partitionFillAlpha);
   window.addEventListener("resize", scheduleRedraw);
+  window.addEventListener("resize", () => {
+    scheduleSidebarRedraw();
+  });
 }
 
 function applyFilters(nextFilters) {
@@ -545,6 +745,41 @@ function applyFilters(nextFilters) {
   }
 }
 
+function snapshotClusterFilterState() {
+  if (state.cells) {
+    const allClusterIds = getAllClusterIds();
+    if (state.activeClusterFilters.size === 0) {
+      return "none";
+    }
+    if (
+      allClusterIds.length > 0 &&
+      allClusterIds.every((clusterId) => state.activeClusterFilters.has(clusterId))
+    ) {
+      return "all";
+    }
+    return Array.from(state.activeClusterFilters).sort((left, right) => left - right);
+  }
+  if (state.pendingClusterFilterIds === "all" || state.pendingClusterFilterIds === "none") {
+    return state.pendingClusterFilterIds;
+  }
+  if (Array.isArray(state.pendingClusterFilterIds)) {
+    return [...state.pendingClusterFilterIds].sort((left, right) => left - right);
+  }
+  return null;
+}
+
+function restorePendingClusterFilterState(clusterFilterState) {
+  if (
+    clusterFilterState === "all" ||
+    clusterFilterState === "none" ||
+    Array.isArray(clusterFilterState)
+  ) {
+    state.pendingClusterFilterIds = clusterFilterState;
+    return;
+  }
+  state.pendingClusterFilterIds = null;
+}
+
 async function changeSlide(slideKey, options = {}) {
   const { syncEmptyFilters = false } = options;
   if (!slideKey) {
@@ -566,45 +801,70 @@ async function changeSlide(slideKey, options = {}) {
     };
     populateFilterSelectors();
   }
-  state.activeClusterFilters = new Set();
+  const resolvedExperiment = ensureValidCurrentExperiment(slideKey);
+  if (resolvedExperiment === null) {
+    throw new Error(`No experiments are available for slide ${slideKey}`);
+  }
+  const preserveCurrentViewerImage = Boolean(state.viewer) && state.currentSlideKey === slideKey;
+  const preservedClusterFilterState = snapshotClusterFilterState();
 
   const slideSelect = document.getElementById("slideSelect");
   const diagnosisSelect = document.getElementById("diagnosisSelect");
   const infiltrationSelect = document.getElementById("infiltrationSelect");
+  const experimentSelect = document.getElementById("experimentSelect");
   const loadToken = state.slideLoadToken + 1;
   state.slideLoadToken = loadToken;
   setTopbarStatus("loading");
   slideSelect.disabled = true;
   diagnosisSelect.disabled = true;
   infiltrationSelect.disabled = true;
+  experimentSelect.disabled = true;
   slideSelect.value = slideKey;
+  populateExperimentSelector(slideKey);
 
   try {
-    const manifest = await fetchJson(slidePortalAssetUrl(slideKey, "slide_manifest.json"));
-    const cells = await fetchJson(slidePortalAssetUrl(slideKey, manifest.cells.path));
+    const manifest = await fetchJson(
+      slidePortalAssetUrl(slideKey, resolvedExperiment, "slide_manifest.json"),
+    );
+    const cells = await fetchJson(
+      slidePortalAssetUrl(slideKey, resolvedExperiment, manifest.cells.path),
+    );
     if (loadToken !== state.slideLoadToken) {
       return;
     }
 
     state.currentSlideKey = slideKey;
+    state.currentExperiment = resolvedExperiment;
+    state.pendingExperiment = null;
     state.manifest = manifest;
     state.cells = cells;
     state.activeClusterFilters = new Set(getAllClusterIds());
+    restorePendingClusterFilterState(preservedClusterFilterState);
+    applyPendingClusterFilters();
     populateSlideHeader();
-    populateClusterFilterControls();
+    populateExperimentSelector(slideKey);
+    syncClusterFilterEditor();
     syncSlideQuery(slideKey);
 
     if (state.viewer) {
-      state.pendingViewportState = null;
-      state.viewer.open(
-        slideDziAssetUrl(slideKey, state.manifest.base_layers.color.dzi),
-      );
+      if (preserveCurrentViewerImage) {
+        setTopbarStatus("ready");
+        scheduleRedraw();
+        scheduleSidebarRedraw({ immediate: true });
+      } else {
+        state.pendingViewportState = null;
+        state.viewer.open(
+          slideDziAssetUrl(slideKey, state.manifest.base_layers.color.dzi),
+        );
+      }
     }
   } finally {
     if (loadToken === state.slideLoadToken) {
       populateSlideSelector();
+      populateExperimentSelector(slideKey);
       diagnosisSelect.disabled = false;
       infiltrationSelect.disabled = false;
+      experimentSelect.disabled = false;
       if (getFilteredSlides().length > 0) {
         slideSelect.value = slideKey;
       }
@@ -613,9 +873,7 @@ async function changeSlide(slideKey, options = {}) {
 }
 
 function syncSlideQuery(slideKey) {
-  const url = new URL(window.location.href);
-  url.searchParams.set("slide", slideKey);
-  window.history.replaceState({}, "", url);
+  syncUiStateQuery(slideKey);
 }
 
 function initializeViewer() {
@@ -636,9 +894,13 @@ function initializeViewer() {
 
   state.viewer.addHandler("open", () => {
     setTopbarStatus("ready");
+    bindNavigatorHoverTracking();
     markNavigatorVisible();
     restoreOrInitializeViewportState();
+    applyPendingDotRadiusValue();
+    syncUiStateQuery();
     scheduleRedraw();
+    scheduleSidebarRedraw({ immediate: true });
   });
   state.viewer.addHandler("open-failed", () => {
     setTopbarStatus("loading");
@@ -646,23 +908,31 @@ function initializeViewer() {
   state.viewer.addHandler("animation", () => {
     markNavigatorVisible();
     scheduleRedraw();
+    scheduleSidebarRedraw();
+    scheduleViewportQuerySync();
   });
   state.viewer.addHandler("resize", () => {
     markNavigatorVisible();
     scheduleRedraw();
+    scheduleSidebarRedraw();
+    scheduleViewportQuerySync();
   });
   state.viewer.addHandler("pan", () => {
     markNavigatorVisible();
     scheduleRedraw();
+    scheduleSidebarRedraw();
+    scheduleViewportQuerySync();
   });
   state.viewer.addHandler("zoom", () => {
     markNavigatorVisible();
     scheduleRedraw();
+    scheduleSidebarRedraw();
+    scheduleViewportQuerySync();
   });
 }
 
 function setTopbarStatus(status) {
-  const statusPill = document.getElementById("topbarStatus");
+  const statusPill = document.querySelector(".topbar-filter-pill");
   if (!statusPill) {
     return;
   }
@@ -670,24 +940,41 @@ function setTopbarStatus(status) {
     window.clearTimeout(state.topbarStatusHideTimer);
     state.topbarStatusHideTimer = null;
   }
-  statusPill.classList.remove("is-hidden");
   statusPill.classList.toggle("is-working", status === "loading");
   statusPill.classList.toggle("is-ready", status === "ready");
   if (status === "ready") {
     state.topbarStatusHideTimer = window.setTimeout(() => {
-      statusPill.classList.add("is-hidden");
+      statusPill.classList.remove("is-working", "is-ready");
       state.topbarStatusHideTimer = null;
-    }, 5000);
+    }, 1000);
   }
 }
 
 function captureViewportState() {
-  if (!state.viewer || !state.viewer.viewport) {
+  if (!state.viewer || !state.viewer.viewport || !state.manifest) {
     return null;
   }
+  const visibleImageRect = getVisibleImageRect();
+  const centerX = clampNumber(
+    visibleImageRect.x + visibleImageRect.width / 2,
+    0,
+    state.manifest.image_width,
+  );
+  const centerY = clampNumber(
+    visibleImageRect.y + visibleImageRect.height / 2,
+    0,
+    state.manifest.image_height,
+  );
   return {
-    center: state.viewer.viewport.getCenter(true),
-    zoom: state.viewer.viewport.getZoom(true),
+    center: {
+      x: centerX / state.manifest.image_width,
+      y: centerY / state.manifest.image_height,
+    },
+    zoom: clampNumber(
+      visibleImageRect.height / state.manifest.image_height,
+      1.0e-6,
+      1,
+    ),
   };
 }
 
@@ -695,24 +982,40 @@ function restoreViewportState() {
   if (!state.pendingViewportState) {
     return;
   }
-  const { center, zoom } = state.pendingViewportState;
-  state.viewer.viewport.zoomTo(zoom, null, true);
-  state.viewer.viewport.panTo(center, true);
-  state.viewer.viewport.applyConstraints();
-  state.pendingViewportState = null;
-}
-
-function applyInitialViewportZoom() {
-  if (!state.viewer?.viewport || typeof state.viewer.viewport.getHomeZoom !== "function") {
+  if (
+    !state.viewer?.viewport ||
+    !state.manifest ||
+    typeof state.viewer.viewport.imageToViewportRectangle !== "function" ||
+    typeof state.viewer.viewport.fitBounds !== "function"
+  ) {
     return;
   }
-  const homeZoom = state.viewer.viewport.getHomeZoom();
-  state.viewer.viewport.zoomTo(
-    homeZoom * INITIAL_VIEW_ZOOM_MULTIPLIER,
-    null,
-    true,
+  const { center, zoom } = state.pendingViewportState;
+  const containerSize = state.viewer.viewport.getContainerSize();
+  const containerWidth = Math.max(1, containerSize.x);
+  const containerHeight = Math.max(1, containerSize.y);
+  const heightRatio = clampNumber(zoom, 1.0e-6, 1);
+  const imageHeight = state.manifest.image_height * heightRatio;
+  const imageWidth = imageHeight * (containerWidth / containerHeight);
+  const centerImageX = clampNumber(
+    center.x,
+    0,
+    1,
+  ) * state.manifest.image_width;
+  const centerImageY = clampNumber(
+    center.y,
+    0,
+    1,
+  ) * state.manifest.image_height;
+  const viewportRect = state.viewer.viewport.imageToViewportRectangle(
+    centerImageX - imageWidth / 2,
+    centerImageY - imageHeight / 2,
+    imageWidth,
+    imageHeight,
   );
+  state.viewer.viewport.fitBounds(viewportRect, true);
   state.viewer.viewport.applyConstraints();
+  state.pendingViewportState = null;
 }
 
 function restoreOrInitializeViewportState() {
@@ -720,7 +1023,14 @@ function restoreOrInitializeViewportState() {
     restoreViewportState();
     return;
   }
-  applyInitialViewportZoom();
+  state.pendingViewportState = {
+    center: {
+      x: DEFAULT_VIEWPORT_CENTER_X,
+      y: DEFAULT_VIEWPORT_CENTER_Y,
+    },
+    zoom: DEFAULT_VIEWPORT_HEIGHT_RATIO,
+  };
+  restoreViewportState();
 }
 
 function scheduleRedraw() {
@@ -734,6 +1044,37 @@ function scheduleRedraw() {
   });
 }
 
+function scheduleSidebarRedraw(options = {}) {
+  const { immediate = false } = options;
+  if (state.sidebarRedrawTimer !== null) {
+    window.clearTimeout(state.sidebarRedrawTimer);
+    state.sidebarRedrawTimer = null;
+  }
+  if (immediate) {
+    if (state.sidebarRedrawPending) {
+      return;
+    }
+    state.sidebarRedrawPending = true;
+    window.requestAnimationFrame(() => {
+      state.sidebarRedrawPending = false;
+      redrawSidebarPanels();
+    });
+    return;
+  }
+
+  state.sidebarRedrawTimer = window.setTimeout(() => {
+    state.sidebarRedrawTimer = null;
+    if (state.sidebarRedrawPending) {
+      return;
+    }
+    state.sidebarRedrawPending = true;
+    window.requestAnimationFrame(() => {
+      state.sidebarRedrawPending = false;
+      redrawSidebarPanels();
+    });
+  }, SIDEBAR_REDRAW_DELAY_MS);
+}
+
 function redrawScene() {
   if (!state.viewer || !state.viewer.world || state.viewer.world.getItemCount() === 0) {
     return;
@@ -745,11 +1086,23 @@ function redrawScene() {
   overlayContext.clearRect(0, 0, overlayWidth, overlayHeight);
 
   const visible = collectVisibleCells();
-  const viewportCells = collectVisibleCells({ applyClusterFilter: false });
   drawCellOverlay(overlayContext, visible);
+}
+
+function redrawSidebarPanels() {
+  if (!state.viewer || !state.viewer.world || state.viewer.world.getItemCount() === 0) {
+    return;
+  }
+
+  const viewportCells = collectVisibleCells({ applyClusterFilter: false });
+  const visible = collectVisibleCells();
   updateViewportSummary(visible, viewportCells);
   drawScoreHistogram(viewportCells.indices);
   drawClusterHistogram(viewportCells.indices);
+  const viewportState = captureViewportState();
+  if (viewportState) {
+    updateViewportInputs(viewportState);
+  }
 }
 
 function collectVisibleCells(options = {}) {
@@ -816,29 +1169,373 @@ function getCurrentViewWidthRatio() {
   return visibleRect.width / state.manifest.image_width;
 }
 
-function getAutoDotRadius(viewWidthRatio) {
-  const safeViewWidthRatio = Math.max(viewWidthRatio, 1e-4);
-  const zoomBoost = Math.log10(1 / safeViewWidthRatio);
-  return clampNumber(4 + zoomBoost * 2.8, DOT_RADIUS_MIN, DOT_RADIUS_MAX);
+function getScreenPixelsPerImagePixel() {
+  if (
+    !state.viewer ||
+    !state.viewer.viewport ||
+    !state.manifest ||
+    !state.viewer.world ||
+    state.viewer.world.getItemCount() === 0
+  ) {
+    return null;
+  }
+  const visibleRect = getVisibleImageRect();
+  const containerSize = state.viewer.viewport.getContainerSize();
+  const containerHeight = Math.max(1, containerSize.y);
+  const visibleHeight = Math.max(visibleRect.height, 1.0e-6);
+  return containerHeight / visibleHeight;
 }
 
-function getDotRadius(viewWidthRatio) {
+function getRenderedDotRadius() {
+  if (state.pendingDotRadiusValue !== null) {
+    const screenPixelsPerImagePixel = getScreenPixelsPerImagePixel();
+    if (Number.isFinite(screenPixelsPerImagePixel) && screenPixelsPerImagePixel > 0) {
+      return clampNumber(
+        (state.pendingDotRadiusValue * screenPixelsPerImagePixel) / 2,
+        0.25,
+        64,
+      );
+    }
+    return clampNumber(state.pendingDotRadiusValue / 2, 0.25, 64);
+  }
+  const screenPixelsPerImagePixel = getScreenPixelsPerImagePixel();
+  if (
+    !Number.isFinite(screenPixelsPerImagePixel) ||
+    screenPixelsPerImagePixel <= 0 ||
+    !Number.isFinite(state.dotDiameterImagePx)
+  ) {
+    return clampNumber(DEFAULT_DOT_DIAMETER_IMAGE_PX / 2, 0.25, 64);
+  }
   return clampNumber(
-    getAutoDotRadius(viewWidthRatio) + state.dotRadiusOffset,
-    DOT_RADIUS_MIN,
-    DOT_RADIUS_MAX,
+    (state.dotDiameterImagePx * screenPixelsPerImagePixel) / 2,
+    0.25,
+    64,
   );
 }
 
-function updateDotSizeControl(dotRadius) {
+function updateDotSizeControl(dotDiameterImagePx) {
   const slider = document.getElementById("dotSizeSlider");
   const valueLabel = document.getElementById("dotSizeValue");
   if (!slider || !valueLabel) {
     return;
   }
-  const clampedRadius = clampNumber(dotRadius, DOT_RADIUS_MIN, DOT_RADIUS_MAX);
-  slider.value = clampedRadius.toFixed(1);
-  valueLabel.textContent = `${clampedRadius.toFixed(1)}px`;
+  const clampedDiameter = clampNumber(
+    dotDiameterImagePx,
+    DOT_DIAMETER_IMAGE_MIN,
+    DOT_DIAMETER_IMAGE_MAX,
+  );
+  slider.value = clampedDiameter.toFixed(1);
+  valueLabel.textContent = `${clampedDiameter.toFixed(1)}px`;
+}
+
+function updatePartitionAlphaControl(alpha) {
+  const slider = document.getElementById("partitionAlphaSlider");
+  const valueLabel = document.getElementById("partitionAlphaValue");
+  if (!slider || !valueLabel) {
+    return;
+  }
+  const clampedAlpha = clampNumber(alpha, 0, 1);
+  slider.value = `${Math.round(clampedAlpha * 100)}`;
+  valueLabel.textContent = `${Math.round(clampedAlpha * 100)}%`;
+}
+
+function applyPendingDotRadiusValue() {
+  if (state.pendingDotRadiusValue === null) {
+    return;
+  }
+  const clampedDiameter = clampNumber(
+    state.pendingDotRadiusValue,
+    DOT_DIAMETER_IMAGE_MIN,
+    DOT_DIAMETER_IMAGE_MAX,
+  );
+  state.dotDiameterImagePx = clampedDiameter;
+  updateDotSizeControl(clampedDiameter);
+  state.pendingDotRadiusValue = null;
+}
+
+function applyPendingClusterFilters() {
+  if (state.pendingClusterFilterIds === null) {
+    return;
+  }
+
+  const allClusterIds = getAllClusterIds();
+  if (state.pendingClusterFilterIds === "all") {
+    state.activeClusterFilters = new Set(allClusterIds);
+    state.pendingClusterFilterIds = null;
+    return;
+  }
+  if (state.pendingClusterFilterIds === "none") {
+    state.activeClusterFilters = new Set();
+    state.pendingClusterFilterIds = null;
+    return;
+  }
+
+  const validClusterIds = state.pendingClusterFilterIds.filter((clusterId) =>
+    allClusterIds.includes(clusterId),
+  );
+  state.activeClusterFilters =
+    validClusterIds.length > 0 ? new Set(validClusterIds) : new Set(allClusterIds);
+  state.pendingClusterFilterIds = null;
+}
+
+function syncOverlayControlVisibility() {
+  const dotSizeCard = document.getElementById("dotSizeCard");
+  const partitionAlphaCard = document.getElementById("partitionAlphaCard");
+  const showDots = document.getElementById("toggleDots")?.checked ?? false;
+  const showPartitionFill =
+    document.getElementById("togglePartitionFill")?.checked ?? false;
+  if (dotSizeCard) {
+    dotSizeCard.hidden = !showDots;
+  }
+  if (partitionAlphaCard) {
+    partitionAlphaCard.hidden = !showPartitionFill;
+  }
+}
+
+function setViewportEditorStatus(message) {
+  const status = document.getElementById("viewportEditorStatus");
+  if (!status) {
+    return;
+  }
+  status.textContent = message || "";
+}
+
+function updateViewportInputs(bounds) {
+  const inputVx = document.getElementById("viewportInputVx");
+  const inputVy = document.getElementById("viewportInputVy");
+  const inputVz = document.getElementById("viewportInputVz");
+  if (!inputVx || !inputVy || !inputVz) {
+    return;
+  }
+  inputVx.value = `${bounds.center.x.toFixed(2)}`;
+  inputVy.value = `${bounds.center.y.toFixed(2)}`;
+  inputVz.value = `${bounds.zoom.toFixed(2)}`;
+  setViewportEditorStatus("");
+}
+
+function applyViewportBoundsFromInputs() {
+  if (!state.viewer?.viewport || !state.manifest) {
+    return;
+  }
+
+  const inputVx = document.getElementById("viewportInputVx");
+  const inputVy = document.getElementById("viewportInputVy");
+  const inputVz = document.getElementById("viewportInputVz");
+  const rawVx = Number(inputVx?.value);
+  const rawVy = Number(inputVy?.value);
+  const rawVz = Number(inputVz?.value);
+  if (
+    !Number.isFinite(rawVx) ||
+    !Number.isFinite(rawVy) ||
+    !Number.isFinite(rawVz)
+  ) {
+    setViewportEditorStatus("Enter numeric Center X, Center Y, and View Height values.");
+    return;
+  }
+  if (rawVz <= 0) {
+    setViewportEditorStatus("View Height must be greater than 0.");
+    return;
+  }
+
+  state.pendingViewportState = {
+    center: {
+      x: clampNumber(rawVx, 0, 1),
+      y: clampNumber(rawVy, 0, 1),
+    },
+    zoom: clampNumber(rawVz, 1.0e-6, 1),
+  };
+  restoreViewportState();
+  updateViewportInputs(captureViewportState() || state.pendingViewportState);
+  setViewportEditorStatus("Viewport updated.");
+  syncUiStateQuery();
+  scheduleRedraw();
+  scheduleSidebarRedraw({ immediate: true });
+}
+
+function scheduleViewportAutoApply(options = {}) {
+  const { immediate = false } = options;
+  if (state.viewportApplyTimer !== null) {
+    window.clearTimeout(state.viewportApplyTimer);
+    state.viewportApplyTimer = null;
+  }
+  if (immediate) {
+    applyViewportBoundsFromInputs();
+    return;
+  }
+  setViewportEditorStatus("Applying...");
+  state.viewportApplyTimer = window.setTimeout(() => {
+    state.viewportApplyTimer = null;
+    applyViewportBoundsFromInputs();
+  }, VIEWPORT_AUTO_APPLY_DELAY_MS);
+}
+
+function getOverlayToggleConfig() {
+  return [
+    { id: "toggleDots", key: "dots" },
+    { id: "toggleBoxes", key: "boxes" },
+    { id: "togglePartitionFill", key: "partition" },
+    { id: "toggleScoreText", key: "score" },
+    { id: "toggleClusterText", key: "cluster" },
+    { id: "toggleContributionText", key: "contrib" },
+  ];
+}
+
+function applyUiStateFromQuery() {
+  const searchParams = new URLSearchParams(window.location.search);
+  state.pendingDotRadiusValue = DEFAULT_DOT_DIAMETER_IMAGE_PX;
+  state.partitionFillAlpha = DEFAULT_PARTITION_FILL_ALPHA;
+  const requestedExperiment = (
+    searchParams.get(EXPERIMENT_QUERY_PARAM) ??
+    searchParams.get(LEGACY_EXPERIMENT_QUERY_PARAM) ??
+    ""
+  ).trim();
+  if (requestedExperiment) {
+    state.pendingExperiment = requestedExperiment;
+  }
+  let requestedOverlays = null;
+  const overlaysRaw = searchParams.get(OVERLAY_QUERY_PARAM);
+  if (overlaysRaw !== null) {
+    requestedOverlays = new Set(
+      overlaysRaw
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    );
+    for (const overlay of getOverlayToggleConfig()) {
+      const input = document.getElementById(overlay.id);
+      if (input) {
+        input.checked = requestedOverlays.has(overlay.key);
+      }
+    }
+  }
+
+  const dotSizeRawValue = searchParams.get(DOT_SIZE_QUERY_PARAM);
+  const dotSizeRaw =
+    dotSizeRawValue === null ? Number.NaN : Number(dotSizeRawValue);
+  if (Number.isFinite(dotSizeRaw)) {
+    state.pendingDotRadiusValue = clampNumber(
+      dotSizeRaw,
+      DOT_DIAMETER_IMAGE_MIN,
+      DOT_DIAMETER_IMAGE_MAX,
+    );
+  }
+
+  const alphaRawValue = searchParams.get(PARTITION_ALPHA_QUERY_PARAM);
+  const alphaRaw =
+    alphaRawValue === null ? Number.NaN : Number(alphaRawValue);
+  if (requestedOverlays?.has("partition") && Number.isFinite(alphaRaw)) {
+    state.partitionFillAlpha = clampNumber(alphaRaw / 100, 0, 1);
+  }
+
+  const clustersRaw = searchParams.get(CLUSTER_QUERY_PARAM);
+  if (clustersRaw === "all" || clustersRaw === "none") {
+    state.pendingClusterFilterIds = clustersRaw;
+  } else if (clustersRaw) {
+    const clusterIds = clustersRaw
+      .split(",")
+      .map((value) => Number.parseInt(value, 10))
+      .filter((value) => Number.isInteger(value));
+    state.pendingClusterFilterIds = clusterIds;
+  }
+
+  const viewportXRaw = Number(searchParams.get(VIEWPORT_X_QUERY_PARAM));
+  const viewportYRaw = Number(searchParams.get(VIEWPORT_Y_QUERY_PARAM));
+  const viewportZoomRaw = Number(searchParams.get(VIEWPORT_ZOOM_QUERY_PARAM));
+  if (
+    Number.isFinite(viewportXRaw) &&
+    Number.isFinite(viewportYRaw) &&
+    Number.isFinite(viewportZoomRaw) &&
+    viewportZoomRaw > 0
+  ) {
+    state.pendingViewportState = {
+      center: { x: viewportXRaw, y: viewportYRaw },
+      zoom: viewportZoomRaw,
+    };
+  }
+}
+
+function syncUiStateQuery(slideKey = state.currentSlideKey) {
+  const url = new URL(window.location.href);
+  if (slideKey) {
+    url.searchParams.set("slide", slideKey);
+  }
+  if (state.currentExperiment) {
+    url.searchParams.set(EXPERIMENT_QUERY_PARAM, state.currentExperiment);
+  } else {
+    url.searchParams.delete(EXPERIMENT_QUERY_PARAM);
+  }
+  url.searchParams.delete(LEGACY_EXPERIMENT_QUERY_PARAM);
+
+  const enabledOverlays = getOverlayToggleConfig()
+    .filter((overlay) => document.getElementById(overlay.id)?.checked)
+    .map((overlay) => overlay.key);
+  const partitionFillEnabled = enabledOverlays.includes("partition");
+  url.searchParams.set(OVERLAY_QUERY_PARAM, enabledOverlays.join(","));
+
+  const dotSizeValue = clampNumber(
+    state.pendingDotRadiusValue ?? state.dotDiameterImagePx ?? DEFAULT_DOT_DIAMETER_IMAGE_PX,
+    DOT_DIAMETER_IMAGE_MIN,
+    DOT_DIAMETER_IMAGE_MAX,
+  );
+  url.searchParams.set(
+    DOT_SIZE_QUERY_PARAM,
+    dotSizeValue.toFixed(1),
+  );
+  url.searchParams.set(
+    PARTITION_ALPHA_QUERY_PARAM,
+    `${
+      Math.round(
+        clampNumber(
+          partitionFillEnabled ? state.partitionFillAlpha : DEFAULT_PARTITION_FILL_ALPHA,
+          0,
+          1,
+        ) * 100,
+      )
+    }`,
+  );
+
+  const allClusterIds = state.cells ? getAllClusterIds() : [];
+  let clusterQueryValue = "all";
+  if (state.cells) {
+    if (state.activeClusterFilters.size === 0) {
+      clusterQueryValue = "none";
+    } else if (
+      allClusterIds.length > 0 &&
+      allClusterIds.every((clusterId) => state.activeClusterFilters.has(clusterId))
+    ) {
+      clusterQueryValue = "all";
+    } else {
+      clusterQueryValue = Array.from(state.activeClusterFilters)
+        .sort((left, right) => left - right)
+        .join(",");
+    }
+  } else if (Array.isArray(state.pendingClusterFilterIds)) {
+    clusterQueryValue = [...state.pendingClusterFilterIds]
+      .sort((left, right) => left - right)
+      .join(",");
+  } else if (state.pendingClusterFilterIds === "none") {
+    clusterQueryValue = "none";
+  }
+  url.searchParams.set(CLUSTER_QUERY_PARAM, clusterQueryValue);
+
+  const viewportState = captureViewportState();
+  if (viewportState) {
+    url.searchParams.set(VIEWPORT_X_QUERY_PARAM, `${viewportState.center.x.toFixed(5)}`);
+    url.searchParams.set(VIEWPORT_Y_QUERY_PARAM, `${viewportState.center.y.toFixed(5)}`);
+    url.searchParams.set(VIEWPORT_ZOOM_QUERY_PARAM, `${viewportState.zoom.toFixed(5)}`);
+  }
+
+  window.history.replaceState({}, "", url);
+}
+
+function scheduleViewportQuerySync() {
+  if (state.viewportQuerySyncTimer !== null) {
+    window.clearTimeout(state.viewportQuerySyncTimer);
+  }
+  state.viewportQuerySyncTimer = window.setTimeout(() => {
+    state.viewportQuerySyncTimer = null;
+    syncUiStateQuery();
+  }, 120);
 }
 
 function imageRectToScreenRect(centerX, centerY, width, height) {
@@ -885,6 +1582,7 @@ function ensureMinimumScreenRectSize(rect, centerPoint, minSize) {
 function drawCellOverlay(context, visible) {
   const showDots = document.getElementById("toggleDots").checked;
   const showBoxes = document.getElementById("toggleBoxes").checked;
+  const showPartitionFill = document.getElementById("togglePartitionFill").checked;
   const showScoreText = document.getElementById("toggleScoreText").checked;
   const showClusterText = document.getElementById("toggleClusterText").checked;
   const showContributionText = document.getElementById(
@@ -905,9 +1603,16 @@ function drawCellOverlay(context, visible) {
     showContributionText &&
     visible.indices.length <= TEXT_RENDER_LIMIT &&
     viewWidthRatio <= CONTRIBUTION_LABEL_VIEW_WIDTH_RATIO;
-  const dotRadius = getDotRadius(viewWidthRatio);
-  const dotStrokeWidth = clampNumber(dotRadius * 0.26, 1.1, 1.8);
-  updateDotSizeControl(dotRadius);
+  applyPendingDotRadiusValue();
+  const dotRadius = getRenderedDotRadius();
+  const dotStrokeWidth = 1.6;
+  updateDotSizeControl(
+    state.pendingDotRadiusValue ?? state.dotDiameterImagePx ?? DEFAULT_DOT_DIAMETER_IMAGE_PX,
+  );
+
+  if (showPartitionFill) {
+    drawPartitionOverlay(context, navigatorBounds, viewWidthRatio, visible.bounds);
+  }
 
   context.textAlign = "center";
   context.textBaseline = "middle";
@@ -920,12 +1625,15 @@ function drawCellOverlay(context, visible) {
     }
 
     if (showDots) {
+      context.save();
+      context.globalAlpha = 0.5;
       context.beginPath();
       context.fillStyle = state.cells.dot_color[index];
       context.arc(point.x, point.y, dotRadius, 0, Math.PI * 2);
       context.fill();
+      context.restore();
       context.lineWidth = dotStrokeWidth;
-      context.strokeStyle = "rgba(255, 255, 255, 0.72)";
+      context.strokeStyle = state.cells.dot_color[index];
       context.stroke();
     }
 
@@ -976,6 +1684,244 @@ function drawCellOverlay(context, visible) {
       context.fillText(textLines[lineIndex], point.x, textY);
     }
   }
+}
+
+function drawPartitionOverlay(context, navigatorBounds, viewWidthRatio, visibleImageBounds) {
+  const overlayCanvas = document.getElementById("overlayCanvas");
+  const overlayWidth = overlayCanvas?.getBoundingClientRect().width ?? 0;
+  const overlayHeight = overlayCanvas?.getBoundingClientRect().height ?? 0;
+  if (overlayWidth <= 0 || overlayHeight <= 0) {
+    return;
+  }
+
+  const candidatePoints = getPartitionCandidateScreenPoints(
+    visibleImageBounds,
+    overlayWidth,
+    overlayHeight,
+  );
+  if (candidatePoints.length === 0) {
+    return;
+  }
+
+  const sampleStep =
+    viewWidthRatio >= PARTITION_HIGH_RES_VIEW_WIDTH_RATIO
+      ? PARTITION_ZOOMED_OUT_SAMPLE_STEP_PX
+      : PARTITION_SAMPLE_STEP_PX;
+  const columns = Math.max(1, Math.ceil(overlayWidth / sampleStep));
+  const rows = Math.max(1, Math.ceil(overlayHeight / sampleStep));
+  const buckets = buildPartitionBuckets(candidatePoints, PARTITION_BUCKET_SIZE_PX);
+  const partitionCanvas = document.createElement("canvas");
+  partitionCanvas.width = columns;
+  partitionCanvas.height = rows;
+  const partitionContext = partitionCanvas.getContext("2d", { alpha: true });
+  if (!partitionContext) {
+    return;
+  }
+
+  context.save();
+  context.globalAlpha = state.partitionFillAlpha;
+  partitionContext.clearRect(0, 0, columns, rows);
+  for (let row = 0; row < rows; row += 1) {
+    const sampleY = Math.min(overlayHeight - 0.5, (row + 0.5) * sampleStep);
+    for (let column = 0; column < columns; column += 1) {
+      const sampleX = Math.min(overlayWidth - 0.5, (column + 0.5) * sampleStep);
+      if (
+        navigatorBounds &&
+        sampleX >= navigatorBounds.left &&
+        sampleX <= navigatorBounds.right &&
+        sampleY >= navigatorBounds.top &&
+        sampleY <= navigatorBounds.bottom
+      ) {
+        continue;
+      }
+      const sampleImagePoint = screenToImagePoint(sampleX, sampleY);
+      if (
+        !sampleImagePoint ||
+        sampleImagePoint.x < 0 ||
+        sampleImagePoint.x > state.manifest.image_width ||
+        sampleImagePoint.y < 0 ||
+        sampleImagePoint.y > state.manifest.image_height
+      ) {
+        continue;
+      }
+      const nearestPoint = findNearestPartitionPoint(
+        sampleX,
+        sampleY,
+        candidatePoints,
+        buckets,
+        PARTITION_BUCKET_SIZE_PX,
+      );
+      if (!nearestPoint) {
+        continue;
+      }
+      partitionContext.fillStyle = nearestPoint.color;
+      partitionContext.fillRect(column, row, 1, 1);
+    }
+  }
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(partitionCanvas, 0, 0, columns, rows, 0, 0, overlayWidth, overlayHeight);
+  context.restore();
+  if (navigatorBounds) {
+    context.clearRect(
+      navigatorBounds.left,
+      navigatorBounds.top,
+      navigatorBounds.right - navigatorBounds.left,
+      navigatorBounds.bottom - navigatorBounds.top,
+    );
+  }
+}
+
+function getPartitionCandidateScreenPoints(visibleImageBounds, overlayWidth, overlayHeight) {
+  const expandedImageBounds = expandImageRectForScreenMargin(
+    visibleImageBounds,
+    overlayWidth,
+    overlayHeight,
+    PARTITION_VIEW_MARGIN_PX,
+  );
+  const points = [];
+  for (let index = 0; index < state.cells.x.length; index += 1) {
+    if (!state.activeClusterFilters.has(state.cells.dominant_cluster[index])) {
+      continue;
+    }
+    const imageX = state.cells.x[index];
+    const imageY = state.cells.y[index];
+    if (
+      imageX < expandedImageBounds.x ||
+      imageX > expandedImageBounds.x + expandedImageBounds.width ||
+      imageY < expandedImageBounds.y ||
+      imageY > expandedImageBounds.y + expandedImageBounds.height
+    ) {
+      continue;
+    }
+    const point = imageToScreenPoint(state.cells.x[index], state.cells.y[index]);
+    if (!point) {
+      continue;
+    }
+    if (
+      point.x < -PARTITION_VIEW_MARGIN_PX ||
+      point.x > overlayWidth + PARTITION_VIEW_MARGIN_PX ||
+      point.y < -PARTITION_VIEW_MARGIN_PX ||
+      point.y > overlayHeight + PARTITION_VIEW_MARGIN_PX
+    ) {
+      continue;
+    }
+    points.push({
+      x: point.x,
+      y: point.y,
+      color: state.cells.dot_color[index],
+    });
+  }
+  return points;
+}
+
+function expandImageRectForScreenMargin(imageRect, overlayWidth, overlayHeight, screenMarginPx) {
+  const safeOverlayWidth = Math.max(1, overlayWidth);
+  const safeOverlayHeight = Math.max(1, overlayHeight);
+  const imageMarginX = (imageRect.width / safeOverlayWidth) * screenMarginPx;
+  const imageMarginY = (imageRect.height / safeOverlayHeight) * screenMarginPx;
+  const x = clampNumber(imageRect.x - imageMarginX, 0, state.manifest.image_width);
+  const y = clampNumber(imageRect.y - imageMarginY, 0, state.manifest.image_height);
+  const maxX = clampNumber(
+    imageRect.x + imageRect.width + imageMarginX,
+    0,
+    state.manifest.image_width,
+  );
+  const maxY = clampNumber(
+    imageRect.y + imageRect.height + imageMarginY,
+    0,
+    state.manifest.image_height,
+  );
+  return {
+    x,
+    y,
+    width: Math.max(0, maxX - x),
+    height: Math.max(0, maxY - y),
+  };
+}
+
+function buildPartitionBuckets(points, bucketSize) {
+  const buckets = new Map();
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
+    const bucketX = Math.floor(point.x / bucketSize);
+    const bucketY = Math.floor(point.y / bucketSize);
+    const bucketKey = `${bucketX},${bucketY}`;
+    const bucket = buckets.get(bucketKey);
+    if (bucket) {
+      bucket.push(index);
+    } else {
+      buckets.set(bucketKey, [index]);
+    }
+  }
+  return buckets;
+}
+
+function findNearestPartitionPoint(sampleX, sampleY, points, buckets, bucketSize) {
+  const baseBucketX = Math.floor(sampleX / bucketSize);
+  const baseBucketY = Math.floor(sampleY / bucketSize);
+  let bestPoint = null;
+  let bestDistanceSquared = Number.POSITIVE_INFINITY;
+  const maxRing = 64;
+
+  for (let ring = 0; ring <= maxRing; ring += 1) {
+    const minBucketX = baseBucketX - ring;
+    const maxBucketX = baseBucketX + ring;
+    const minBucketY = baseBucketY - ring;
+    const maxBucketY = baseBucketY + ring;
+
+    for (let bucketX = minBucketX; bucketX <= maxBucketX; bucketX += 1) {
+      for (let bucketY = minBucketY; bucketY <= maxBucketY; bucketY += 1) {
+        if (
+          ring > 0 &&
+          bucketX > minBucketX &&
+          bucketX < maxBucketX &&
+          bucketY > minBucketY &&
+          bucketY < maxBucketY
+        ) {
+          continue;
+        }
+        const bucket = buckets.get(`${bucketX},${bucketY}`);
+        if (!bucket) {
+          continue;
+        }
+        for (const pointIndex of bucket) {
+          const point = points[pointIndex];
+          const dx = point.x - sampleX;
+          const dy = point.y - sampleY;
+          const distanceSquared = dx * dx + dy * dy;
+          if (distanceSquared < bestDistanceSquared) {
+            bestDistanceSquared = distanceSquared;
+            bestPoint = point;
+          }
+        }
+      }
+    }
+
+    if (bestPoint) {
+      const maxGuaranteedDistance = Math.max(0, ring) * bucketSize;
+      if (bestDistanceSquared <= maxGuaranteedDistance * maxGuaranteedDistance) {
+        break;
+      }
+    }
+  }
+
+  return bestPoint;
+}
+
+function screenToImagePoint(x, y) {
+  if (
+    !state.viewer ||
+    !state.viewer.viewport ||
+    typeof state.viewer.viewport.viewerElementToImageCoordinates !== "function"
+  ) {
+    return null;
+  }
+
+  const imagePoint = state.viewer.viewport.viewerElementToImageCoordinates(
+    new OpenSeadragon.Point(x, y),
+  );
+  return { x: imagePoint.x, y: imagePoint.y };
 }
 
 function imageToScreenPoint(x, y) {
@@ -1042,10 +1988,40 @@ function getNavigatorControlWrapper() {
   return navigatorControl?.wrapper || navigatorElement.parentElement || null;
 }
 
+function bindNavigatorHoverTracking() {
+  const navigatorWrapper = getNavigatorControlWrapper();
+  if (!navigatorWrapper || navigatorWrapper.dataset.silicaHoverBound === "true") {
+    return;
+  }
+
+  navigatorWrapper.addEventListener("pointerenter", () => {
+    state.navigatorHovered = true;
+    state.navigatorVisible = true;
+    if (state.navigatorHideTimer !== null) {
+      window.clearTimeout(state.navigatorHideTimer);
+      state.navigatorHideTimer = null;
+    }
+    scheduleRedraw();
+  });
+
+  navigatorWrapper.addEventListener("pointerleave", () => {
+    state.navigatorHovered = false;
+    markNavigatorVisible();
+    scheduleRedraw();
+  });
+
+  navigatorWrapper.dataset.silicaHoverBound = "true";
+}
+
 function markNavigatorVisible() {
   state.navigatorVisible = true;
   if (state.navigatorHideTimer !== null) {
     window.clearTimeout(state.navigatorHideTimer);
+    state.navigatorHideTimer = null;
+  }
+
+  if (state.navigatorHovered) {
+    return;
   }
 
   const fadeDelay = Number(state.viewer?.controlsFadeDelay ?? 2000);
@@ -1072,12 +2048,9 @@ function isPointInsideRect(point, rect) {
 }
 
 function updateViewportSummary(visible, viewportCells = visible) {
-  const visibleCount = visible.indices.length;
+  const visibleCount = viewportCells.indices.length;
   document.getElementById("visibleCellCount").textContent =
     formatInteger(visibleCount);
-  document.getElementById("viewportBounds").textContent =
-    `x=${Math.round(visible.bounds.x)} y=${Math.round(visible.bounds.y)} ` +
-    `w=${Math.round(visible.bounds.width)} h=${Math.round(visible.bounds.height)}`;
 
   if (!visibleCount) {
     const meanTumorScoreElement = document.getElementById("meanTumorScore");
@@ -1085,7 +2058,7 @@ function updateViewportSummary(visible, viewportCells = visible) {
     meanTumorScoreElement.style.color = "";
   } else {
     let tumorScoreSum = 0;
-    for (const index of visible.indices) {
+    for (const index of viewportCells.indices) {
       tumorScoreSum += state.cells.tumor_score[index];
     }
 
@@ -1352,10 +2325,12 @@ function dziAssetUrl(relativePath) {
   return slideDziAssetUrl(state.currentSlideKey, relativePath);
 }
 
-function slidePortalAssetUrl(slideKey, relativePath) {
+function slidePortalAssetUrl(slideKey, experimentName, relativePath) {
   return new URL(
     relativePath,
-    `${window.location.origin}${window.SILICA_PORTAL.portalAssetBaseUrl}/${encodeURIComponent(slideKey)}/`,
+    `${window.location.origin}${window.SILICA_PORTAL.portalAssetBaseUrl}/${encodeURIComponent(
+      experimentName,
+    )}/${encodeURIComponent(slideKey)}/`,
   ).toString();
 }
 
