@@ -190,12 +190,15 @@ def _aligned_patch_starts(
     patch_size: int,
     patch_stride: int,
     patch_start: int,
+    tail_global_start: Optional[int] = None,
 ) -> Tuple[int, ...]:
     """Computes patch starts inside a substrip while preserving global alignment.
 
     The returned values are local coordinates inside the current substrip, but
     they correspond to the global patch grid defined by ``patch_start`` and
-    ``patch_stride``.
+    ``patch_stride``. If ``tail_global_start`` is provided and fits in this
+    substrip, that final full-size patch is included even when it is not on the
+    regular grid.
 
     Args:
         window_origin: Global origin of the current substrip.
@@ -203,6 +206,7 @@ def _aligned_patch_starts(
         patch_size: Patch size along one axis.
         patch_stride: Patch stride along one axis.
         patch_start: First global patch origin along one axis.
+        tail_global_start: Optional final patch origin for the full strip axis.
 
     Returns:
         A tuple of local patch start indices within the substrip.
@@ -224,6 +228,13 @@ def _aligned_patch_starts(
     while global_start <= max_global_start:
         starts.append(global_start - window_origin)
         global_start += patch_stride
+    if (
+        tail_global_start is not None
+        and window_origin <= tail_global_start <= max_global_start
+    ):
+        tail_local_start = tail_global_start - window_origin
+        if tail_local_start not in starts:
+            starts.append(tail_local_start)
     return tuple(starts)
 
 
@@ -268,6 +279,7 @@ def generate_paired_strip_patches(
     patch_size: IntOrTuple = 300,
     patch_stride: IntOrTuple = 300,
     patch_start: IntOrTuple = (0, 50),
+    patch_end: IntOrTuple = (0, 50),
     coordinate_offset: IntOrTuple = (0, 0),
     substrip_size: IntOrTuple = 1000,
     register: bool = True,
@@ -284,6 +296,9 @@ def generate_paired_strip_patches(
             pair.
         patch_start: Patch-grid origin within the current strip as an integer
             or ``(y, x)`` pair.
+        patch_end: Excluded trailing margin within the current strip as an
+            integer or ``(y, x)`` pair. Tail patches snap to
+            ``strip_shape - patch_end`` rather than the raw strip edge.
         coordinate_offset: Two-dimensional offset added to the final output
             patch coordinates, given as an integer or ``(y, x)`` pair. This is
             useful when multiple strips need to be placed into a shared global
@@ -311,6 +326,7 @@ def generate_paired_strip_patches(
     patch_height, patch_width = _as_pair(patch_size, "patch_size")
     patch_stride_y, patch_stride_x = _as_pair(patch_stride, "patch_stride")
     patch_start_y, patch_start_x = _as_offset(patch_start, "patch_start")
+    patch_end_y, patch_end_x = _as_offset(patch_end, "patch_end")
     coordinate_offset_y, coordinate_offset_x = _as_offset(
         coordinate_offset,
         "coordinate_offset",
@@ -340,6 +356,13 @@ def generate_paired_strip_patches(
     ), "patch_size cannot be larger than substrip_size."
 
     strip_height, strip_width = ch2_strip.shape
+    usable_strip_height = strip_height - patch_end_y
+    usable_strip_width = strip_width - patch_end_x
+    assert usable_strip_height >= patch_height and usable_strip_width >= patch_width, (
+        "patch_end leaves no room for at least one full patch: "
+        f"strip_shape={ch2_strip.shape}, patch_size={(patch_height, patch_width)}, "
+        f"patch_end={(patch_end_y, patch_end_x)}"
+    )
     substrip_starts_y = _substrip_starts(
         strip_height, substrip_height, substrip_stride_y, substrip_start_y
     )
@@ -388,6 +411,7 @@ def generate_paired_strip_patches(
             patch_height,
             patch_stride_y,
             patch_start_y,
+            tail_global_start=usable_strip_height - patch_height,
         )
         patch_starts_x = _aligned_patch_starts(
             substrip_x,
@@ -395,6 +419,7 @@ def generate_paired_strip_patches(
             patch_width,
             patch_stride_x,
             patch_start_x,
+            tail_global_start=usable_strip_width - patch_width,
         )
 
         for local_y in patch_starts_y:

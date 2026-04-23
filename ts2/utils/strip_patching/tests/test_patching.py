@@ -52,7 +52,9 @@ def test_generate_paired_strip_patches_covers_arbitrary_patch_start(monkeypatch)
         patch_processor=None,
     )
 
-    expected_coords = {(y, x) for y in (900, 1200, 1500, 1800) for x in (0, 300, 600)}
+    expected_coords = {
+        (y, x) for y in (900, 1200, 1500, 1800, 1900) for x in (0, 300, 600)
+    }
     assert _patch_coords(patches) == expected_coords
 
 
@@ -100,3 +102,48 @@ def test_generate_paired_strip_patches_covers_grid_for_long_strip(monkeypatch):
     assert 900 in y_coords
     assert 1800 in y_coords
     assert y_coords == list(range(0, 5701, 300))
+
+
+def test_generate_paired_strip_patches_snaps_tail_patch_to_edge(monkeypatch):
+    pixel_arrays = {
+        "ch2.dcm": np.zeros((4000, 1000), dtype=np.uint16),
+        "ch3.dcm": np.ones((4000, 1000), dtype=np.uint16),
+    }
+    monkeypatch.setattr(sp.pyd, "dcmread", _fake_dcmread_factory(pixel_arrays))
+
+    patches = sp.generate_paired_strip_patches(
+        "ch2.dcm",
+        "ch3.dcm",
+        patch_size=300,
+        patch_stride=300,
+        patch_start=(0, 0),
+        substrip_size=1000,
+        register=False,
+        patch_processor=None,
+    )
+
+    y_coords = sorted({y for y, _ in _patch_coords(patches)})
+    assert y_coords[-2:] == [3600, 3700]
+
+
+def test_generate_paired_strip_patches_respects_trailing_column_margin(monkeypatch):
+    pixel_arrays = {
+        "ch2.dcm": np.zeros((1000, 1000), dtype=np.uint16),
+        "ch3.dcm": np.ones((1000, 1000), dtype=np.uint16),
+    }
+    monkeypatch.setattr(sp.pyd, "dcmread", _fake_dcmread_factory(pixel_arrays))
+
+    patches = sp.generate_paired_strip_patches(
+        "ch2.dcm",
+        "ch3.dcm",
+        patch_size=300,
+        patch_stride=300,
+        patch_start=(0, 50),
+        patch_end=(0, 50),
+        substrip_size=1000,
+        register=False,
+        patch_processor=None,
+    )
+
+    x_coords = sorted({x for _, x in _patch_coords(patches)})
+    assert x_coords == [50, 350, 650]
