@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -26,7 +27,12 @@
   <body>
     <header class="topbar">
       <div class="topbar-inner">
-        <a href="/" class="topbar-brand">Silica</a>
+        <a href="/" class="topbar-brand">
+          <span class="topbar-brand-mark" aria-hidden="true">
+            <img src="/static/logo.png" alt="mlins-logo">
+          </span>
+          <span>Silica</span>
+        </a>
         <div class="topbar-picker">
           <div class="topbar-filter-pill" role="group" aria-label="Portal filters">
             <div class="topbar-filter-segment">
@@ -88,19 +94,55 @@
                   <strong id="totalCellCount">-</strong>
                 </div>
                 <div class="metric-row">
-                  <span class="metric-label">Slide score</span>
-                  <strong id="slideMeanTumorScore">-</strong>
-                </div>
-                <div class="metric-row">
                   <span class="metric-label">Viewport Cells</span>
                   <strong id="visibleCellCount">-</strong>
                 </div>
                 <div class="metric-row">
-                  <span class="metric-label">Viewport score</span>
+                  <span class="metric-label">Soft slide score</span>
+                  <strong id="softSlideTumorScore">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Soft viewport score</span>
                   <strong id="meanTumorScore">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Hard slide score</span>
+                  <strong id="hardSlideTumorScore">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Soft area score</span>
+                  <strong id="areaSlideTumorScore">-</strong>
                 </div>
               </div>
             </section>
+
+            <div class="panel-card image-layer-panel" aria-label="Image layer">
+              <div class="panel-header">
+                <div>
+                  <h2>Layer</h2>
+                </div>
+              </div>
+              <div class="image-layer-pill" role="radiogroup" aria-label="Image layer">
+                <button
+                  type="button"
+                  class="image-layer-button is-active"
+                  data-image-layer="srhvhe"
+                  role="radio"
+                  aria-checked="true"
+                >
+                  SRH-vHE
+                </button>
+                <button
+                  type="button"
+                  class="image-layer-button"
+                  data-image-layer="srhrgb"
+                  role="radio"
+                  aria-checked="false"
+                >
+                  SRH RGB
+                </button>
+              </div>
+            </div>
 
             <section class="panel-card controls-panel">
               <div class="panel-header">
@@ -213,6 +255,10 @@
                   <div class="legend-gradient"></div>
                   <span>Normal</span>
                 </div>
+                <label class="toggle-chip scale-toggle-chip">
+                  <input type="checkbox" id="toggleBinaryDots" />
+                  <span class="toggle-label">Binary dots</span>
+                </label>
               </div>
             </section>
 
@@ -278,6 +324,16 @@
             </section>
           </div>
         </aside>
+
+        <div
+          id="layoutResizeHandle"
+          class="layout-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+        >
+          <div class="layout-resize-pill" aria-hidden="true"></div>
+        </div>
 
         <section class="viewer-panel panel-card">
           <div class="viewer-frame">

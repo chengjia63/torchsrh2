@@ -19,10 +19,8 @@ const state = {
   currentSlideKey: null,
   currentExperiment: null,
   pendingExperiment: null,
-  navigatorVisible: true,
-  navigatorHovered: false,
-  navigatorHideTimer: null,
   topbarStatusHideTimer: null,
+  topbarStatus: "idle",
   pendingViewportState: null,
   redrawPending: false,
   sidebarRedrawPending: false,
@@ -36,6 +34,9 @@ const state = {
   partitionFillAlpha: 0.25,
   activeClusterFilters: new Set(),
   topbarSelectionRevealed: false,
+  activeImageLayer: "srhvhe",
+  pendingImageLayerFallback: null,
+  layoutResizeActive: false,
 };
 
 const TEXT_RENDER_LIMIT = 2200;
@@ -61,6 +62,7 @@ const LEGACY_EXPERIMENT_QUERY_PARAM = "k";
 const DOT_SIZE_QUERY_PARAM = "dot";
 const PARTITION_ALPHA_QUERY_PARAM = "alpha";
 const CLUSTER_QUERY_PARAM = "clusters";
+const IMAGE_LAYER_QUERY_PARAM = "layer";
 const VIEWPORT_X_QUERY_PARAM = "vx";
 const VIEWPORT_Y_QUERY_PARAM = "vy";
 const VIEWPORT_ZOOM_QUERY_PARAM = "vz";
@@ -68,6 +70,31 @@ const DEFAULT_VIEWPORT_CENTER_X = 0.5;
 const DEFAULT_VIEWPORT_CENTER_Y = 0.5;
 const DEFAULT_VIEWPORT_HEIGHT_RATIO = 1.0;
 const VIEWPORT_AUTO_APPLY_DELAY_MS = 220;
+const SIDEBAR_WIDTH_MIN_PERCENT = 18;
+const SIDEBAR_WIDTH_MAX_PERCENT = 55;
+const SIDEBAR_WIDTH_MIN_PX = 280;
+const SLIDE_CELLS_PATH = "cells.json";
+const IMAGE_LAYER_TILE_SOURCES = {
+  srhvhe: "srhvhe.dzi",
+  srhrgb: "srhrgb.dzi",
+};
+const OVERLAY_BOX_STROKE_STYLE = "#ffff00";
+const OVERLAY_TEXT_STROKE_STYLE = "rgb(250 250 249 / 0.92)";
+const OVERLAY_TEXT_FILL_STYLE = "rgb(41 37 36)";
+const SCORE_HISTOGRAM_FILL_STYLE = "rgb(59 130 246)";
+const CLUSTER_HISTOGRAM_FILL_STYLE = "rgb(87 83 78)";
+const CHART_BACKGROUND_STYLE = "rgb(250 250 249)";
+const CHART_GRID_STROKE_STYLE = "rgb(87 83 78 / 0.12)";
+const CHART_AXIS_STROKE_STYLE = "rgb(87 83 78 / 0.28)";
+const CHART_TEXT_FILL_STYLE = "rgb(120 113 108)";
+const TUMOR_SCORE_COLOR_STOPS = [
+  { position: 0, color: [26, 152, 80] },
+  { position: 0.32, color: [217, 239, 139] },
+  { position: 0.58, color: [253, 219, 199] },
+  { position: 0.78, color: [239, 138, 98] },
+  { position: 1, color: [178, 24, 43] },
+];
+const BINARY_DOT_SCORE_THRESHOLD = 0.5;
 const INFILTRATION_LABELS = {
   "0": "Normal (0)",
   "1": "Atypical Cells (1)",
@@ -79,7 +106,7 @@ const INFILTRATION_LABELS = {
 document.addEventListener("DOMContentLoaded", () => {
   void bootstrapPortal().catch((error) => {
     console.error(error);
-    setTopbarStatus("loading");
+    setTopbarStatus("error");
     setViewportEditorStatus(String(error));
   });
 });
@@ -219,14 +246,57 @@ function populateSlideHeader() {
   document.getElementById("totalCellCount").textContent = formatInteger(
     state.cells.cell_count,
   );
-  const slideMeanTumorScore =
-    state.cells.tumor_score.reduce((sum, value) => sum + value, 0) /
-    state.cells.tumor_score.length;
-  const slideMeanTumorScoreElement = document.getElementById("slideMeanTumorScore");
-  slideMeanTumorScoreElement.textContent = `${(
-    slideMeanTumorScore * 100
-  ).toFixed(1)}%`;
-  slideMeanTumorScoreElement.style.color = getTumorScoreColor(slideMeanTumorScore);
+  const slideStatistics = state.manifest?.slide_statistics || {};
+  setSavedPercentMetric(
+    "softSlideTumorScore",
+    slideStatistics.soft_slide_tumor_probability,
+  );
+  setSavedPercentMetric(
+    "hardSlideTumorScore",
+    slideStatistics.hard_slide_tumor_probability,
+  );
+  setSavedPercentMetric(
+    "areaSlideTumorScore",
+    slideStatistics.area_soft_slide_tumor_probability,
+  );
+}
+
+function setPercentMetric(elementId, value) {
+  const element = document.getElementById(elementId);
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    element.textContent = "-";
+    element.style.color = "";
+    return;
+  }
+
+  element.textContent = `${(numericValue * 100).toFixed(1)}%`;
+  element.style.color = getTumorScoreColor(numericValue);
+}
+
+function setSavedPercentMetric(elementId, value) {
+  const element = document.getElementById(elementId);
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    element.textContent = "-";
+    element.style.color = "";
+    return;
+  }
+
+  element.textContent = `${(numericValue * 100).toFixed(1)}%`;
+  element.style.color = getTumorScoreColor(numericValue);
+}
+
+function meanTumorScoreForIndices(indices) {
+  if (!indices.length) {
+    return null;
+  }
+
+  let tumorScoreSum = 0;
+  for (const index of indices) {
+    tumorScoreSum += state.cells.tumor_score[index];
+  }
+  return tumorScoreSum / indices.length;
 }
 
 function getClusterCounts(indices = null) {
@@ -647,6 +717,14 @@ function bindControls() {
       void changeSlide(state.currentSlideKey);
     }
   });
+  document.querySelector(".image-layer-pill").addEventListener("click", (event) => {
+    const button = event.target.closest(".image-layer-button");
+    if (!button) {
+      return;
+    }
+    setActiveImageLayer(button.dataset.imageLayer);
+  });
+  bindLayoutResizeHandle();
   const clusterFilterInput = document.getElementById("clusterFilterInput");
   clusterFilterInput.addEventListener("change", () => {
     applyClusterFilterInputValue();
@@ -720,8 +798,93 @@ function bindControls() {
   updatePartitionAlphaControl(state.partitionFillAlpha);
   window.addEventListener("resize", scheduleRedraw);
   window.addEventListener("resize", () => {
+    updateViewerViewportMargins();
     scheduleSidebarRedraw();
   });
+}
+
+function bindLayoutResizeHandle() {
+  const resizeHandle = document.getElementById("layoutResizeHandle");
+  const layout = document.querySelector(".layout");
+  if (!resizeHandle || !layout) {
+    return;
+  }
+
+  resizeHandle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    state.layoutResizeActive = true;
+    document.body.classList.add("is-resizing-layout");
+    resizeHandle.setPointerCapture(event.pointerId);
+    updateSidebarWidthFromPointer(event.clientX);
+  });
+
+  resizeHandle.addEventListener("pointermove", (event) => {
+    if (!state.layoutResizeActive) {
+      return;
+    }
+    updateSidebarWidthFromPointer(event.clientX);
+  });
+
+  const endResize = (event) => {
+    if (!state.layoutResizeActive) {
+      return;
+    }
+    state.layoutResizeActive = false;
+    document.body.classList.remove("is-resizing-layout");
+    if (resizeHandle.hasPointerCapture(event.pointerId)) {
+      resizeHandle.releasePointerCapture(event.pointerId);
+    }
+    refreshViewerAfterLayoutResize();
+  };
+
+  resizeHandle.addEventListener("pointerup", endResize);
+  resizeHandle.addEventListener("pointercancel", endResize);
+}
+
+function updateSidebarWidthFromPointer(clientX) {
+  const layout = document.querySelector(".layout");
+  if (!layout) {
+    return;
+  }
+
+  const layoutRect = layout.getBoundingClientRect();
+  if (layoutRect.width <= 0) {
+    return;
+  }
+
+  const minPercent = Math.max(
+    SIDEBAR_WIDTH_MIN_PERCENT,
+    (SIDEBAR_WIDTH_MIN_PX / layoutRect.width) * 100,
+  );
+  const rawPercent = ((clientX - layoutRect.left) / layoutRect.width) * 100;
+  const sidebarWidthPercent = clampNumber(
+    rawPercent,
+    minPercent,
+    SIDEBAR_WIDTH_MAX_PERCENT,
+  );
+  document.documentElement.style.setProperty(
+    "--sidebar-width",
+    `${sidebarWidthPercent.toFixed(2)}%`,
+  );
+  refreshViewerAfterLayoutResize();
+}
+
+function refreshViewerAfterLayoutResize() {
+  if (state.viewer?.viewport) {
+    if (
+      typeof state.viewer.viewport.resize === "function" &&
+      typeof state.viewer.viewport.getContainerSize === "function"
+    ) {
+      state.viewer.viewport.resize(state.viewer.viewport.getContainerSize(), true);
+    }
+    state.viewer.viewport.applyConstraints();
+  }
+  scheduleRedraw();
+  scheduleSidebarRedraw();
+  scheduleViewportQuerySync();
 }
 
 function applyFilters(nextFilters) {
@@ -792,12 +955,16 @@ async function changeSlide(slideKey, options = {}) {
 
   if (
     syncEmptyFilters &&
-    !state.activeFilters.diagnosis &&
-    !state.activeFilters.infiltration
+    (!state.activeFilters.diagnosis || !state.activeFilters.infiltration)
   ) {
     state.displayFilters = {
-      diagnosis: slideEntry.diagnosis,
-      infiltration: slideEntry.infiltration,
+      ...state.displayFilters,
+      diagnosis: state.activeFilters.diagnosis
+        ? state.displayFilters.diagnosis
+        : slideEntry.diagnosis,
+      infiltration: state.activeFilters.infiltration
+        ? state.displayFilters.infiltration
+        : slideEntry.infiltration,
     };
     populateFilterSelectors();
   }
@@ -827,7 +994,7 @@ async function changeSlide(slideKey, options = {}) {
       slidePortalAssetUrl(slideKey, resolvedExperiment, "slide_manifest.json"),
     );
     const cells = await fetchJson(
-      slidePortalAssetUrl(slideKey, resolvedExperiment, manifest.cells.path),
+      slidePortalAssetUrl(slideKey, resolvedExperiment, SLIDE_CELLS_PATH),
     );
     if (loadToken !== state.slideLoadToken) {
       return;
@@ -838,6 +1005,7 @@ async function changeSlide(slideKey, options = {}) {
     state.pendingExperiment = null;
     state.manifest = manifest;
     state.cells = cells;
+    syncImageLayerControls();
     state.activeClusterFilters = new Set(getAllClusterIds());
     restorePendingClusterFilterState(preservedClusterFilterState);
     applyPendingClusterFilters();
@@ -853,11 +1021,15 @@ async function changeSlide(slideKey, options = {}) {
         scheduleSidebarRedraw({ immediate: true });
       } else {
         state.pendingViewportState = null;
-        state.viewer.open(
-          slideDziAssetUrl(slideKey, state.manifest.base_layers.color.dzi),
-        );
+        openActiveImageLayer();
       }
     }
+  } catch (error) {
+    if (loadToken === state.slideLoadToken) {
+      setTopbarStatus("error");
+      setViewportEditorStatus(String(error));
+    }
+    throw error;
   } finally {
     if (loadToken === state.slideLoadToken) {
       populateSlideSelector();
@@ -877,12 +1049,16 @@ function syncSlideQuery(slideKey) {
 }
 
 function initializeViewer() {
-  const initialTileSource = dziAssetUrl(state.manifest.base_layers.color.dzi);
+  const initialTileSource = dziAssetUrl(IMAGE_LAYER_TILE_SOURCES[state.activeImageLayer]);
+  const viewportMargins = getViewerViewportMargins();
   state.viewer = OpenSeadragon({
     id: "viewer",
     prefixUrl: window.SILICA_PORTAL.openSeadragonPrefix,
     tileSources: initialTileSource,
     showNavigator: true,
+    navigatorPosition: "BOTTOM_RIGHT",
+    toolbarPosition: "BOTTOM_LEFT",
+    viewportMargins,
     visibilityRatio: 1,
     constrainDuringPan: true,
     animationTime: 0.7,
@@ -891,11 +1067,11 @@ function initializeViewer() {
     maxZoomPixelRatio: 2.5,
     zoomPerScroll: 1.25,
   });
+  attachOverlayCanvasToViewer();
 
   state.viewer.addHandler("open", () => {
+    state.pendingImageLayerFallback = null;
     setTopbarStatus("ready");
-    bindNavigatorHoverTracking();
-    markNavigatorVisible();
     restoreOrInitializeViewportState();
     applyPendingDotRadiusValue();
     syncUiStateQuery();
@@ -903,35 +1079,109 @@ function initializeViewer() {
     scheduleSidebarRedraw({ immediate: true });
   });
   state.viewer.addHandler("open-failed", () => {
-    setTopbarStatus("loading");
+    if (state.pendingImageLayerFallback !== null) {
+      state.activeImageLayer = state.pendingImageLayerFallback;
+      state.pendingImageLayerFallback = null;
+      syncImageLayerControls();
+      openActiveImageLayer();
+      return;
+    }
+    setTopbarStatus("error");
+  });
+  state.viewer.addHandler("tile-load-failed", (event) => {
+    const tileUrl = event?.tile?.url || event?.src || "unknown tile";
+    setTopbarStatus("error");
+    setViewportEditorStatus(`Failed to load DZI tile: ${tileUrl}`);
   });
   state.viewer.addHandler("animation", () => {
-    markNavigatorVisible();
     scheduleRedraw();
     scheduleSidebarRedraw();
     scheduleViewportQuerySync();
   });
   state.viewer.addHandler("resize", () => {
-    markNavigatorVisible();
     scheduleRedraw();
     scheduleSidebarRedraw();
     scheduleViewportQuerySync();
   });
   state.viewer.addHandler("pan", () => {
-    markNavigatorVisible();
     scheduleRedraw();
     scheduleSidebarRedraw();
     scheduleViewportQuerySync();
   });
   state.viewer.addHandler("zoom", () => {
-    markNavigatorVisible();
     scheduleRedraw();
     scheduleSidebarRedraw();
     scheduleViewportQuerySync();
   });
 }
 
+function attachOverlayCanvasToViewer() {
+  const overlayCanvas = document.getElementById("overlayCanvas");
+  const viewerContainer = document.querySelector("#viewer .openseadragon-container");
+  if (!overlayCanvas || !viewerContainer) {
+    throw new Error("Unable to attach overlay canvas to OpenSeadragon viewer");
+  }
+  viewerContainer.appendChild(overlayCanvas);
+}
+
+function getViewerViewportMargins() {
+  return {
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+  };
+}
+
+function updateViewerViewportMargins() {
+  if (!state.viewer) {
+    return;
+  }
+  state.viewer.viewportMargins = getViewerViewportMargins();
+  state.viewer.viewport?.applyConstraints();
+}
+
+function setActiveImageLayer(imageLayer) {
+  if (!Object.prototype.hasOwnProperty.call(IMAGE_LAYER_TILE_SOURCES, imageLayer)) {
+    throw new Error(`Unknown image layer: ${imageLayer}`);
+  }
+  if (state.activeImageLayer === imageLayer) {
+    return;
+  }
+  state.pendingImageLayerFallback = state.activeImageLayer;
+  state.activeImageLayer = imageLayer;
+  syncImageLayerControls();
+  syncUiStateQuery();
+  openActiveImageLayer({ preserveViewport: true });
+}
+
+function syncImageLayerControls() {
+  for (const button of document.querySelectorAll(".image-layer-button")) {
+    const isActive = button.dataset.imageLayer === state.activeImageLayer;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-checked", isActive ? "true" : "false");
+  }
+}
+
+function openActiveImageLayer({ preserveViewport = false } = {}) {
+  if (!state.viewer || !state.currentSlideKey) {
+    return;
+  }
+  if (preserveViewport) {
+    state.pendingViewportState = captureViewportState();
+  }
+  const tileSource = slideDziAssetUrl(
+    state.currentSlideKey,
+    IMAGE_LAYER_TILE_SOURCES[state.activeImageLayer],
+  );
+  setTopbarStatus("loading");
+  state.viewer.open(tileSource);
+}
+
 function setTopbarStatus(status) {
+  if (!["loading", "ready", "error"].includes(status)) {
+    throw new Error(`Unknown topbar status: ${status}`);
+  }
   const statusPill = document.querySelector(".topbar-filter-pill");
   if (!statusPill) {
     return;
@@ -940,11 +1190,14 @@ function setTopbarStatus(status) {
     window.clearTimeout(state.topbarStatusHideTimer);
     state.topbarStatusHideTimer = null;
   }
+  state.topbarStatus = status;
   statusPill.classList.toggle("is-working", status === "loading");
   statusPill.classList.toggle("is-ready", status === "ready");
+  statusPill.classList.toggle("is-error", status === "error");
   if (status === "ready") {
     state.topbarStatusHideTimer = window.setTimeout(() => {
-      statusPill.classList.remove("is-working", "is-ready");
+      statusPill.classList.remove("is-working", "is-ready", "is-error");
+      state.topbarStatus = "idle";
       state.topbarStatusHideTimer = null;
     }, 1000);
   }
@@ -1156,19 +1409,6 @@ function getVisibleImageRect() {
   return { x, y, width, height };
 }
 
-function getCurrentViewWidthRatio() {
-  if (
-    !state.viewer ||
-    !state.manifest ||
-    !state.viewer.world ||
-    state.viewer.world.getItemCount() === 0
-  ) {
-    return 1;
-  }
-  const visibleRect = getVisibleImageRect();
-  return visibleRect.width / state.manifest.image_width;
-}
-
 function getScreenPixelsPerImagePixel() {
   if (
     !state.viewer ||
@@ -1377,6 +1617,7 @@ function getOverlayToggleConfig() {
     { id: "toggleScoreText", key: "score" },
     { id: "toggleClusterText", key: "cluster" },
     { id: "toggleContributionText", key: "contrib" },
+    { id: "toggleBinaryDots", key: "binary" },
   ];
 }
 
@@ -1438,6 +1679,11 @@ function applyUiStateFromQuery() {
     state.pendingClusterFilterIds = clusterIds;
   }
 
+  const imageLayerRaw = searchParams.get(IMAGE_LAYER_QUERY_PARAM);
+  if (Object.prototype.hasOwnProperty.call(IMAGE_LAYER_TILE_SOURCES, imageLayerRaw)) {
+    state.activeImageLayer = imageLayerRaw;
+  }
+
   const viewportXRaw = Number(searchParams.get(VIEWPORT_X_QUERY_PARAM));
   const viewportYRaw = Number(searchParams.get(VIEWPORT_Y_QUERY_PARAM));
   const viewportZoomRaw = Number(searchParams.get(VIEWPORT_ZOOM_QUERY_PARAM));
@@ -1465,6 +1711,7 @@ function syncUiStateQuery(slideKey = state.currentSlideKey) {
     url.searchParams.delete(EXPERIMENT_QUERY_PARAM);
   }
   url.searchParams.delete(LEGACY_EXPERIMENT_QUERY_PARAM);
+  url.searchParams.set(IMAGE_LAYER_QUERY_PARAM, state.activeImageLayer);
 
   const enabledOverlays = getOverlayToggleConfig()
     .filter((overlay) => document.getElementById(overlay.id)?.checked)
@@ -1581,6 +1828,7 @@ function ensureMinimumScreenRectSize(rect, centerPoint, minSize) {
 
 function drawCellOverlay(context, visible) {
   const showDots = document.getElementById("toggleDots").checked;
+  const showBinaryDots = document.getElementById("toggleBinaryDots").checked;
   const showBoxes = document.getElementById("toggleBoxes").checked;
   const showPartitionFill = document.getElementById("togglePartitionFill").checked;
   const showScoreText = document.getElementById("toggleScoreText").checked;
@@ -1588,7 +1836,6 @@ function drawCellOverlay(context, visible) {
   const showContributionText = document.getElementById(
     "toggleContributionText",
   ).checked;
-  const navigatorBounds = getNavigatorOverlayBounds();
   const viewWidthRatio = visible.bounds.width / state.manifest.image_width;
 
   const renderScoreText =
@@ -1611,7 +1858,9 @@ function drawCellOverlay(context, visible) {
   );
 
   if (showPartitionFill) {
-    drawPartitionOverlay(context, navigatorBounds, viewWidthRatio, visible.bounds);
+    drawPartitionOverlay(context, viewWidthRatio, visible.bounds, {
+      useBinaryColors: showBinaryDots,
+    });
   }
 
   context.textAlign = "center";
@@ -1620,20 +1869,21 @@ function drawCellOverlay(context, visible) {
 
   for (const index of visible.indices) {
     const point = imageToScreenPoint(state.cells.x[index], state.cells.y[index]);
-    if (!point || isPointInsideRect(point, navigatorBounds)) {
+    if (!point) {
       continue;
     }
 
     if (showDots) {
+      const dotColor = getDotOverlayColor(index, showBinaryDots);
       context.save();
       context.globalAlpha = 0.5;
       context.beginPath();
-      context.fillStyle = state.cells.dot_color[index];
+      context.fillStyle = dotColor;
       context.arc(point.x, point.y, dotRadius, 0, Math.PI * 2);
       context.fill();
       context.restore();
       context.lineWidth = dotStrokeWidth;
-      context.strokeStyle = state.cells.dot_color[index];
+      context.strokeStyle = dotColor;
       context.stroke();
     }
 
@@ -1650,8 +1900,8 @@ function drawCellOverlay(context, visible) {
           point,
           MIN_SCREEN_BOX_SIZE_PX,
         );
-        context.lineWidth = 1.75;
-        context.strokeStyle = state.cells.dot_color[index];
+        context.lineWidth = 2;
+        context.strokeStyle = OVERLAY_BOX_STROKE_STYLE;
         context.strokeRect(
           visibleBoxRect.x,
           visibleBoxRect.y,
@@ -1677,16 +1927,27 @@ function drawCellOverlay(context, visible) {
 
     for (let lineIndex = 0; lineIndex < textLines.length; lineIndex += 1) {
       const textY = point.y - 12 - lineIndex * 12;
-      context.strokeStyle = "rgba(255, 255, 255, 0.92)";
+      context.strokeStyle = OVERLAY_TEXT_STROKE_STYLE;
       context.lineWidth = 3;
       context.strokeText(textLines[lineIndex], point.x, textY);
-      context.fillStyle = "#292524";
+      context.fillStyle = OVERLAY_TEXT_FILL_STYLE;
       context.fillText(textLines[lineIndex], point.x, textY);
     }
   }
 }
 
-function drawPartitionOverlay(context, navigatorBounds, viewWidthRatio, visibleImageBounds) {
+function getDotOverlayColor(index, useBinaryColors) {
+  if (!useBinaryColors) {
+    return state.cells.dot_color[index];
+  }
+  const tumorScore = Number(state.cells.tumor_score[index]);
+  return getTumorScoreColor(
+    Number.isFinite(tumorScore) && tumorScore >= BINARY_DOT_SCORE_THRESHOLD ? 1 : 0,
+  );
+}
+
+function drawPartitionOverlay(context, viewWidthRatio, visibleImageBounds, options = {}) {
+  const { useBinaryColors = false } = options;
   const overlayCanvas = document.getElementById("overlayCanvas");
   const overlayWidth = overlayCanvas?.getBoundingClientRect().width ?? 0;
   const overlayHeight = overlayCanvas?.getBoundingClientRect().height ?? 0;
@@ -1698,6 +1959,7 @@ function drawPartitionOverlay(context, navigatorBounds, viewWidthRatio, visibleI
     visibleImageBounds,
     overlayWidth,
     overlayHeight,
+    { useBinaryColors },
   );
   if (candidatePoints.length === 0) {
     return;
@@ -1725,15 +1987,6 @@ function drawPartitionOverlay(context, navigatorBounds, viewWidthRatio, visibleI
     const sampleY = Math.min(overlayHeight - 0.5, (row + 0.5) * sampleStep);
     for (let column = 0; column < columns; column += 1) {
       const sampleX = Math.min(overlayWidth - 0.5, (column + 0.5) * sampleStep);
-      if (
-        navigatorBounds &&
-        sampleX >= navigatorBounds.left &&
-        sampleX <= navigatorBounds.right &&
-        sampleY >= navigatorBounds.top &&
-        sampleY <= navigatorBounds.bottom
-      ) {
-        continue;
-      }
       const sampleImagePoint = screenToImagePoint(sampleX, sampleY);
       if (
         !sampleImagePoint ||
@@ -1762,17 +2015,15 @@ function drawPartitionOverlay(context, navigatorBounds, viewWidthRatio, visibleI
   context.imageSmoothingQuality = "high";
   context.drawImage(partitionCanvas, 0, 0, columns, rows, 0, 0, overlayWidth, overlayHeight);
   context.restore();
-  if (navigatorBounds) {
-    context.clearRect(
-      navigatorBounds.left,
-      navigatorBounds.top,
-      navigatorBounds.right - navigatorBounds.left,
-      navigatorBounds.bottom - navigatorBounds.top,
-    );
-  }
 }
 
-function getPartitionCandidateScreenPoints(visibleImageBounds, overlayWidth, overlayHeight) {
+function getPartitionCandidateScreenPoints(
+  visibleImageBounds,
+  overlayWidth,
+  overlayHeight,
+  options = {},
+) {
+  const { useBinaryColors = false } = options;
   const expandedImageBounds = expandImageRectForScreenMargin(
     visibleImageBounds,
     overlayWidth,
@@ -1809,7 +2060,7 @@ function getPartitionCandidateScreenPoints(visibleImageBounds, overlayWidth, ove
     points.push({
       x: point.x,
       y: point.y,
-      color: state.cells.dot_color[index],
+      color: getDotOverlayColor(index, useBinaryColors),
     });
   }
   return points;
@@ -1939,114 +2190,6 @@ function imageToScreenPoint(x, y) {
   return { x: osdPoint.x, y: osdPoint.y };
 }
 
-function getNavigatorOverlayBounds() {
-  if (!state.navigatorVisible) {
-    return null;
-  }
-
-  const navigatorWrapper = getNavigatorControlWrapper();
-  if (!navigatorWrapper) {
-    return null;
-  }
-
-  const wrapperStyle = window.getComputedStyle(navigatorWrapper);
-  const wrapperOpacity = Number.parseFloat(wrapperStyle.opacity || "1");
-  if (
-    wrapperStyle.display === "none" ||
-    wrapperStyle.visibility === "hidden" ||
-    wrapperOpacity < 0.05
-  ) {
-    return null;
-  }
-
-  const navigatorRect = navigatorWrapper.getBoundingClientRect();
-  const overlayRect = document
-    .getElementById("overlayCanvas")
-    ?.getBoundingClientRect();
-  if (!overlayRect || navigatorRect.width <= 0 || navigatorRect.height <= 0) {
-    return null;
-  }
-
-  const padding = 10;
-  return {
-    left: navigatorRect.left - overlayRect.left - padding,
-    top: navigatorRect.top - overlayRect.top - padding,
-    right: navigatorRect.right - overlayRect.left + padding,
-    bottom: navigatorRect.bottom - overlayRect.top + padding,
-  };
-}
-
-function getNavigatorControlWrapper() {
-  if (!state.viewer?.navigator?.element || !Array.isArray(state.viewer.controls)) {
-    return null;
-  }
-
-  const navigatorElement = state.viewer.navigator.element;
-  const navigatorControl = state.viewer.controls.find(
-    (control) => control?.element === navigatorElement,
-  );
-  return navigatorControl?.wrapper || navigatorElement.parentElement || null;
-}
-
-function bindNavigatorHoverTracking() {
-  const navigatorWrapper = getNavigatorControlWrapper();
-  if (!navigatorWrapper || navigatorWrapper.dataset.silicaHoverBound === "true") {
-    return;
-  }
-
-  navigatorWrapper.addEventListener("pointerenter", () => {
-    state.navigatorHovered = true;
-    state.navigatorVisible = true;
-    if (state.navigatorHideTimer !== null) {
-      window.clearTimeout(state.navigatorHideTimer);
-      state.navigatorHideTimer = null;
-    }
-    scheduleRedraw();
-  });
-
-  navigatorWrapper.addEventListener("pointerleave", () => {
-    state.navigatorHovered = false;
-    markNavigatorVisible();
-    scheduleRedraw();
-  });
-
-  navigatorWrapper.dataset.silicaHoverBound = "true";
-}
-
-function markNavigatorVisible() {
-  state.navigatorVisible = true;
-  if (state.navigatorHideTimer !== null) {
-    window.clearTimeout(state.navigatorHideTimer);
-    state.navigatorHideTimer = null;
-  }
-
-  if (state.navigatorHovered) {
-    return;
-  }
-
-  const fadeDelay = Number(state.viewer?.controlsFadeDelay ?? 2000);
-  const fadeLength = Number(state.viewer?.controlsFadeLength ?? 1500);
-  const hideDelayMs = Math.max(0, fadeDelay) + Math.max(0, fadeLength);
-
-  state.navigatorHideTimer = window.setTimeout(() => {
-    state.navigatorVisible = false;
-    state.navigatorHideTimer = null;
-    scheduleRedraw();
-  }, hideDelayMs);
-}
-
-function isPointInsideRect(point, rect) {
-  if (!rect) {
-    return false;
-  }
-  return (
-    point.x >= rect.left &&
-    point.x <= rect.right &&
-    point.y >= rect.top &&
-    point.y <= rect.bottom
-  );
-}
-
 function updateViewportSummary(visible, viewportCells = visible) {
   const visibleCount = viewportCells.indices.length;
   document.getElementById("visibleCellCount").textContent =
@@ -2057,15 +2200,8 @@ function updateViewportSummary(visible, viewportCells = visible) {
     meanTumorScoreElement.textContent = "-";
     meanTumorScoreElement.style.color = "";
   } else {
-    let tumorScoreSum = 0;
-    for (const index of viewportCells.indices) {
-      tumorScoreSum += state.cells.tumor_score[index];
-    }
-
-    const meanTumorScore = tumorScoreSum / visibleCount;
-    const meanTumorScoreElement = document.getElementById("meanTumorScore");
-    meanTumorScoreElement.textContent = `${(meanTumorScore * 100).toFixed(1)}%`;
-    meanTumorScoreElement.style.color = getTumorScoreColor(meanTumorScore);
+    const meanTumorScore = meanTumorScoreForIndices(viewportCells.indices);
+    setPercentMetric("meanTumorScore", meanTumorScore);
   }
 
   const clusterCounts = new Map();
@@ -2093,20 +2229,13 @@ function updateViewportSummary(visible, viewportCells = visible) {
 
 function getTumorScoreColor(tumorScore) {
   const clampedScore = clampNumber(tumorScore, 0, 1);
-  const colorStops = [
-    { position: 0, color: [26, 152, 80] },
-    { position: 0.32, color: [217, 239, 139] },
-    { position: 0.58, color: [253, 219, 199] },
-    { position: 0.78, color: [239, 138, 98] },
-    { position: 1, color: [178, 24, 43] },
-  ];
 
-  let leftStop = colorStops[0];
-  let rightStop = colorStops[colorStops.length - 1];
-  for (let index = 1; index < colorStops.length; index += 1) {
-    if (clampedScore <= colorStops[index].position) {
-      leftStop = colorStops[index - 1];
-      rightStop = colorStops[index];
+  let leftStop = TUMOR_SCORE_COLOR_STOPS[0];
+  let rightStop = TUMOR_SCORE_COLOR_STOPS[TUMOR_SCORE_COLOR_STOPS.length - 1];
+  for (let index = 1; index < TUMOR_SCORE_COLOR_STOPS.length; index += 1) {
+    if (clampedScore <= TUMOR_SCORE_COLOR_STOPS[index].position) {
+      leftStop = TUMOR_SCORE_COLOR_STOPS[index - 1];
+      rightStop = TUMOR_SCORE_COLOR_STOPS[index];
       break;
     }
   }
@@ -2136,7 +2265,7 @@ function drawScoreHistogram(indices) {
     height,
     xTickLabels: histogram.map((bin) => `${Math.round(bin.start * 100)}`),
     values: histogram.map((bin) => bin.count),
-    fillStyle: "#2563eb",
+    fillStyle: SCORE_HISTOGRAM_FILL_STYLE,
     emptyLabel: "No visible cells",
   });
 }
@@ -2159,7 +2288,7 @@ function drawClusterHistogram(indices) {
     height,
     xTickLabels: clusterCounts.map((_, index) => `${index}`),
     values: clusterCounts,
-    fillStyle: "#57534e",
+    fillStyle: CLUSTER_HISTOGRAM_FILL_STYLE,
     emptyLabel: "No visible cells",
   });
 }
@@ -2174,7 +2303,7 @@ function drawBarChart({
   emptyLabel,
 }) {
   context.save();
-  context.fillStyle = "#fafaf9";
+  context.fillStyle = CHART_BACKGROUND_STYLE;
   context.fillRect(0, 0, width, height);
 
   context.font = "11px 'Roboto Mono', monospace";
@@ -2197,7 +2326,7 @@ function drawBarChart({
 
   const yTickCount = maxValue <= 4 ? Math.max(2, maxValue) : 4;
 
-  context.strokeStyle = "rgba(68, 64, 60, 0.12)";
+  context.strokeStyle = CHART_GRID_STROKE_STYLE;
   context.lineWidth = 1;
   for (let tickIndex = 0; tickIndex <= yTickCount; tickIndex += 1) {
     const tickValue = (maxValue * tickIndex) / yTickCount;
@@ -2207,13 +2336,13 @@ function drawBarChart({
     context.lineTo(padding.left + chartWidth, y);
     context.stroke();
 
-    context.fillStyle = "#78716c";
+    context.fillStyle = CHART_TEXT_FILL_STYLE;
     context.textAlign = "right";
     context.textBaseline = "middle";
     context.fillText(formatChartTick(tickValue), padding.left - 6, y);
   }
 
-  context.strokeStyle = "rgba(68, 64, 60, 0.28)";
+  context.strokeStyle = CHART_AXIS_STROKE_STYLE;
   context.lineWidth = 1.2;
   context.beginPath();
   context.moveTo(padding.left, padding.top);
@@ -2222,7 +2351,7 @@ function drawBarChart({
   context.stroke();
 
   if (maxValue === 0) {
-    context.fillStyle = "#78716c";
+    context.fillStyle = CHART_TEXT_FILL_STYLE;
     context.font = "500 13px Roboto, sans-serif";
     context.textAlign = "left";
     context.textBaseline = "middle";
@@ -2249,7 +2378,7 @@ function drawBarChart({
     context.fillRect(x, y, barWidth, barHeight);
   }
 
-  context.fillStyle = "#78716c";
+  context.fillStyle = CHART_TEXT_FILL_STYLE;
   context.font = "11px 'Roboto Mono', monospace";
   context.textAlign = "center";
   context.textBaseline = "top";

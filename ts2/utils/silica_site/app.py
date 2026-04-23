@@ -99,7 +99,7 @@ def _resolve_slide_dzi_dir(
             (
                 path
                 for path in candidate_dirs
-                if path.is_dir() and (path / "color.dzi").is_file()
+                if path.is_dir() and (path / "srhvhe.dzi").is_file()
             ),
             None,
         )
@@ -111,9 +111,12 @@ def _resolve_slide_dzi_dir(
         )
         return dzi_dir.resolve()
 
-    sibling_dzi_dir = portal_dir.parent / "dzi"
-    if sibling_dzi_dir.is_dir():
-        return sibling_dzi_dir.resolve()
+    local_dzi_dir = portal_dir / "dzi"
+    if local_dzi_dir.is_dir():
+        return local_dzi_dir.resolve()
+    old_layout_dzi_dir = portal_dir.parent / "dzi"
+    if old_layout_dzi_dir.is_dir():
+        return old_layout_dzi_dir.resolve()
     return portal_dir.resolve()
 
 
@@ -172,7 +175,7 @@ def _discover_slide_portals_for_root(
         assert candidate_portals, (
             "No slide portal directories were found under "
             f"{root}. Expected either a direct portal directory with "
-            "slide_manifest.json or child directories that contain portal/slide_manifest.json."
+            "slide_manifest.json or child slide directories with slide_manifest.json."
         )
         slide_entries = [
             _make_slide_entry(
@@ -401,7 +404,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Either a single portal directory containing slide_manifest.json, a "
             "parent directory whose child slide folders each contain "
-            "portal/slide_manifest.json, or a multi-experiment root whose child "
+            "slide_manifest.json, or a multi-experiment root whose child "
             "directories each contain one of those layouts."
         ),
     )
