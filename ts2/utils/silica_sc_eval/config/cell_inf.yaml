@@ -1,6 +1,7 @@
 infra:
   out_root: /scratch/tocho_root/tocho0/chengjia/silica/b1a0cbe3_k32
   static_infra_out_root: /scratch/tocho_root/tocho0/chengjia/silica/common
+  portal_out_root: /scratch/tocho_root/tocho0/chengjia/silica/b1a0cbe3_k32_portal
   device: cuda
   num_mosaic_per_task: 234
   cache_stages: "PCRG"  # Patch, Celldet, Repr, Gmm, Viz

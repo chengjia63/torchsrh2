@@ -1,9 +1,10 @@
 infra:
-  out_root: ./debug_out_1024
+  out_root: /scratch/tocho_root/tocho0/chengjia/silica/b1a0cbe3_k1024
   static_infra_out_root: /scratch/tocho_root/tocho0/chengjia/silica/common
+  portal_out_root: ./site_res/debug_out_1024
   device: cuda
   #num_mosaic_per_task: 20
-  cache_stages: "PCR"  # Patch, Celldet, Repr, Gmm, Viz
+  cache_stages: ""  # Patch, Celldet, Repr, Gmm, Viz
 cell_detection:
   ckpt_path: /nfs/turbo/umms-tocho-snr/exp/chengjia/ds_reretrain/1e4/439971b1_Apr30-17-27-52_sd1000_ALLDATA_/models/ckpt-epoch19-step5500-loss0.00.ckpt
 
@@ -40,7 +41,7 @@ silica:
 
 gmm:
   #gmm_ckpt: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_sc_eval/srhumglioma2m_b1a0cbe3
-  gmm_ckpt: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_sc_eval/srhumglioma2m_largek_b1a0cbe3
+  gmm_ckpt: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_sc_eval/gmm_models/srhumglioma2m_largek_b1a0cbe3
   k: 1024
   negative_label: normal
   zero_components: []
@@ -51,8 +52,6 @@ gmm:
 data:
   data_root: /nfs/turbo/umms-tocho/data/db_nio_mouse/mouse # /nfs/turbo/umms-tocho/root_srh_db/UM #
   mosaic_runs:
-  #- NIO_UM_937b/4
-  #- NIO_UM_950/3
   - nio_mouse_1/1
   - nio_mouse_1/10
   - nio_mouse_1/11

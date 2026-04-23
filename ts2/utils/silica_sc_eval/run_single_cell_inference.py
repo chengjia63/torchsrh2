@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import os
 import glob
@@ -19,7 +20,10 @@ from ts2.utils.ds_inf.inference import (
 )
 from ts2.utils.silica_sc_eval.generate_gmm_visualization import generate_visualization
 from ts2.utils.silica_sc_eval.gmm_inference import instantiate_gmm, run_gmm_inference
-from ts2.utils.silica_sc_eval.portal_assets import export_slide_portal_assets
+from ts2.utils.silica_sc_eval.portal_assets import (
+    build_slide_statistics,
+    export_slide_portal_assets,
+)
 from ts2.utils.ds_inf.model import get_model
 from ts2.utils.srh_viz import prepare_two_channel_viz_image
 from ts2.utils.strip_patching.patching import generate_paired_strip_patches_from_lists
@@ -202,6 +206,143 @@ def _patch_dict_to_batch(
     return images, patch_names
 
 
+def _patch_canvas_shape(patch_dict: Dict[str, np.ndarray]) -> tuple[int, int]:
+    assert patch_dict, "Patch dictionary is empty; cannot infer patch canvas shape."
+    max_bottom = 0
+    max_right = 0
+    for patch_name, patch_array in patch_dict.items():
+        _, top, left = _parse_patch_metadata(patch_name)
+        patch_height, patch_width = np.asarray(patch_array).shape[:2]
+        max_bottom = max(max_bottom, top + patch_height)
+        max_right = max(max_right, left + patch_width)
+
+    assert max_bottom > 0 and max_right > 0, (
+        "Invalid patch canvas shape inferred from patch dictionary: "
+        f"{(max_bottom, max_right)}"
+    )
+    return max_bottom, max_right
+
+
+def _write_patch_canvas_shape(
+    patch_canvas_shape_path: str,
+    patch_canvas_shape: tuple[int, int],
+) -> None:
+    height, width = patch_canvas_shape
+    with open(patch_canvas_shape_path, "w", encoding="utf-8") as fd:
+        json.dump(
+            {
+                "height": int(height),
+                "width": int(width),
+            },
+            fd,
+            indent=2,
+            sort_keys=True,
+        )
+    assert os.path.exists(
+        patch_canvas_shape_path
+    ), f"Failed to write patch canvas shape: {patch_canvas_shape_path}"
+
+
+def _load_patch_canvas_shape(patch_canvas_shape_path: str) -> tuple[int, int]:
+    with open(patch_canvas_shape_path, "r", encoding="utf-8") as fd:
+        shape = json.load(fd)
+    assert isinstance(
+        shape,
+        dict,
+    ), f"Expected patch canvas shape JSON object: {patch_canvas_shape_path}"
+    assert "height" in shape and "width" in shape, (
+        "Patch canvas shape JSON must contain `height` and `width`: "
+        f"{patch_canvas_shape_path}"
+    )
+    height = int(shape["height"])
+    width = int(shape["width"])
+    assert height > 0 and width > 0, (
+        f"Invalid patch canvas shape loaded from {patch_canvas_shape_path}: "
+        f"{(height, width)}"
+    )
+    return height, width
+
+
+def _build_patch_valid_regions(
+    patch_dict: Dict[str, np.ndarray],
+) -> dict[str, dict[str, int]]:
+    assert patch_dict, "Patch dictionary is empty; cannot infer patch valid regions."
+
+    patch_metadata = {}
+    strip_axis_starts = {}
+    for patch_name, patch_array in patch_dict.items():
+        strip_index, top, left = _parse_patch_metadata(patch_name)
+        patch_height, patch_width = np.asarray(patch_array).shape[:2]
+        patch_metadata[patch_name] = {
+            "strip_index": strip_index,
+            "top": top,
+            "left": left,
+            "height": patch_height,
+            "width": patch_width,
+        }
+        starts = strip_axis_starts.setdefault(strip_index, {"y": set(), "x": set()})
+        starts["y"].add(top)
+        starts["x"].add(left)
+
+    sorted_axis_starts = {
+        strip_index: {
+            "y": sorted(axis_starts["y"]),
+            "x": sorted(axis_starts["x"]),
+        }
+        for strip_index, axis_starts in strip_axis_starts.items()
+    }
+
+    valid_regions = {}
+    for patch_name, metadata in patch_metadata.items():
+        axis_starts = sorted_axis_starts[metadata["strip_index"]]
+        y_starts = axis_starts["y"]
+        y_index = y_starts.index(metadata["top"])
+        previous_top = y_starts[y_index - 1] if y_index > 0 else None
+
+        valid_top = 0
+        if previous_top is not None:
+            valid_top = max(0, previous_top + metadata["height"] - metadata["top"])
+
+        assert valid_top < metadata["height"], (
+            "Invalid patch valid region inferred for "
+            f"{patch_name}: top={valid_top}, "
+            f"shape={(metadata['height'], metadata['width'])}"
+        )
+        valid_regions[patch_name] = {
+            "valid_top": int(valid_top),
+            "valid_left": 0,
+            "valid_bottom": int(metadata["height"]),
+            "valid_right": int(metadata["width"]),
+            "overlap_top": int(valid_top),
+            "overlap_left": 0,
+        }
+
+    return valid_regions
+
+
+def _write_patch_valid_regions(
+    patch_valid_regions_path: str,
+    patch_valid_regions: dict[str, dict[str, int]],
+) -> None:
+    with open(patch_valid_regions_path, "w", encoding="utf-8") as fd:
+        json.dump(patch_valid_regions, fd, indent=2, sort_keys=True)
+    assert os.path.exists(
+        patch_valid_regions_path
+    ), f"Failed to write patch valid regions: {patch_valid_regions_path}"
+
+
+def _load_patch_valid_regions(
+    patch_valid_regions_path: str,
+) -> dict[str, dict[str, int]]:
+    with open(patch_valid_regions_path, "r", encoding="utf-8") as fd:
+        patch_valid_regions = json.load(fd)
+    assert isinstance(patch_valid_regions, dict), (
+        "Expected patch valid regions JSON object: "
+        f"{patch_valid_regions_path}"
+    )
+    return patch_valid_regions
+
+
 def _parse_patch_metadata(patch_name: str) -> Tuple[Optional[int], int, int]:
     prefix, coords = patch_name.rsplit("-", 1)
     top_str, left_str = coords.split("_", 1)
@@ -232,6 +373,42 @@ def _add_global_coordinates(results: pd.DataFrame) -> pd.DataFrame:
     results["global_centroid_r"] = results["patch_top"] + results["centroid_r"]
     results["global_centroid_c"] = results["patch_left"] + results["centroid_c"]
     return results
+
+
+def _filter_detections_to_patch_valid_regions(
+    results: pd.DataFrame,
+    patch_valid_regions: dict[str, dict[str, int]],
+) -> tuple[pd.DataFrame, int]:
+    if results.empty:
+        return results, 0
+
+    required_columns = {"patch", "centroid_r", "centroid_c"}
+    missing_columns = required_columns.difference(results.columns)
+    assert not missing_columns, (
+        "Cannot filter detections to patch valid regions because detection results "
+        f"are missing columns: {sorted(missing_columns)}"
+    )
+
+    keep_mask = pd.Series(True, index=results.index)
+    for patch_name, row_indices in results.groupby("patch", sort=False).groups.items():
+        assert patch_name in patch_valid_regions, (
+            f"Detection results reference patch missing from valid-region metadata: "
+            f"{patch_name}"
+        )
+        valid_region = patch_valid_regions[patch_name]
+        centroid_r = results.loc[row_indices, "centroid_r"].astype(float)
+        centroid_c = results.loc[row_indices, "centroid_c"].astype(float)
+        patch_keep_mask = (
+            (centroid_r >= float(valid_region["valid_top"]))
+            & (centroid_r < float(valid_region["valid_bottom"]))
+            & (centroid_c >= float(valid_region["valid_left"]))
+            & (centroid_c < float(valid_region["valid_right"]))
+        )
+        keep_mask.loc[row_indices] = patch_keep_mask
+
+    filtered = results.loc[keep_mask.to_numpy()].copy()
+    dropped_count = len(results) - len(filtered)
+    return filtered, dropped_count
 
 
 def _representation_path_from_detection_row(row) -> str:
@@ -308,23 +485,26 @@ def resolve_mosaic_output_dirs(
     mosaic_run: dict,
     out_root: str,
     static_infra_out_root: str,
+    portal_out_root: str,
     viz_candidate_name: str,
 ) -> dict[str, str]:
     assert out_root, "Expected a non-empty out_root."
     assert static_infra_out_root, "Expected a non-empty static_infra_out_root."
+    assert portal_out_root, "Expected a non-empty portal_out_root."
 
     output_dir = mosaic_run.get("output_dir", os.path.join(out_root, viz_candidate_name))
     static_output_dir = mosaic_run.get(
         "static_output_dir",
         os.path.join(static_infra_out_root, viz_candidate_name),
     )
-    portal_dir = os.path.join(output_dir, "portal")
-    dzi_dir = os.path.join(output_dir, "dzi")
+    portal_dir = mosaic_run.get(
+        "portal_dir",
+        os.path.join(portal_out_root, viz_candidate_name, "portal"),
+    )
     return {
         "output_dir": output_dir,
         "static_output_dir": static_output_dir,
         "portal_dir": portal_dir,
-        "dzi_dir": dzi_dir,
     }
 
 
@@ -343,22 +523,18 @@ def _normalize_cache_stages(cache_stages: str) -> set[str]:
 def _can_use_cache(
     cache_stages: str,
     stage: str,
-    artifact_paths,
 ) -> bool:
     stage = str(stage).upper()
     assert stage in {"P", "C", "R", "G", "V"}, f"Unexpected cache stage: {stage}"
-    paths = (
-        [artifact_paths] if isinstance(artifact_paths, str) else list(artifact_paths)
-    )
-    assert paths, f"No artifact paths were provided for cache stage {stage}."
     enabled_stages = _normalize_cache_stages(cache_stages)
-    return stage in enabled_stages and all(os.path.exists(path) for path in paths)
+    return stage in enabled_stages
 
 
 def save_cell_prediction_visualization(
     patch_dict: Dict[str, np.ndarray],
     cell_predictions: pd.DataFrame,
     output_path: str,
+    patch_valid_regions: dict[str, dict[str, int]],
     outline_color: Tuple[int, int, int] = (255, 255, 0),
     outline_width: int = 2,
 ) -> np.ndarray:
@@ -370,16 +546,44 @@ def save_cell_prediction_visualization(
     max_right = 0
 
     for patch_name, patch_array in patch_dict.items():
+        assert patch_name in patch_valid_regions, (
+            f"Patch missing from valid-region metadata during visualization: {patch_name}"
+        )
         coord_str = patch_name.rsplit("-", 1)[1]
         y_str, x_str = coord_str.split("_", 1)
         top = int(y_str)
         left = int(x_str)
         viz_patch = prepare_two_channel_viz_image(torch.as_tensor(patch_array).float())
         patch_height, patch_width, _ = viz_patch.shape
+        valid_region = patch_valid_regions[patch_name]
+        valid_top = int(valid_region["valid_top"])
+        valid_left = int(valid_region["valid_left"])
+        valid_bottom = int(valid_region["valid_bottom"])
+        valid_right = int(valid_region["valid_right"])
+        assert 0 <= valid_top < valid_bottom <= patch_height, (
+            f"Invalid vertical valid region for {patch_name}: "
+            f"{(valid_top, valid_bottom)} with patch height {patch_height}"
+        )
+        assert 0 <= valid_left < valid_right <= patch_width, (
+            f"Invalid horizontal valid region for {patch_name}: "
+            f"{(valid_left, valid_right)} with patch width {patch_width}"
+        )
 
-        patch_items.append((top, left, viz_patch.numpy().astype(np.float32)))
-        max_bottom = max(max_bottom, top + patch_height)
-        max_right = max(max_right, left + patch_width)
+        valid_patch = viz_patch[
+            valid_top:valid_bottom,
+            valid_left:valid_right,
+        ]
+        valid_canvas_top = top + valid_top
+        valid_canvas_left = left + valid_left
+        patch_items.append(
+            (
+                valid_canvas_top,
+                valid_canvas_left,
+                valid_patch.numpy().astype(np.float32),
+            )
+        )
+        max_bottom = max(max_bottom, valid_canvas_top + valid_patch.shape[0])
+        max_right = max(max_right, valid_canvas_left + valid_patch.shape[1])
 
     assert patch_items, "No patch items were available for visualization stitching."
 
@@ -594,12 +798,12 @@ def run_single_mosaic_pipeline(
         mosaic_run=mosaic_run,
         out_root=cf.infra.out_root,
         static_infra_out_root=cf.infra.static_infra_out_root,
+        portal_out_root=cf.infra.portal_out_root,
         viz_candidate_name=viz_candidate_name,
     )
     output_dir = output_dirs["output_dir"]
     static_output_dir = output_dirs["static_output_dir"]
     portal_dir = output_dirs["portal_dir"]
-    dzi_dir = output_dirs["dzi_dir"]
 
     assert ch2_dicom_paths, f"No CH2 DICOM paths provided for {viz_candidate_name}."
     assert ch3_dicom_paths, f"No CH3 DICOM paths provided for {viz_candidate_name}."
@@ -626,11 +830,20 @@ def run_single_mosaic_pipeline(
     patch_dict_path = os.path.join(
         static_output_dir, f"{artifact_prefix}generated_patches.pt"
     )
+    patch_canvas_shape_path = os.path.join(
+        static_output_dir, f"{artifact_prefix}patch_canvas_shape.json"
+    )
+    patch_valid_regions_path = os.path.join(
+        static_output_dir, f"{artifact_prefix}patch_valid_regions.json"
+    )
     detected_cells_csv_path = os.path.join(
         static_output_dir, f"{artifact_prefix}detected_cells.csv"
     )
     cell_predictions_image_path = os.path.join(
         static_output_dir, f"{artifact_prefix}cell_predictions.png"
+    )
+    srhrgb_image_path = os.path.join(
+        static_output_dir, f"{artifact_prefix}srhrgb.png"
     )
     cell_representations_path = os.path.join(
         output_dir, f"{artifact_prefix}cell_representations.pt"
@@ -638,32 +851,20 @@ def run_single_mosaic_pipeline(
     gmm_predictions_csv_path = os.path.join(
         output_dir, f"{artifact_prefix}cell_gmm_predictions.csv"
     )
-    gmm_overlay_path = os.path.join(output_dir, f"{viz_candidate_name}.png")
-    gmm_sharpened_overlay_path = os.path.join(
-        output_dir, f"{viz_candidate_name}-sharpened.png"
+    slide_statistics_path = os.path.join(
+        output_dir, f"{artifact_prefix}slide_statistics.json"
     )
-    gmm_score_overlay_path = os.path.join(output_dir, f"{viz_candidate_name}-score.png")
-    gmm_mixture_overlay_path = os.path.join(
-        output_dir, f"{viz_candidate_name}-mixture.png"
-    )
-    gmm_cluster_pct_pdf_path = os.path.join(
-        output_dir, f"{viz_candidate_name}-cluster-pct.pdf"
-    )
-    gmm_cluster_pct_png_path = os.path.join(
-        output_dir, f"{viz_candidate_name}-cluster-pct.png"
-    )
-    gmm_hist_path = os.path.join(output_dir, f"{viz_candidate_name}-hist.pdf")
-    portal_manifest_path = os.path.join(portal_dir, "slide_manifest.json")
-    portal_cells_path = os.path.join(portal_dir, "cells.json")
 
     logger.info("[%s] Begin step 1: generate strip patches", viz_candidate_name)
-    if _can_use_cache(cf.infra.cache_stages, "P", patch_dict_path):
+    if _can_use_cache(cf.infra.cache_stages, "P"):
         logger.info(
             "[%s] Loading cached patches from %s",
             viz_candidate_name,
             patch_dict_path,
         )
         patch_dict = torch.load(patch_dict_path, weights_only=False)
+        patch_canvas_shape = _load_patch_canvas_shape(patch_canvas_shape_path)
+        patch_valid_regions = _load_patch_valid_regions(patch_valid_regions_path)
     else:
         patch_dict = generate_paired_strip_patches_from_lists(
             ch2_dicom_paths=ch2_dicom_paths,
@@ -671,19 +872,34 @@ def run_single_mosaic_pipeline(
         )
         assert patch_dict, "Patch generation returned no patches."
         torch.save(patch_dict, patch_dict_path)
-        assert os.path.exists(
-            patch_dict_path
-        ), f"Expected generated patches at {patch_dict_path}"
+
+        patch_canvas_shape = _patch_canvas_shape(patch_dict)
+        _write_patch_canvas_shape(
+            patch_canvas_shape_path=patch_canvas_shape_path,
+            patch_canvas_shape=patch_canvas_shape,
+        )
+        patch_valid_regions = _build_patch_valid_regions(patch_dict)
+        _write_patch_valid_regions(
+            patch_valid_regions_path=patch_valid_regions_path,
+            patch_valid_regions=patch_valid_regions,
+        )
+
     assert patch_dict, "Patch dictionary is empty after step 1."
+    assert set(patch_dict) == set(patch_valid_regions), (
+        "Patch valid-region metadata does not match generated patch names. "
+        f"patches={len(patch_dict)}, valid_regions={len(patch_valid_regions)}"
+    )
+    logger.info(
+        "[%s] Patch canvas shape is height=%d, width=%d",
+        viz_candidate_name,
+        patch_canvas_shape[0],
+        patch_canvas_shape[1],
+    )
     images, patch_names = _patch_dict_to_batch(patch_dict)
     logger.info("[%s] End step 1: generate strip patches", viz_candidate_name)
 
     logger.info("[%s] Begin step 2: run cell detection inference", viz_candidate_name)
-    if _can_use_cache(
-        cf.infra.cache_stages,
-        "C",
-        [detected_cells_csv_path, cell_predictions_image_path],
-    ):
+    if _can_use_cache(cf.infra.cache_stages, "C"):
         logger.info(
             "[%s] Loading cached detection outputs from %s and %s",
             viz_candidate_name,
@@ -707,6 +923,26 @@ def run_single_mosaic_pipeline(
             len(results),
         )
         results = _add_global_coordinates(results)
+        results, dropped_overlap_cells = _filter_detections_to_patch_valid_regions(
+            results=results,
+            patch_valid_regions=patch_valid_regions,
+        )
+        if dropped_overlap_cells > 0:
+            logger.info(
+                "[%s] Removed %d detections from patch overlap regions",
+                viz_candidate_name,
+                dropped_overlap_cells,
+            )
+
+        results, dropped_duplicate_repr_cells = _drop_duplicate_representation_cells(results)
+        if dropped_duplicate_repr_cells > 0:
+            logger.info(
+                "[%s] Removed %d duplicate detected cells before representation inference",
+                viz_candidate_name,
+                dropped_duplicate_repr_cells,
+            )
+
+
         results.to_csv(detected_cells_csv_path, index=False)
         logger.info(
             "[%s] Saving cell detection visualization to %s",
@@ -717,49 +953,57 @@ def run_single_mosaic_pipeline(
             patch_dict=patch_dict,
             cell_predictions=results,
             output_path=cell_predictions_image_path,
+            patch_valid_regions=patch_valid_regions,
         )
 
-    results, dropped_duplicate_repr_cells = _drop_duplicate_representation_cells(results)
-    if dropped_duplicate_repr_cells > 0:
-        logger.info(
-            "[%s] Removed %d duplicate detected cells before representation inference",
-            viz_candidate_name,
-            dropped_duplicate_repr_cells,
-        )
-        results.to_csv(detected_cells_csv_path, index=False)
-        logger.info(
-            "[%s] Refreshing cell detection visualization after deduplication at %s",
-            viz_candidate_name,
-            cell_predictions_image_path,
-        )
-        save_cell_prediction_visualization(
-            patch_dict=patch_dict,
-            cell_predictions=results,
-            output_path=cell_predictions_image_path,
-        )
+        save_cell_prediction_visualization(    patch_dict=patch_dict,    cell_predictions=pd.DataFrame([]),    output_path=srhrgb_image_path,    patch_valid_regions=patch_valid_regions,)
+
+    #results, dropped_overlap_cells = _filter_detections_to_patch_valid_regions(
+    #    results=results,
+    #    patch_valid_regions=patch_valid_regions,
+    #)
+    #if dropped_overlap_cells > 0:
+    #    logger.info(
+    #        "[%s] Removed %d cached detections from patch overlap regions",
+    #        viz_candidate_name,
+    #        dropped_overlap_cells,
+    #    )
+    #    results.to_csv(detected_cells_csv_path, index=False)
+    #    save_cell_prediction_visualization(
+    #        patch_dict=patch_dict,
+    #        cell_predictions=results,
+    #        output_path=cell_predictions_image_path,
+    #        patch_valid_regions=patch_valid_regions,
+    #    )
+
+    #results, dropped_duplicate_repr_cells = _drop_duplicate_representation_cells(results)
+    #if dropped_duplicate_repr_cells > 0:
+    #    logger.info(
+    #        "[%s] Removed %d duplicate detected cells before representation inference",
+    #        viz_candidate_name,
+    #        dropped_duplicate_repr_cells,
+    #    )
+    #    results.to_csv(detected_cells_csv_path, index=False)
+    #    logger.info(
+    #        "[%s] Refreshing cell detection visualization after deduplication at %s",
+    #        viz_candidate_name,
+    #        cell_predictions_image_path,
+    #    )
+    #    save_cell_prediction_visualization(
+    #        patch_dict=patch_dict,
+    #        cell_predictions=results,
+    #        output_path=cell_predictions_image_path,
+    #        patch_valid_regions=patch_valid_regions,
+    #    )
 
     assert not results.empty, "Detection results are empty after step 2."
-    required_columns = {
-        "patch",
-        "celltype",
-        "score",
-        "centroid_r",
-        "centroid_c",
-        "bbox_w",
-        "bbox_h",
-    }
-    missing_columns = required_columns.difference(results.columns)
-    assert (
-        not missing_columns
-    ), f"Missing expected detection columns: {sorted(missing_columns)}"
-
     logger.info("[%s] End step 2: run cell detection inference", viz_candidate_name)
 
     logger.info(
         "[%s] Begin step 3: run cell representation inference", viz_candidate_name
     )
     use_repr_cache = (
-        _can_use_cache(cf.infra.cache_stages, "R", cell_representations_path)
+        _can_use_cache(cf.infra.cache_stages, "R")
         and dropped_duplicate_repr_cells == 0
     )
     if use_repr_cache:
@@ -792,18 +1036,24 @@ def run_single_mosaic_pipeline(
         "[%s] End step 3: run cell representation inference", viz_candidate_name
     )
 
-    logger.info("[%s] Begin step 4: run GMM inference", viz_candidate_name)
+    logger.info(
+        "[%s] Begin step 4: run GMM inference and compute slide statistics",
+        viz_candidate_name,
+    )
     use_gmm_cache = (
-        _can_use_cache(cf.infra.cache_stages, "G", gmm_predictions_csv_path)
+        _can_use_cache(cf.infra.cache_stages, "G")
         and dropped_duplicate_repr_cells == 0
     )
     if use_gmm_cache:
         logger.info(
-            "[%s] Loading cached GMM predictions from %s",
+            "[%s] Loading cached GMM predictions from %s and slide statistics from %s",
             viz_candidate_name,
             gmm_predictions_csv_path,
+            slide_statistics_path,
         )
         gmm_predictions = pd.read_csv(gmm_predictions_csv_path)
+        with open(slide_statistics_path, "r", encoding="utf-8") as fd:
+            slide_statistics = json.load(fd)
     else:
         if dropped_duplicate_repr_cells > 0 and os.path.exists(gmm_predictions_csv_path):
             logger.info(
@@ -818,43 +1068,43 @@ def run_single_mosaic_pipeline(
             point_hard=cf.gmm.point_hard,
         )
         gmm_predictions.to_csv(gmm_predictions_csv_path, index=False)
+        slide_statistics = build_slide_statistics(
+            gmm_predictions=gmm_predictions,
+            image_shape=patch_canvas_shape,
+        )
+        with open(slide_statistics_path, "w", encoding="utf-8") as fd:
+            json.dump(slide_statistics, fd, indent=2, sort_keys=True)
+        assert os.path.exists(
+            slide_statistics_path
+        ), f"Failed to write slide statistics: {slide_statistics_path}"
+        logger.info(
+            "[%s] Wrote slide statistics to %s",
+            viz_candidate_name,
+            slide_statistics_path,
+        )
     assert not gmm_predictions.empty, "GMM predictions are empty after step 4."
     logger.info("[%s] Generated GMM predictions", viz_candidate_name)
-    logger.info("[%s] End step 4: run GMM inference", viz_candidate_name)
+    logger.info(
+        "[%s] End step 4: run GMM inference and compute slide statistics",
+        viz_candidate_name,
+    )
 
-    logger.info("[%s] Begin step 5: render GMM visualizations", viz_candidate_name)
-    use_viz_cache = (
-        _can_use_cache(
-            cf.infra.cache_stages,
-            "V",
-            [
-                gmm_overlay_path,
-                gmm_sharpened_overlay_path,
-                gmm_score_overlay_path,
-                gmm_mixture_overlay_path,
-                gmm_cluster_pct_pdf_path,
-                gmm_cluster_pct_png_path,
-                gmm_hist_path,
-            ],
-        )
-        and dropped_duplicate_repr_cells == 0
+    logger.info(
+        "[%s] Begin step 5: render GMM visualizations and export portal metadata",
+        viz_candidate_name,
+    )
+    use_viz_cache = _can_use_cache(cf.infra.cache_stages, "V") and (
+        dropped_duplicate_repr_cells == 0
     )
     if use_viz_cache:
         logger.info(
-            "[%s] Using cached GMM visualization outputs at %s, %s, %s, %s, %s, %s, and %s",
+            "[%s] Using cached GMM visualization and portal metadata outputs",
             viz_candidate_name,
-            gmm_overlay_path,
-            gmm_sharpened_overlay_path,
-            gmm_score_overlay_path,
-            gmm_mixture_overlay_path,
-            gmm_cluster_pct_pdf_path,
-            gmm_cluster_pct_png_path,
-            gmm_hist_path,
         )
     else:
         if dropped_duplicate_repr_cells > 0:
             logger.info(
-                "[%s] Regenerating GMM visualizations because detection "
+                "[%s] Regenerating GMM visualizations and portal metadata because detection "
                 "deduplication changed downstream predictions",
                 viz_candidate_name,
             )
@@ -866,42 +1116,21 @@ def run_single_mosaic_pipeline(
             candidate_name=viz_candidate_name,
             strip_padding=50,
         )
-    logger.info("[%s] End step 5: render GMM visualizations", viz_candidate_name)
-    logger.info("[%s] Begin step 6: export portal metadata", viz_candidate_name)
-    _ensure_output_dir(portal_dir)
-    use_portal_cache = (
-        _can_use_cache(
-            cf.infra.cache_stages,
-            "V",
-            [
-                portal_manifest_path,
-                portal_cells_path,
-            ],
-        )
-        and dropped_duplicate_repr_cells == 0
-    )
-    if use_portal_cache:
-        logger.info(
-            "[%s] Using cached portal metadata from %s",
-            viz_candidate_name,
-            portal_manifest_path,
-        )
-    else:
-        if dropped_duplicate_repr_cells > 0:
-            logger.info(
-                "[%s] Regenerating portal metadata because detection "
-                "deduplication changed downstream predictions",
-                viz_candidate_name,
-            )
+        logger.info("[%s] Exporting portal metadata", viz_candidate_name)
+        _ensure_output_dir(portal_dir)
         export_slide_portal_assets(
             slide_id=viz_candidate_name,
             mosaic_dicom_path=mosaic_dicom_path,
             detected_cells=results,
             gmm_predictions=gmm_predictions,
             portal_dir=portal_dir,
+            slide_statistics=slide_statistics,
             strip_padding=50,
         )
-    logger.info("[%s] End step 6: export portal metadata", viz_candidate_name)
+    logger.info(
+        "[%s] End step 5: render GMM visualizations and export portal metadata",
+        viz_candidate_name,
+    )
     logger.info("Finished single-cell silica eval pipeline for %s", viz_candidate_name)
     return {
         "mouse_id": mouse_id,
@@ -910,7 +1139,8 @@ def run_single_mosaic_pipeline(
         "output_dir": output_dir,
         "static_output_dir": static_output_dir,
         "portal_dir": portal_dir,
-        "dzi_dir": dzi_dir,
+        "slide_statistics_path": slide_statistics_path,
+        "patch_valid_regions_path": patch_valid_regions_path,
     }
 
 
@@ -942,6 +1172,7 @@ def main(config_path: str) -> None:
     assert (
         cf.infra.static_infra_out_root
     ), "Expected infra.static_infra_out_root in config."
+    assert cf.infra.portal_out_root, "Expected infra.portal_out_root in config."
 
     logger.info("Loading cell detection model from %s", cf.cell_detection.ckpt_path)
     detection_model = get_model(

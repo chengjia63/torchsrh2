@@ -2,33 +2,21 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import os
 from pathlib import Path
 
 import matplotlib.cm as cm
 import numpy as np
 import pandas as pd
-from PIL import Image
+from sklearn.neighbors import KDTree
 
 from ts2.utils.silica_sc_eval.generate_gmm_visualization import (
     load_mosaic_image,
     parse_assignment_vector,
+    parse_cell_path,
 )
 
 logger = logging.getLogger(__name__)
-
-try:
-    import pyvips
-except Exception:  # pragma: no cover - optional runtime dependency
-    pyvips = None
-
-
-_LANCZOS = (
-    Image.Resampling.LANCZOS
-    if hasattr(Image, "Resampling")
-    else Image.LANCZOS
-)
 
 
 def _ensure_dir(path: str | os.PathLike[str]) -> Path:
@@ -125,7 +113,9 @@ def build_portal_cell_payload(
         missing_matches == 0
     ), f"Could not match {missing_matches} GMM predictions back to detected cells."
 
-    assignment_vectors = [parse_assignment_vector(value) for value in merged["assignment"]]
+    assignment_vectors = [
+        parse_assignment_vector(value) for value in merged["assignment"]
+    ]
     assignment_matrix = np.stack(assignment_vectors, axis=0)
     dominant_cluster = np.argmax(assignment_matrix, axis=1).astype(np.int32)
     dominant_cluster_confidence = assignment_matrix[
@@ -135,8 +125,8 @@ def build_portal_cell_payload(
 
     normal_score = merged["prediction"].astype(float).to_numpy(dtype=np.float64)
     tumor_score = 1.0 - normal_score
-    tumor_score_display = (
-        100 - np.clip(np.floor(normal_score * 100.0), 0, 99).astype(np.int32)
+    tumor_score_display = 100 - np.clip(np.floor(normal_score * 100.0), 0, 99).astype(
+        np.int32
     )
     dominant_cluster_display = np.clip(
         np.floor(dominant_cluster_confidence * 100.0),
@@ -149,10 +139,14 @@ def build_portal_cell_payload(
         "num_clusters": int(assignment_matrix.shape[1]),
         "x": np.round(
             merged["global_centroid_c"].astype(float).to_numpy(dtype=np.float64)
-        ).astype(np.int32).tolist(),
+        )
+        .astype(np.int32)
+        .tolist(),
         "y": np.round(
             merged["global_centroid_r"].astype(float).to_numpy(dtype=np.float64)
-        ).astype(np.int32).tolist(),
+        )
+        .astype(np.int32)
+        .tolist(),
         "normal_score": [round(float(value), 6) for value in normal_score],
         "tumor_score": [round(float(value), 6) for value in tumor_score],
         "tumor_score_display": tumor_score_display.tolist(),
@@ -167,186 +161,140 @@ def build_portal_cell_payload(
     }
     return payload
 
-def _write_dzi_descriptor(
-    descriptor_path: Path,
-    width: int,
-    height: int,
-    tile_size: int,
-    overlap: int,
-    tile_format: str,
-) -> None:
-    descriptor = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        f'<Image TileSize="{tile_size}" Overlap="{overlap}" Format="{tile_format}" '
-        'xmlns="http://schemas.microsoft.com/deepzoom/2008">\n'
-        f'  <Size Width="{width}" Height="{height}"/>\n'
-        "</Image>\n"
-    )
-    descriptor_path.write_text(descriptor, encoding="utf-8")
-    assert descriptor_path.exists(), f"Failed to write DZI descriptor: {descriptor_path}"
 
-
-def _save_tile_pyramid_with_pil(
-    image: Image.Image,
-    output_prefix: Path,
-    tile_size: int,
-    overlap: int,
-    jpeg_quality: int,
-    tile_format: str = "jpg",
-) -> tuple[str, str]:
-    width, height = image.size
-    max_level = int(math.ceil(math.log2(max(width, height)))) if max(width, height) > 1 else 0
-    descriptor_path = output_prefix.with_suffix(".dzi")
-    files_dir = output_prefix.parent / f"{output_prefix.name}_files"
-    _ensure_dir(files_dir)
-    _write_dzi_descriptor(
-        descriptor_path=descriptor_path,
-        width=width,
-        height=height,
-        tile_size=tile_size,
-        overlap=overlap,
-        tile_format=tile_format,
-    )
-
-    current_image = image.copy()
-    current_level = max_level
-    while True:
-        level_dir = files_dir / str(current_level)
-        _ensure_dir(level_dir)
-        level_width, level_height = current_image.size
-        num_cols = int(math.ceil(level_width / tile_size))
-        num_rows = int(math.ceil(level_height / tile_size))
-
-        for row in range(num_rows):
-            for col in range(num_cols):
-                left = col * tile_size
-                top = row * tile_size
-                right = min(left + tile_size, level_width)
-                bottom = min(top + tile_size, level_height)
-                crop_left = max(0, left - (overlap if col > 0 else 0))
-                crop_top = max(0, top - (overlap if row > 0 else 0))
-                crop_right = min(
-                    level_width,
-                    right + (overlap if col < num_cols - 1 else 0),
-                )
-                crop_bottom = min(
-                    level_height,
-                    bottom + (overlap if row < num_rows - 1 else 0),
-                )
-                tile = current_image.crop((crop_left, crop_top, crop_right, crop_bottom))
-                tile_path = level_dir / f"{col}_{row}.{tile_format}"
-                tile.save(tile_path, format="JPEG", quality=jpeg_quality)
-
-        if current_level == 0:
-            break
-        next_size = (
-            max(1, int(math.ceil(level_width / 2.0))),
-            max(1, int(math.ceil(level_height / 2.0))),
-        )
-        current_image = current_image.resize(next_size, _LANCZOS)
-        current_level -= 1
-
-    return descriptor_path.name, files_dir.name
-
-
-def _save_tile_pyramid_with_pyvips(
-    image: Image.Image,
-    output_prefix: Path,
-    tile_size: int,
-    overlap: int,
-    jpeg_quality: int,
-) -> tuple[str, str]:
-    assert pyvips is not None, "pyvips is not available."
-    rgb = np.asarray(image, dtype=np.uint8)
-    assert rgb.ndim == 3 and rgb.shape[2] == 3, (
-        f"Expected RGB image array, got shape {rgb.shape}"
-    )
-    vips_image = pyvips.Image.new_from_memory(
-        rgb.tobytes(),
-        rgb.shape[1],
-        rgb.shape[0],
-        rgb.shape[2],
-        format="uchar",
-    )
-    vips_image.dzsave(
-        str(output_prefix),
-        tile_size=tile_size,
-        overlap=overlap,
-        layout="dz",
-        suffix=f".jpg[Q={jpeg_quality}]",
-    )
-    descriptor_path = output_prefix.with_suffix(".dzi")
-    files_dir = output_prefix.parent / f"{output_prefix.name}_files"
-    assert descriptor_path.exists(), f"Missing DZI descriptor after pyvips export: {descriptor_path}"
-    assert files_dir.is_dir(), f"Missing DZI tile directory after pyvips export: {files_dir}"
-    return descriptor_path.name, files_dir.name
-
-
-def save_image_as_dzi(
-    image: Image.Image,
-    output_prefix: str | os.PathLike[str],
-    tile_size: int = 256,
-    overlap: int = 0,
-    jpeg_quality: int = 88,
-) -> tuple[str, str]:
-    output_prefix = Path(output_prefix)
-    _ensure_dir(output_prefix.parent)
-    image = image.convert("RGB")
-    if pyvips is not None:
-        logger.info("Saving DZI with pyvips: %s", output_prefix)
-        return _save_tile_pyramid_with_pyvips(
-            image=image,
-            output_prefix=output_prefix,
-            tile_size=tile_size,
-            overlap=overlap,
-            jpeg_quality=jpeg_quality,
-        )
-
-    logger.warning(
-        "pyvips is unavailable; falling back to PIL DZI export for %s. "
-        "This is correct but slower for large slides.",
-        output_prefix,
-    )
-    return _save_tile_pyramid_with_pil(
-        image=image,
-        output_prefix=output_prefix,
-        tile_size=tile_size,
-        overlap=overlap,
-        jpeg_quality=jpeg_quality,
-    )
-
-
-def export_slide_dzi_assets(
+def _nearest_cell_area_mean_tumor_probability(
     *,
-    slide_id: str,
-    mosaic_dicom_path: str,
-    dzi_dir: str,
-    strip_padding: int = 50,
-    tile_size: int = 256,
-    overlap: int = 0,
-    jpeg_quality: int = 88,
-) -> dict[str, str]:
-    logger.info("Exporting DZI assets for %s", slide_id)
-    dzi_path = _ensure_dir(dzi_dir)
-    mosaic_rgb = load_mosaic_image(
-        mosaic_dicom_path=mosaic_dicom_path,
-        strip_padding=strip_padding,
-    )
-    color_image = Image.fromarray(mosaic_rgb)
+    image_shape: tuple[int, ...],
+    cell_y: np.ndarray,
+    cell_x: np.ndarray,
+    tumor_probability: np.ndarray,
+) -> float:
+    assert (
+        len(image_shape) >= 2
+    ), f"Expected image shape with height and width, got {image_shape}"
+    height, width = int(image_shape[0]), int(image_shape[1])
+    assert (
+        height > 0 and width > 0
+    ), f"Expected positive image size, got {(height, width)}"
 
-    color_dzi_name, color_tiles_dir = save_image_as_dzi(
-        image=color_image,
-        output_prefix=dzi_path / "color",
-        tile_size=tile_size,
-        overlap=overlap,
-        jpeg_quality=jpeg_quality,
+    cell_y = np.asarray(cell_y, dtype=np.float64)
+    cell_x = np.asarray(cell_x, dtype=np.float64)
+    assert (
+        cell_y.shape == cell_x.shape
+    ), f"Cell coordinate shape mismatch: y={cell_y.shape}, x={cell_x.shape}"
+    assert (
+        np.isfinite(cell_y).all() and np.isfinite(cell_x).all()
+    ), "Cell coordinates contain non-finite values."
+    in_bounds = (cell_y >= 0.0) & (cell_y < height) & (cell_x >= 0.0) & (cell_x < width)
+    assert bool(in_bounds.all()), (
+        "Cannot compute area-based slide tumor probability because some cell "
+        f"coordinates fall outside image bounds {(height, width)}."
     )
 
-    logger.info("DZI assets for %s written under %s", slide_id, dzi_path)
+    seed_coordinates = np.stack([cell_y, cell_x], axis=1)
+    unique_seed_coordinates = np.unique(seed_coordinates, axis=0)
+    assert len(unique_seed_coordinates) == len(seed_coordinates), (
+        "Cannot compute area-based slide tumor probability because multiple cells "
+        "have identical coordinates."
+    )
+
+    tree = KDTree(seed_coordinates)
+    area_weights = np.zeros(len(seed_coordinates), dtype=np.int64)
+    chunk_num_rows = max(1, 1_000_000 // width)
+    x_coords = np.arange(width, dtype=np.float64)
+    for row_start in range(0, height, chunk_num_rows):
+        row_end = min(row_start + chunk_num_rows, height)
+        y_coords = np.arange(row_start, row_end, dtype=np.float64)
+        yy, xx = np.meshgrid(y_coords, x_coords, indexing="ij")
+        pixel_coordinates = np.column_stack([yy.reshape(-1), xx.reshape(-1)])
+        nearest_cell_indices = tree.query(
+            pixel_coordinates,
+            k=1,
+            return_distance=False,
+        ).reshape(-1)
+        area_weights += np.bincount(
+            nearest_cell_indices,
+            minlength=len(seed_coordinates),
+        )
+
+    assert (
+        int(area_weights.sum()) == height * width
+    ), "Nearest-cell area weights do not cover the full image."
+
+    return float(np.average(tumor_probability, weights=area_weights))
+
+
+def build_slide_statistics(
+    *,
+    gmm_predictions: pd.DataFrame,
+    image_shape: tuple[int, ...],
+    tumor_probability_threshold: float = 0.5,
+) -> dict:
+    assert not gmm_predictions.empty, "GMM predictions table is empty."
+    assert (
+        "prediction" in gmm_predictions.columns
+    ), "Expected `prediction` in GMM predictions."
+    assert "path" in gmm_predictions.columns, "Expected `path` in GMM predictions."
+    assert 0.0 <= tumor_probability_threshold <= 1.0, (
+        "Expected tumor_probability_threshold in [0, 1], got "
+        f"{tumor_probability_threshold}"
+    )
+
+    duplicate_prediction_paths = gmm_predictions["path"].duplicated(keep=False)
+    assert not duplicate_prediction_paths.any(), (
+        "Duplicate GMM prediction paths reached slide statistics. Detection-time "
+        "deduplication should have removed these rows first: "
+        + ", ".join(
+            gmm_predictions.loc[duplicate_prediction_paths, "path"].head(10).tolist()
+        )
+    )
+
+    normal_probability = (
+        gmm_predictions["prediction"].astype(float).to_numpy(dtype=np.float64)
+    )
+    assert np.isfinite(
+        normal_probability
+    ).all(), "GMM predictions contain non-finite probability values."
+    assert (
+        (normal_probability >= 0.0) & (normal_probability <= 1.0)
+    ).all(), "GMM predictions contain probability values outside [0, 1]."
+    tumor_probability = 1.0 - normal_probability
+    cell_coordinates = np.asarray(
+        [parse_cell_path(path) for path in gmm_predictions["path"]],
+        dtype=np.float64,
+    )
+    assert cell_coordinates.shape == (
+        len(gmm_predictions),
+        2,
+    ), "Cell coordinate shape does not match prediction count."
+
+    hard_slide_tumor_probability = float(
+        np.mean(tumor_probability > tumor_probability_threshold)
+    )
+    soft_slide_tumor_probability = float(np.mean(tumor_probability))
+    area_soft_slide_tumor_probability = _nearest_cell_area_mean_tumor_probability(
+        image_shape=image_shape,
+        cell_y=cell_coordinates[:, 0],
+        cell_x=cell_coordinates[:, 1],
+        tumor_probability=tumor_probability,
+    )
+
     return {
-        "dzi_dir": str(dzi_path),
-        "color_dzi_path": str(dzi_path / color_dzi_name),
-        "color_tiles_dir": str(dzi_path / color_tiles_dir),
+        "cell_count": int(len(tumor_probability)),
+        "image_width": int(image_shape[1]),
+        "image_height": int(image_shape[0]),
+        "tumor_probability_threshold": float(tumor_probability_threshold),
+        "hard_slide_tumor_probability": round(hard_slide_tumor_probability, 6),
+        "percent_cells_tumor_probability_gt_0_5": round(
+            hard_slide_tumor_probability * 100.0,
+            6,
+        ),
+        "soft_slide_tumor_probability": round(soft_slide_tumor_probability, 6),
+        "area_soft_slide_tumor_probability": round(
+            area_soft_slide_tumor_probability,
+            6,
+        ),
+        "area_pixel_count": int(image_shape[0] * image_shape[1]),
     }
 
 
@@ -357,10 +305,10 @@ def export_slide_portal_assets(
     detected_cells: pd.DataFrame,
     gmm_predictions: pd.DataFrame,
     portal_dir: str,
+    slide_statistics: dict | None = None,
     strip_padding: int = 50,
     tile_size: int = 256,
     overlap: int = 0,
-    jpeg_quality: int = 88,
 ) -> dict[str, str]:
     logger.info("Exporting portal metadata for %s", slide_id)
     portal_path = _ensure_dir(portal_dir)
@@ -372,6 +320,21 @@ def export_slide_portal_assets(
     cells_payload = build_portal_cell_payload(
         detected_cells=detected_cells,
         gmm_predictions=gmm_predictions,
+    )
+    if slide_statistics is None:
+        slide_statistics = build_slide_statistics(
+            gmm_predictions=gmm_predictions,
+            image_shape=mosaic_rgb.shape,
+        )
+    required_slide_statistics = {
+        "hard_slide_tumor_probability",
+        "soft_slide_tumor_probability",
+        "area_soft_slide_tumor_probability",
+    }
+    missing_slide_statistics = required_slide_statistics.difference(slide_statistics)
+    assert not missing_slide_statistics, (
+        "Slide statistics are missing required portal keys: "
+        f"{sorted(missing_slide_statistics)}"
     )
     cells_path = portal_path / "cells.json"
     with open(cells_path, "w", encoding="utf-8") as fd:
@@ -386,18 +349,12 @@ def export_slide_portal_assets(
         "num_clusters": int(cells_payload["num_clusters"]),
         "tile_size": int(tile_size),
         "overlap": int(overlap),
-        "base_layers": {
-            "color": {
-                "label": "Full Color",
-                "dzi": "color.dzi",
-                "tiles_dir": "color_files",
-            },
-        },
         "cells": {
             "path": cells_path.name,
             "score_label": "Tumor likelihood",
             "dot_color_label": "Normal-green to tumor-red",
         },
+        "slide_statistics": slide_statistics,
     }
     manifest_path = portal_path / "slide_manifest.json"
     with open(manifest_path, "w", encoding="utf-8") as fd:

@@ -1085,7 +1085,7 @@ def main() -> None:
     # pred_path = "/nfs/turbo/umms-tocho-snr/exp/chengjia/ts2/fmi_dinov2_cc_fixdset2/04e0bf39_Apr05-03-07-21_sd1000_dinov2_lr43_tune0/models/eval/training_124999/3b928e8e_Apr15-03-28-54_sd1000_INF_srhumglioma2m_dev_tune0/predictions/pred.pt"
     # out_dir = "srhumglioma2m_04e0bf39"
 
-    k_range = [2, 8, 16, 24, 32, 64, 128, 256, 512, 1024]  # 
+    k_range = [2048] #[2, 8, 16, 24, 32, 64, 128, 256, 512, 1024]  # 
     run_dir = os.path.dirname(os.path.dirname(pred_path))
     dataset_config_path = os.path.join(
         run_dir,
