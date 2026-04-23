@@ -5,6 +5,7 @@ infra:
   device: cuda
   #num_mosaic_per_task: 20
   cache_stages: ""  # Patch, Celldet, Repr, Gmm, Viz
+  save_traditional_output: false
 cell_detection:
   ckpt_path: /nfs/turbo/umms-tocho-snr/exp/chengjia/ds_reretrain/1e4/439971b1_Apr30-17-27-52_sd1000_ALLDATA_/models/ckpt-epoch19-step5500-loss0.00.ckpt
 

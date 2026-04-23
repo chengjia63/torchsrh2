@@ -1108,14 +1108,20 @@ def run_single_mosaic_pipeline(
                 "deduplication changed downstream predictions",
                 viz_candidate_name,
             )
-        logger.info("[%s] Rendering GMM visualizations", viz_candidate_name)
-        generate_visualization(
-            predictions=gmm_predictions,
-            mosaic_dicom_path=mosaic_dicom_path,
-            out_dir=output_dir,
-            candidate_name=viz_candidate_name,
-            strip_padding=50,
-        )
+        if cf.infra.get("save_traditional_output", False):
+            logger.info("[%s] Rendering GMM visualizations", viz_candidate_name)
+            generate_visualization(
+                predictions=gmm_predictions,
+                mosaic_dicom_path=mosaic_dicom_path,
+                out_dir=output_dir,
+                candidate_name=viz_candidate_name,
+                strip_padding=50,
+            )
+        else:
+            logger.info(
+                "[%s] Skipping traditional GMM visualization outputs",
+                viz_candidate_name,
+            )
         logger.info("[%s] Exporting portal metadata", viz_candidate_name)
         _ensure_output_dir(portal_dir)
         export_slide_portal_assets(
