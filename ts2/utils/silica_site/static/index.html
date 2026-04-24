@@ -159,7 +159,7 @@
                   </label>
                   <label class="toggle-chip">
                     <input type="checkbox" id="toggleBoxes" />
-                    <span class="toggle-label">48x48 box</span>
+                    <span class="toggle-label">Box</span>
                   </label>
                   <label class="toggle-chip">
                     <input type="checkbox" id="togglePartitionFill" />
@@ -187,10 +187,25 @@
                     type="range"
                     id="dotSizeSlider"
                     min="2"
-                    max="48"
-                    step="0.5"
+                    max="64"
+                    step="1"
                     value="32"
                     aria-label="Adjust dot size"
+                  />
+                </div>
+                <div id="boxSizeCard" class="slider-card" hidden>
+                  <div class="slider-row">
+                    <span class="slider-label">Box size</span>
+                    <strong id="boxSizeValue" class="slider-value">48.0px</strong>
+                  </div>
+                  <input
+                    type="range"
+                    id="boxSizeSlider"
+                    min="2"
+                    max="64"
+                    step="1"
+                    value="48"
+                    aria-label="Adjust box size"
                   />
                 </div>
                 <div id="partitionAlphaCard" class="slider-card" hidden>
@@ -250,15 +265,35 @@
                 </div>
               </div>
               <div class="control-group">
-                <div class="legend-strip">
-                  <span>Tumor</span>
-                  <div class="legend-gradient"></div>
-                  <span>Normal</span>
+                <div class="toggle-grid scale-toggle-grid">
+                  <label class="toggle-chip">
+                    <input type="checkbox" id="toggleBinaryDots" />
+                    <span class="toggle-label">Binary dots</span>
+                  </label>
                 </div>
-                <label class="toggle-chip scale-toggle-chip">
-                  <input type="checkbox" id="toggleBinaryDots" />
-                  <span class="toggle-label">Binary dots</span>
-                </label>
+                <div class="legend-strip">
+                  <div class="legend-scale">
+                    <div id="scoreScaleBar" class="legend-gradient"></div>
+                    <input
+                      type="range"
+                      id="binaryThresholdSlider"
+                      class="legend-threshold-slider"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value="50"
+                      aria-label="Adjust binary threshold"
+                      hidden
+                    />
+                    <strong id="binaryThresholdValue" class="scale-threshold-value" hidden>
+                      50%
+                    </strong>
+                  </div>
+                  <div class="legend-labels">
+                    <span>Normal</span>
+                    <span>Tumor</span>
+                  </div>
+                </div>
               </div>
             </section>
 

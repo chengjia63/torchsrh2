@@ -30,8 +30,11 @@ const state = {
   slideLoadToken: 0,
   dotDiameterImagePx: null,
   pendingDotRadiusValue: null,
+  boxSizeImagePx: null,
+  pendingBoxSizeValue: null,
   pendingClusterFilterIds: null,
   partitionFillAlpha: 0.25,
+  binaryDotThreshold: 0.5,
   activeClusterFilters: new Set(),
   topbarSelectionRevealed: false,
   activeImageLayer: "srhvhe",
@@ -47,8 +50,11 @@ const FILTER_ALL_VALUE = "__all__";
 const CELL_BOX_SIZE_PX = 48;
 const MIN_SCREEN_BOX_SIZE_PX = 8;
 const DOT_DIAMETER_IMAGE_MIN = 2;
-const DOT_DIAMETER_IMAGE_MAX = CELL_BOX_SIZE_PX;
+const DOT_DIAMETER_IMAGE_MAX = 64;
 const DEFAULT_DOT_DIAMETER_IMAGE_PX = 32;
+const BOX_SIZE_IMAGE_MIN = 2;
+const BOX_SIZE_IMAGE_MAX = 64;
+const DEFAULT_BOX_SIZE_IMAGE_PX = CELL_BOX_SIZE_PX;
 const DEFAULT_PARTITION_FILL_ALPHA = 0.25;
 const PARTITION_SAMPLE_STEP_PX = 8;
 const PARTITION_ZOOMED_OUT_SAMPLE_STEP_PX = 4;
@@ -60,7 +66,12 @@ const OVERLAY_QUERY_PARAM = "overlays";
 const EXPERIMENT_QUERY_PARAM = "experiment";
 const LEGACY_EXPERIMENT_QUERY_PARAM = "k";
 const DOT_SIZE_QUERY_PARAM = "dot";
+const BOX_SIZE_QUERY_PARAM = "box";
 const PARTITION_ALPHA_QUERY_PARAM = "alpha";
+const BINARY_THRESHOLD_QUERY_PARAM = "threshold";
+const VIEW_QUERY_PARAM = "view";
+const VIEW_MODE_CONTINUOUS = "continuous";
+const VIEW_MODE_BINARY = "binary";
 const CLUSTER_QUERY_PARAM = "clusters";
 const IMAGE_LAYER_QUERY_PARAM = "layer";
 const VIEWPORT_X_QUERY_PARAM = "vx";
@@ -94,7 +105,8 @@ const TUMOR_SCORE_COLOR_STOPS = [
   { position: 0.78, color: [239, 138, 98] },
   { position: 1, color: [178, 24, 43] },
 ];
-const BINARY_DOT_SCORE_THRESHOLD = 0.5;
+const DEFAULT_BINARY_DOT_SCORE_THRESHOLD = 0.5;
+const BINARY_DOT_STROKE_STYLE = "rgb(41 37 36 / 0.42)";
 const INFILTRATION_LABELS = {
   "0": "Normal (0)",
   "1": "Atypical Cells (1)",
@@ -749,7 +761,13 @@ function bindControls() {
   document.getElementById("toggleDots").addEventListener("change", () => {
     syncOverlayControlVisibility();
   });
+  document.getElementById("toggleBoxes").addEventListener("change", () => {
+    syncOverlayControlVisibility();
+  });
   document.getElementById("togglePartitionFill").addEventListener("change", () => {
+    syncOverlayControlVisibility();
+  });
+  document.getElementById("toggleBinaryDots").addEventListener("change", () => {
     syncOverlayControlVisibility();
   });
   document.getElementById("dotSizeSlider").addEventListener("input", (event) => {
@@ -768,6 +786,22 @@ function bindControls() {
     syncUiStateQuery();
     scheduleRedraw();
   });
+  document.getElementById("boxSizeSlider").addEventListener("input", (event) => {
+    const sliderValue = Number(event.target.value);
+    if (!Number.isFinite(sliderValue)) {
+      return;
+    }
+    const clampedSliderValue = clampNumber(
+      sliderValue,
+      BOX_SIZE_IMAGE_MIN,
+      BOX_SIZE_IMAGE_MAX,
+    );
+    state.boxSizeImagePx = clampedSliderValue;
+    state.pendingBoxSizeValue = null;
+    updateBoxSizeControl(clampedSliderValue);
+    syncUiStateQuery();
+    scheduleRedraw();
+  });
   document.getElementById("partitionAlphaSlider").addEventListener("input", (event) => {
     const sliderValue = Number(event.target.value);
     if (!Number.isFinite(sliderValue)) {
@@ -775,6 +809,16 @@ function bindControls() {
     }
     state.partitionFillAlpha = clampNumber(sliderValue / 100, 0, 1);
     updatePartitionAlphaControl(state.partitionFillAlpha);
+    syncUiStateQuery();
+    scheduleRedraw();
+  });
+  document.getElementById("binaryThresholdSlider").addEventListener("input", (event) => {
+    const sliderValue = Number(event.target.value);
+    if (!Number.isFinite(sliderValue)) {
+      return;
+    }
+    state.binaryDotThreshold = clampNumber(sliderValue / 100, 0, 1);
+    updateBinaryThresholdControl(state.binaryDotThreshold);
     syncUiStateQuery();
     scheduleRedraw();
   });
@@ -795,7 +839,9 @@ function bindControls() {
   syncOverlayControlVisibility();
   syncClusterFilterEditor();
   updateDotSizeControl(state.pendingDotRadiusValue ?? DEFAULT_DOT_DIAMETER_IMAGE_PX);
+  updateBoxSizeControl(state.pendingBoxSizeValue ?? DEFAULT_BOX_SIZE_IMAGE_PX);
   updatePartitionAlphaControl(state.partitionFillAlpha);
+  updateBinaryThresholdControl(state.binaryDotThreshold);
   window.addEventListener("resize", scheduleRedraw);
   window.addEventListener("resize", () => {
     updateViewerViewportMargins();
@@ -1459,6 +1505,8 @@ function updateDotSizeControl(dotDiameterImagePx) {
   if (!slider || !valueLabel) {
     return;
   }
+  slider.min = `${DOT_DIAMETER_IMAGE_MIN}`;
+  slider.max = `${DOT_DIAMETER_IMAGE_MAX}`;
   const clampedDiameter = clampNumber(
     dotDiameterImagePx,
     DOT_DIAMETER_IMAGE_MIN,
@@ -1466,6 +1514,23 @@ function updateDotSizeControl(dotDiameterImagePx) {
   );
   slider.value = clampedDiameter.toFixed(1);
   valueLabel.textContent = `${clampedDiameter.toFixed(1)}px`;
+}
+
+function updateBoxSizeControl(boxSizeImagePx) {
+  const slider = document.getElementById("boxSizeSlider");
+  const valueLabel = document.getElementById("boxSizeValue");
+  if (!slider || !valueLabel) {
+    return;
+  }
+  slider.min = `${BOX_SIZE_IMAGE_MIN}`;
+  slider.max = `${BOX_SIZE_IMAGE_MAX}`;
+  const clampedSize = clampNumber(
+    boxSizeImagePx,
+    BOX_SIZE_IMAGE_MIN,
+    BOX_SIZE_IMAGE_MAX,
+  );
+  slider.value = clampedSize.toFixed(1);
+  valueLabel.textContent = `${clampedSize.toFixed(1)}px`;
 }
 
 function updatePartitionAlphaControl(alpha) {
@@ -1477,6 +1542,26 @@ function updatePartitionAlphaControl(alpha) {
   const clampedAlpha = clampNumber(alpha, 0, 1);
   slider.value = `${Math.round(clampedAlpha * 100)}`;
   valueLabel.textContent = `${Math.round(clampedAlpha * 100)}%`;
+}
+
+function updateBinaryThresholdControl(threshold) {
+  const slider = document.getElementById("binaryThresholdSlider");
+  const valueLabel = document.getElementById("binaryThresholdValue");
+  const scaleBar = document.getElementById("scoreScaleBar");
+  if (!slider || !valueLabel) {
+    return;
+  }
+  const clampedThreshold = clampNumber(threshold, 0, 1);
+  const thresholdPercent = Math.round(clampedThreshold * 100);
+  slider.value = `${thresholdPercent}`;
+  valueLabel.textContent = `${thresholdPercent}%`;
+  valueLabel.style.setProperty("--binary-threshold-percent", `${thresholdPercent}%`);
+  if (scaleBar) {
+    scaleBar.style.setProperty(
+      "--binary-threshold-percent",
+      `${thresholdPercent}%`,
+    );
+  }
 }
 
 function applyPendingDotRadiusValue() {
@@ -1491,6 +1576,20 @@ function applyPendingDotRadiusValue() {
   state.dotDiameterImagePx = clampedDiameter;
   updateDotSizeControl(clampedDiameter);
   state.pendingDotRadiusValue = null;
+}
+
+function applyPendingBoxSizeValue() {
+  if (state.pendingBoxSizeValue === null) {
+    return;
+  }
+  const clampedSize = clampNumber(
+    state.pendingBoxSizeValue,
+    BOX_SIZE_IMAGE_MIN,
+    BOX_SIZE_IMAGE_MAX,
+  );
+  state.boxSizeImagePx = clampedSize;
+  updateBoxSizeControl(clampedSize);
+  state.pendingBoxSizeValue = null;
 }
 
 function applyPendingClusterFilters() {
@@ -1520,15 +1619,34 @@ function applyPendingClusterFilters() {
 
 function syncOverlayControlVisibility() {
   const dotSizeCard = document.getElementById("dotSizeCard");
+  const boxSizeCard = document.getElementById("boxSizeCard");
   const partitionAlphaCard = document.getElementById("partitionAlphaCard");
+  const binaryThresholdSlider = document.getElementById("binaryThresholdSlider");
+  const binaryThresholdValue = document.getElementById("binaryThresholdValue");
+  const scaleBar = document.getElementById("scoreScaleBar");
   const showDots = document.getElementById("toggleDots")?.checked ?? false;
+  const showBoxes = document.getElementById("toggleBoxes")?.checked ?? false;
   const showPartitionFill =
     document.getElementById("togglePartitionFill")?.checked ?? false;
+  const showBinaryDots =
+    document.getElementById("toggleBinaryDots")?.checked ?? false;
   if (dotSizeCard) {
     dotSizeCard.hidden = !showDots;
   }
+  if (boxSizeCard) {
+    boxSizeCard.hidden = !showBoxes;
+  }
   if (partitionAlphaCard) {
     partitionAlphaCard.hidden = !showPartitionFill;
+  }
+  if (binaryThresholdSlider) {
+    binaryThresholdSlider.hidden = !showBinaryDots;
+  }
+  if (binaryThresholdValue) {
+    binaryThresholdValue.hidden = !showBinaryDots;
+  }
+  if (scaleBar) {
+    scaleBar.classList.toggle("is-binary", showBinaryDots);
   }
 }
 
@@ -1617,14 +1735,15 @@ function getOverlayToggleConfig() {
     { id: "toggleScoreText", key: "score" },
     { id: "toggleClusterText", key: "cluster" },
     { id: "toggleContributionText", key: "contrib" },
-    { id: "toggleBinaryDots", key: "binary" },
   ];
 }
 
 function applyUiStateFromQuery() {
   const searchParams = new URLSearchParams(window.location.search);
   state.pendingDotRadiusValue = DEFAULT_DOT_DIAMETER_IMAGE_PX;
+  state.pendingBoxSizeValue = DEFAULT_BOX_SIZE_IMAGE_PX;
   state.partitionFillAlpha = DEFAULT_PARTITION_FILL_ALPHA;
+  state.binaryDotThreshold = DEFAULT_BINARY_DOT_SCORE_THRESHOLD;
   const requestedExperiment = (
     searchParams.get(EXPERIMENT_QUERY_PARAM) ??
     searchParams.get(LEGACY_EXPERIMENT_QUERY_PARAM) ??
@@ -1650,6 +1769,18 @@ function applyUiStateFromQuery() {
     }
   }
 
+  const viewRaw = (searchParams.get(VIEW_QUERY_PARAM) ?? "").trim();
+  const binaryDotsInput = document.getElementById("toggleBinaryDots");
+  if (binaryDotsInput) {
+    if (viewRaw === VIEW_MODE_BINARY) {
+      binaryDotsInput.checked = true;
+    } else if (viewRaw === VIEW_MODE_CONTINUOUS) {
+      binaryDotsInput.checked = false;
+    } else if (requestedOverlays?.has("binary")) {
+      binaryDotsInput.checked = true;
+    }
+  }
+
   const dotSizeRawValue = searchParams.get(DOT_SIZE_QUERY_PARAM);
   const dotSizeRaw =
     dotSizeRawValue === null ? Number.NaN : Number(dotSizeRawValue);
@@ -1661,11 +1792,29 @@ function applyUiStateFromQuery() {
     );
   }
 
+  const boxSizeRawValue = searchParams.get(BOX_SIZE_QUERY_PARAM);
+  const boxSizeRaw =
+    boxSizeRawValue === null ? Number.NaN : Number(boxSizeRawValue);
+  if (Number.isFinite(boxSizeRaw)) {
+    state.pendingBoxSizeValue = clampNumber(
+      boxSizeRaw,
+      BOX_SIZE_IMAGE_MIN,
+      BOX_SIZE_IMAGE_MAX,
+    );
+  }
+
   const alphaRawValue = searchParams.get(PARTITION_ALPHA_QUERY_PARAM);
   const alphaRaw =
     alphaRawValue === null ? Number.NaN : Number(alphaRawValue);
   if (requestedOverlays?.has("partition") && Number.isFinite(alphaRaw)) {
     state.partitionFillAlpha = clampNumber(alphaRaw / 100, 0, 1);
+  }
+
+  const thresholdRawValue = searchParams.get(BINARY_THRESHOLD_QUERY_PARAM);
+  const thresholdRaw =
+    thresholdRawValue === null ? Number.NaN : Number(thresholdRawValue);
+  if (Number.isFinite(thresholdRaw)) {
+    state.binaryDotThreshold = clampNumber(thresholdRaw / 100, 0, 1);
   }
 
   const clustersRaw = searchParams.get(CLUSTER_QUERY_PARAM);
@@ -1702,43 +1851,31 @@ function applyUiStateFromQuery() {
 
 function syncUiStateQuery(slideKey = state.currentSlideKey) {
   const url = new URL(window.location.href);
-  if (slideKey) {
-    url.searchParams.set("slide", slideKey);
-  }
-  if (state.currentExperiment) {
-    url.searchParams.set(EXPERIMENT_QUERY_PARAM, state.currentExperiment);
-  } else {
-    url.searchParams.delete(EXPERIMENT_QUERY_PARAM);
-  }
-  url.searchParams.delete(LEGACY_EXPERIMENT_QUERY_PARAM);
-  url.searchParams.set(IMAGE_LAYER_QUERY_PARAM, state.activeImageLayer);
-
   const enabledOverlays = getOverlayToggleConfig()
     .filter((overlay) => document.getElementById(overlay.id)?.checked)
     .map((overlay) => overlay.key);
   const partitionFillEnabled = enabledOverlays.includes("partition");
-  url.searchParams.set(OVERLAY_QUERY_PARAM, enabledOverlays.join(","));
-
+  const binaryViewEnabled =
+    document.getElementById("toggleBinaryDots")?.checked ?? false;
   const dotSizeValue = clampNumber(
     state.pendingDotRadiusValue ?? state.dotDiameterImagePx ?? DEFAULT_DOT_DIAMETER_IMAGE_PX,
     DOT_DIAMETER_IMAGE_MIN,
     DOT_DIAMETER_IMAGE_MAX,
   );
-  url.searchParams.set(
-    DOT_SIZE_QUERY_PARAM,
-    dotSizeValue.toFixed(1),
+  const boxSizeValue = clampNumber(
+    state.pendingBoxSizeValue ?? state.boxSizeImagePx ?? DEFAULT_BOX_SIZE_IMAGE_PX,
+    BOX_SIZE_IMAGE_MIN,
+    BOX_SIZE_IMAGE_MAX,
   );
-  url.searchParams.set(
-    PARTITION_ALPHA_QUERY_PARAM,
-    `${
-      Math.round(
-        clampNumber(
-          partitionFillEnabled ? state.partitionFillAlpha : DEFAULT_PARTITION_FILL_ALPHA,
-          0,
-          1,
-        ) * 100,
-      )
-    }`,
+  const partitionAlphaValue = Math.round(
+    clampNumber(
+      partitionFillEnabled ? state.partitionFillAlpha : DEFAULT_PARTITION_FILL_ALPHA,
+      0,
+      1,
+    ) * 100,
+  );
+  const binaryThresholdValue = Math.round(
+    clampNumber(state.binaryDotThreshold, 0, 1) * 100,
   );
 
   const allClusterIds = state.cells ? getAllClusterIds() : [];
@@ -1763,14 +1900,32 @@ function syncUiStateQuery(slideKey = state.currentSlideKey) {
   } else if (state.pendingClusterFilterIds === "none") {
     clusterQueryValue = "none";
   }
-  url.searchParams.set(CLUSTER_QUERY_PARAM, clusterQueryValue);
 
   const viewportState = captureViewportState();
-  if (viewportState) {
-    url.searchParams.set(VIEWPORT_X_QUERY_PARAM, `${viewportState.center.x.toFixed(5)}`);
-    url.searchParams.set(VIEWPORT_Y_QUERY_PARAM, `${viewportState.center.y.toFixed(5)}`);
-    url.searchParams.set(VIEWPORT_ZOOM_QUERY_PARAM, `${viewportState.zoom.toFixed(5)}`);
+  const nextSearchParams = new URLSearchParams();
+  if (slideKey) {
+    nextSearchParams.set("slide", slideKey);
   }
+  if (state.currentExperiment) {
+    nextSearchParams.set(EXPERIMENT_QUERY_PARAM, state.currentExperiment);
+  }
+  nextSearchParams.set(IMAGE_LAYER_QUERY_PARAM, state.activeImageLayer);
+  nextSearchParams.set(OVERLAY_QUERY_PARAM, enabledOverlays.join(","));
+  nextSearchParams.set(DOT_SIZE_QUERY_PARAM, dotSizeValue.toFixed(1));
+  nextSearchParams.set(BOX_SIZE_QUERY_PARAM, boxSizeValue.toFixed(1));
+  nextSearchParams.set(PARTITION_ALPHA_QUERY_PARAM, `${partitionAlphaValue}`);
+  if (viewportState) {
+    nextSearchParams.set(VIEWPORT_X_QUERY_PARAM, `${viewportState.center.x.toFixed(5)}`);
+    nextSearchParams.set(VIEWPORT_Y_QUERY_PARAM, `${viewportState.center.y.toFixed(5)}`);
+    nextSearchParams.set(VIEWPORT_ZOOM_QUERY_PARAM, `${viewportState.zoom.toFixed(5)}`);
+  }
+  nextSearchParams.set(
+    VIEW_QUERY_PARAM,
+    binaryViewEnabled ? VIEW_MODE_BINARY : VIEW_MODE_CONTINUOUS,
+  );
+  nextSearchParams.set(BINARY_THRESHOLD_QUERY_PARAM, `${binaryThresholdValue}`);
+  nextSearchParams.set(CLUSTER_QUERY_PARAM, clusterQueryValue);
+  url.search = nextSearchParams.toString();
 
   window.history.replaceState({}, "", url);
 }
@@ -1851,11 +2006,15 @@ function drawCellOverlay(context, visible) {
     visible.indices.length <= TEXT_RENDER_LIMIT &&
     viewWidthRatio <= CONTRIBUTION_LABEL_VIEW_WIDTH_RATIO;
   applyPendingDotRadiusValue();
+  applyPendingBoxSizeValue();
   const dotRadius = getRenderedDotRadius();
+  const boxSizeImagePx =
+    state.pendingBoxSizeValue ?? state.boxSizeImagePx ?? DEFAULT_BOX_SIZE_IMAGE_PX;
   const dotStrokeWidth = 1.6;
   updateDotSizeControl(
     state.pendingDotRadiusValue ?? state.dotDiameterImagePx ?? DEFAULT_DOT_DIAMETER_IMAGE_PX,
   );
+  updateBoxSizeControl(boxSizeImagePx);
 
   if (showPartitionFill) {
     drawPartitionOverlay(context, viewWidthRatio, visible.bounds, {
@@ -1876,14 +2035,14 @@ function drawCellOverlay(context, visible) {
     if (showDots) {
       const dotColor = getDotOverlayColor(index, showBinaryDots);
       context.save();
-      context.globalAlpha = 0.5;
+      context.globalAlpha = showBinaryDots ? 0.74 : 0.5;
       context.beginPath();
       context.fillStyle = dotColor;
       context.arc(point.x, point.y, dotRadius, 0, Math.PI * 2);
       context.fill();
       context.restore();
-      context.lineWidth = dotStrokeWidth;
-      context.strokeStyle = dotColor;
+      context.lineWidth = showBinaryDots ? 1.2 : dotStrokeWidth;
+      context.strokeStyle = showBinaryDots ? BINARY_DOT_STROKE_STYLE : dotColor;
       context.stroke();
     }
 
@@ -1891,8 +2050,8 @@ function drawCellOverlay(context, visible) {
       const boxRect = imageRectToScreenRect(
         state.cells.x[index],
         state.cells.y[index],
-        CELL_BOX_SIZE_PX,
-        CELL_BOX_SIZE_PX,
+        boxSizeImagePx,
+        boxSizeImagePx,
       );
       if (boxRect) {
         const visibleBoxRect = ensureMinimumScreenRectSize(
@@ -1941,9 +2100,9 @@ function getDotOverlayColor(index, useBinaryColors) {
     return state.cells.dot_color[index];
   }
   const tumorScore = Number(state.cells.tumor_score[index]);
-  return getTumorScoreColor(
-    Number.isFinite(tumorScore) && tumorScore >= BINARY_DOT_SCORE_THRESHOLD ? 1 : 0,
-  );
+  const binaryScore =
+    Number.isFinite(tumorScore) && tumorScore >= state.binaryDotThreshold ? 1 : 0;
+  return getTumorScoreColor(binaryScore);
 }
 
 function drawPartitionOverlay(context, viewWidthRatio, visibleImageBounds, options = {}) {
