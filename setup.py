@@ -33,6 +33,7 @@ setup(
         "ijson",
         "gpustat>=1.1.1",
         "omegaconf",
+        "hydra-core",
         "memory_profiler",
         "black",
         "einops",

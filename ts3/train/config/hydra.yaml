@@ -1,0 +1,7 @@
+# @package hydra
+
+job:
+  chdir: false
+output_subdir: null
+run:
+  dir: ${ts3_run_dir:${infra.log_dir},${infra.exp_name},${infra.comment},${infra.tune_comment}}
