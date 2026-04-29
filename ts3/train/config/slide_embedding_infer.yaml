@@ -1,0 +1,69 @@
+# @package _global_
+
+defaults:
+  - hydra
+
+infra:
+  seed: 1000
+  float32_matmul_precision: medium
+  comment: ${inference.split}
+  output_dir: ${hydra:runtime.output_dir}
+
+data:
+  splits:
+    trainval:
+      dataset:
+        _target_: ts3.data.slide_dataset.SlideEmbeddingDataset
+        embedding_root: /scratch/tocho_root/tocho0/chengjia/silica_ucsf/b1a0cbe3_k1024
+        embedding_path_template: "{patient}-{mosaic}/{patient}-{mosaic}-cell_representations.pt"
+        class_order: ["0", "1", "2", "3"]
+        slides_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_eval/playground/data/ucsf_retrospective_val.csv
+        balance_instance_class: false
+      sampler: null
+      dataloader:
+        _target_: torch.utils.data.DataLoader
+        _partial_: true
+        collate_fn:
+          _target_: ts3.data.collate.SlideEmbeddingMILCollator
+        num_workers: 7
+        pin_memory: false
+        persistent_workers: true
+        batch_size: 8
+        shuffle: false
+        drop_last: false
+
+meta_arch:
+  _target_: ts3.train.meta_arch.SlideABMILModule
+  num_classes: 4
+  criterion:
+    _target_: ts3.train.meta_arch.CORALLoss
+    _partial_: true
+  model:
+    _target_: ts3.train.meta_arch.MILOrdinalModel
+    mil:
+      _target_: ts3.train.meta_arch.GatedABMIL
+      input_dim: 384
+      hidden_dim: 256
+      attention_dim: 128
+      dropout: 0.5
+    head:
+      _target_: ts3.train.meta_arch.SharedCORALHead
+      input_dim: 256
+      num_classes: ${meta_arch.num_classes}
+
+inference:
+  split: trainval
+  checkpoint_path: TODO
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  accelerator: auto
+  devices: 1
+  logger: false
+  enable_checkpointing: false
+  enable_progress_bar: true
+  precision: 32-true
+
+hydra:
+  run:
+    dir: ${ts3_eval_dir:${inference.checkpoint_path},${infra.comment}}

@@ -5,8 +5,8 @@ sanitize_tag_value() {
   tr -cd '[:alnum:]' <<< "$1"
 }
 
-LR_VALUES=(1.0e-7 1.0e-6 1.0e-5 1.0e-4)
-BS_VALUES=(8 16 32 64)
+LR_VALUES=(5.0e-5 1.0e-5 5.0e-4)
+BS_VALUES=(16 32 64 128)
 
 COMBINATIONS=()
 

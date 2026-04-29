@@ -30,8 +30,21 @@ def make_ts3_run_dir(
         return opj(log_dir, exp_name, run_dir)
 
 
+def make_ts3_eval_dir(checkpoint_path: str, run_name: str = "") -> str:
+    checkpoint_dir = os.path.dirname(os.path.abspath(checkpoint_path))
+    train_dir = os.path.dirname(checkpoint_dir)
+    if os.path.basename(checkpoint_dir) != "models":
+        train_dir = checkpoint_dir
+
+    timestamp = datetime.now().strftime("%b%d-%H-%M-%S")
+    run_id = uuid.uuid4().hex[:8]
+    eval_name = "_".join(filter(None, [run_name, timestamp, run_id]))
+    return opj(train_dir, "eval", eval_name)
+
+
 def register_resolvers() -> None:
     OmegaConf.register_new_resolver("ts3_run_dir", make_ts3_run_dir, replace=True)
+    OmegaConf.register_new_resolver("ts3_eval_dir", make_ts3_eval_dir, replace=True)
     OmegaConf.register_new_resolver(
         "int_mul",
         lambda *values: math.prod(int(value) for value in values),

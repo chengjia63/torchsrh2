@@ -21,6 +21,14 @@ class CORALLoss(nn.Module):
         return F.binary_cross_entropy_with_logits(logits, levels)
 
 
+class CrossEntropyLoss(nn.Module):
+    def __init__(self, num_classes: int):
+        super().__init__()
+
+    def forward(self, logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+        return F.cross_entropy(logits, labels.long().view(-1))
+
+
 class GatedABMIL(nn.Module):
     def __init__(
         self,
@@ -126,6 +134,18 @@ class MultiHeadCORALHead(nn.Module):
         }
 
 
+class CrossEntropyHead(nn.Module):
+    def __init__(self, input_dim: int, num_classes: int):
+        super().__init__()
+        self.classifier = nn.Linear(input_dim, num_classes)
+
+    def forward(self, x: torch.Tensor):
+        logits = self.classifier(x)
+        return {
+            "logits": logits,
+        }
+
+
 class MILOrdinalModel(nn.Module):
     def __init__(self, mil: nn.Module, head: nn.Module):
         super().__init__()
@@ -178,18 +198,52 @@ class SlideABMILModule(pl.LightningModule):
         ]
 
         logits = torch.stack([output["logits"] for output in bag_outputs], dim=0)
-        score = torch.sigmoid(logits).sum(dim=1)
-        score01 = score / float(self.num_classes - 1)
-
-        return {
+        outputs = {
             "logits": logits,
-            "score": score,
-            "score01": score01,
             "attention": [output["attention"] for output in bag_outputs],
             "pooled_embeddings": torch.stack(
                 [output["pooled_embeddings"] for output in bag_outputs], dim=0
             ),
         }
+        if "score" in bag_outputs[0]:
+            outputs["raw_score"] = torch.stack(
+                [output["score"] for output in bag_outputs], dim=0
+            )
+        return outputs
+
+    def _is_coral_logits(self, logits):
+        return isinstance(self.model.head, (SharedCORALHead, MultiHeadCORALHead))
+
+    def _is_ce_logits(self, logits):
+        return isinstance(self.model.head, CrossEntropyHead)
+
+    def _score(self, logits):
+        if self._is_coral_logits(logits):
+            return torch.sigmoid(logits).sum(dim=1)
+        if self._is_ce_logits(logits):
+            return logits.argmax(dim=1).float()
+        self._raise_unrecognized_logits(logits)
+
+    def _correlation_score(self, outputs):
+        if self._is_coral_logits(outputs["logits"]) and "raw_score" in outputs:
+            return outputs["raw_score"]
+        return self._score(outputs["logits"])
+
+    def _pred_label(self, logits):
+        if self._is_coral_logits(logits):
+            return (torch.sigmoid(logits) > 0.5).sum(dim=1).long()
+        if self._is_ce_logits(logits):
+            return logits.argmax(dim=1)
+        self._raise_unrecognized_logits(logits)
+
+    def _score_pred_label(self, score):
+        return score.round().clamp(0, self.num_classes - 1).long()
+
+    def _raise_unrecognized_logits(self, logits):
+        raise ValueError(
+            f"Expected model.head to be a CORAL or CE head, got "
+            f"{type(self.model.head).__name__}"
+        )
 
     def _label(self, batch):
         return batch["label"].to(device=self.device, dtype=torch.long).view(-1)
@@ -197,21 +251,20 @@ class SlideABMILModule(pl.LightningModule):
     def _score_target(self, batch):
         return batch["label"].to(device=self.device, dtype=torch.float32).view(-1)
 
-    def _pred_label(self, logits):
-        return (torch.sigmoid(logits) > 0.5).sum(dim=1).long()
-
     def training_step(self, batch, _batch_idx):
         outputs = self(batch)
 
         label = self._label(batch)
         loss = self.criterion(outputs["logits"], label)
-
+        score = self._score(outputs["logits"])
+        correlation_score = self._correlation_score(outputs)
         pred_label = self._pred_label(outputs["logits"])
+
         score_target = self._score_target(batch)
 
         self.train_acc.update(pred_label, label)
-        self.train_pearson.update(outputs["score"], score_target)
-        self.train_spearman.update(outputs["score"], score_target)
+        self.train_pearson.update(correlation_score, score_target)
+        self.train_spearman.update(correlation_score, score_target)
 
         batch_size = batch["label"].shape[0]
 
@@ -263,26 +316,36 @@ class SlideABMILModule(pl.LightningModule):
         self.validation_outputs.append(
             {
                 "logits": outputs["logits"].detach(),
+                "raw_score": (
+                    outputs["raw_score"].detach() if "raw_score" in outputs else None
+                ),
                 "label": label.detach(),
             }
         )
 
     def on_validation_epoch_end(self):
         logits = torch.cat([output["logits"] for output in self.validation_outputs])
+        raw_scores = [output["raw_score"] for output in self.validation_outputs]
         label = torch.cat([output["label"] for output in self.validation_outputs])
         self.validation_outputs.clear()
 
         logits = self._all_gather_variable_length(logits)
+        raw_score = (
+            self._all_gather_variable_length(torch.cat(raw_scores))
+            if raw_scores and raw_scores[0] is not None
+            else None
+        )
         label = self._all_gather_variable_length(label)
 
         loss = self.criterion(logits, label)
+        score = self._score(logits)
+        correlation_score = raw_score if raw_score is not None else score
         pred_label = self._pred_label(logits)
-        score = torch.sigmoid(logits).sum(dim=1)
         score_target = label.float()
 
         self.val_acc.update(pred_label, label)
-        self.val_pearson.update(score, score_target)
-        self.val_spearman.update(score, score_target)
+        self.val_pearson.update(correlation_score, score_target)
+        self.val_spearman.update(correlation_score, score_target)
 
         batch_size = label.shape[0]
         self.log(
@@ -294,7 +357,6 @@ class SlideABMILModule(pl.LightningModule):
         self.log(
             "val/loss",
             loss,
-            prog_bar=True,
             batch_size=batch_size,
             sync_dist=True,
         )
@@ -348,15 +410,21 @@ class SlideABMILModule(pl.LightningModule):
 
     def predict_step(self, batch, _batch_idx, _dataloader_idx=0):
         outputs = self(batch)
-        return {
+        score = self._score(outputs["logits"])
+        prediction = {
             "path": batch["path"],
             "label": batch["label"],
             "logits": outputs["logits"],
-            "score": outputs["score"],
-            "score01": outputs["score01"],
+            "score": score,
+            "pred_label": self._pred_label(outputs["logits"]),
             "attention": outputs["attention"],
             "pooled_embeddings": outputs["pooled_embeddings"],
         }
+        if "raw_score" in outputs:
+            prediction["raw_score"] = outputs["raw_score"]
+        if self._is_coral_logits(outputs["logits"]):
+            prediction["score_pred_label"] = self._score_pred_label(score)
+        return prediction
 
     def configure_optimizers(self):
         optimizer = self.optimizer_(

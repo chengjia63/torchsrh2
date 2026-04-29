@@ -6,15 +6,15 @@ defaults:
 infra:
   seed: 1000
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
-  exp_name: ts3/fix_patch/silica_mil_coral
-  comment: sharedhead
+  exp_name: ts3/silica_mil_ce
+  comment: ce
   tune_comment: TODO
   float32_matmul_precision: medium
 
 data:
   dataset_common: &dataset_common
     _target_: ts3.data.slide_dataset.SlideEmbeddingDataset
-    embedding_root: /scratch/tocho_root/tocho0/chengjia/silica_ucsf_fixpatch/b1a0cbe3_k1024
+    embedding_root: /scratch/tocho_root/tocho0/chengjia/silica_ucsf/b1a0cbe3_k1024
     embedding_path_template: "{patient}-{mosaic}/{patient}-{mosaic}-cell_representations.pt"
     class_order: ["0", "1", "2", "3"]
   dataloader_common: &dataloader_common
@@ -57,7 +57,7 @@ meta_arch:
   _target_: ts3.train.meta_arch.SlideABMILModule
   num_classes: 4
   criterion:
-    _target_: ts3.train.meta_arch.CORALLoss
+    _target_: ts3.train.meta_arch.CrossEntropyLoss
     _partial_: true
   model:
     _target_: ts3.train.meta_arch.MILOrdinalModel
@@ -68,7 +68,7 @@ meta_arch:
       attention_dim: 128
       dropout: 0.5
     head:
-      _target_: ts3.train.meta_arch.SharedCORALHead
+      _target_: ts3.train.meta_arch.CrossEntropyHead
       input_dim: 256
       num_classes: ${meta_arch.num_classes}
 
