@@ -5,10 +5,6 @@ const state = {
     diagnosis: [],
     infiltration: [],
   },
-  displayFilters: {
-    diagnosis: "",
-    infiltration: "",
-  },
   activeFilters: {
     diagnosis: "",
     infiltration: "",
@@ -40,6 +36,7 @@ const state = {
   activeImageLayer: "srhvhe",
   pendingImageLayerFallback: null,
   layoutResizeActive: false,
+  sidebarCollapsed: false,
 };
 
 const TEXT_RENDER_LIMIT = 2200;
@@ -152,19 +149,6 @@ async function bootstrapPortal() {
 function revealTopbarSelectionLabels() {
   if (state.topbarSelectionRevealed) {
     return;
-  }
-  if (
-    !state.activeFilters.diagnosis &&
-    !state.activeFilters.infiltration &&
-    state.displayFilters.diagnosis &&
-    state.displayFilters.infiltration
-  ) {
-    state.activeFilters = { ...state.displayFilters };
-    populateFilterSelectors();
-    populateSlideSelector();
-    if (state.currentSlideKey && getFilteredSlides().some((slide) => slide.key === state.currentSlideKey)) {
-      document.getElementById("slideSelect").value = state.currentSlideKey;
-    }
   }
   state.topbarSelectionRevealed = true;
   document.body.classList.add("topbar-selection-revealed");
@@ -466,6 +450,7 @@ function populateSlideSelector() {
     option.textContent = "No slides";
     slideSelect.appendChild(option);
     slideSelect.disabled = true;
+    syncSlideNavigationButtons();
     return;
   }
 
@@ -479,9 +464,27 @@ function populateSlideSelector() {
   slideSelect.disabled = false;
   if (matchingSlides.some((slide) => slide.key === previousValue)) {
     slideSelect.value = previousValue;
+    syncSlideNavigationButtons();
     return;
   }
   slideSelect.value = matchingSlides[0].key;
+  syncSlideNavigationButtons();
+}
+
+function syncSlideNavigationButtons() {
+  const previousButton = document.getElementById("previousSlideButton");
+  const nextButton = document.getElementById("nextSlideButton");
+  if (!previousButton || !nextButton) {
+    return;
+  }
+
+  const matchingSlides = getFilteredSlides();
+  const currentIndex = matchingSlides.findIndex(
+    (slide) => slide.key === state.currentSlideKey,
+  );
+  previousButton.disabled = currentIndex <= 0;
+  nextButton.disabled =
+    currentIndex === -1 || currentIndex >= matchingSlides.length - 1;
 }
 
 function populateFilterSelectors() {
@@ -514,13 +517,13 @@ function populateFilterSelector(selectId, filterKey, defaultLabel) {
     select.appendChild(option);
   }
 
-  select.value = state.displayFilters[filterKey] || "";
+  select.value = state.activeFilters[filterKey] || "";
 }
 
 function willFilterOptionChangeContext(filterKey, value) {
   const oppositeFilterKey =
     filterKey === "diagnosis" ? "infiltration" : "diagnosis";
-  const oppositeFilterValue = state.displayFilters[oppositeFilterKey];
+  const oppositeFilterValue = state.activeFilters[oppositeFilterKey];
   if (!oppositeFilterValue) {
     return false;
   }
@@ -688,6 +691,7 @@ function resolveFilterTransition(nextFilters) {
 
 function bindControls() {
   bindTopbarSelectionReveal();
+  bindSidebarCollapse();
 
   document.getElementById("diagnosisSelect").addEventListener("change", (event) => {
     revealTopbarSelectionLabels();
@@ -711,8 +715,17 @@ function bindControls() {
     revealTopbarSelectionLabels();
     if (event.target.value) {
       syncUiStateQuery(event.target.value);
-      void changeSlide(event.target.value, { syncEmptyFilters: true });
+      void changeSlide(event.target.value, {
+        syncEmptyFilters: true,
+        preserveViewport: true,
+      });
     }
+  });
+  document.getElementById("previousSlideButton").addEventListener("click", () => {
+    navigateFilteredSlides(-1);
+  });
+  document.getElementById("nextSlideButton").addEventListener("click", () => {
+    navigateFilteredSlides(1);
   });
   document.getElementById("experimentSelect").addEventListener("change", (event) => {
     const requestedExperiment = String(event.target.value ?? "").trim();
@@ -849,6 +862,22 @@ function bindControls() {
   });
 }
 
+function bindSidebarCollapse() {
+  const buttons = [
+    document.getElementById("sidebarCollapseButton"),
+    document.getElementById("sidebarHeaderCollapseButton"),
+  ].filter(Boolean);
+  if (buttons.length === 0) {
+    return;
+  }
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      setSidebarCollapsed(!state.sidebarCollapsed);
+    });
+  }
+  setSidebarCollapsed(state.sidebarCollapsed);
+}
+
 function bindLayoutResizeHandle() {
   const resizeHandle = document.getElementById("layoutResizeHandle");
   const layout = document.querySelector(".layout");
@@ -888,6 +917,46 @@ function bindLayoutResizeHandle() {
 
   resizeHandle.addEventListener("pointerup", endResize);
   resizeHandle.addEventListener("pointercancel", endResize);
+}
+
+function setSidebarCollapsed(isCollapsed) {
+  state.sidebarCollapsed = isCollapsed;
+  document.body.classList.toggle("sidebar-collapsed", isCollapsed);
+  const buttons = [
+    document.getElementById("sidebarCollapseButton"),
+    document.getElementById("sidebarHeaderCollapseButton"),
+  ].filter(Boolean);
+  for (const button of buttons) {
+    button.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+    button.setAttribute(
+      "aria-label",
+      isCollapsed ? "Expand sidebar" : "Collapse sidebar",
+    );
+  }
+  refreshViewerAfterLayoutResize();
+}
+
+function navigateFilteredSlides(direction) {
+  const matchingSlides = getFilteredSlides();
+  const currentIndex = matchingSlides.findIndex(
+    (slide) => slide.key === state.currentSlideKey,
+  );
+  if (currentIndex === -1) {
+    syncSlideNavigationButtons();
+    return;
+  }
+
+  const nextIndex = currentIndex + direction;
+  if (nextIndex < 0 || nextIndex >= matchingSlides.length) {
+    syncSlideNavigationButtons();
+    return;
+  }
+
+  const nextSlideKey = matchingSlides[nextIndex].key;
+  document.getElementById("slideSelect").value = nextSlideKey;
+  syncSlideNavigationButtons();
+  syncUiStateQuery(nextSlideKey);
+  void changeSlide(nextSlideKey, { preserveViewport: true });
 }
 
 function updateSidebarWidthFromPointer(clientX) {
@@ -936,7 +1005,6 @@ function refreshViewerAfterLayoutResize() {
 function applyFilters(nextFilters) {
   const { filters, matchingSlides } = resolveFilterTransition(nextFilters);
   state.activeFilters = filters;
-  state.displayFilters = { ...filters };
   populateFilterSelectors();
   populateSlideSelector();
   if (matchingSlides.length === 0) {
@@ -950,7 +1018,7 @@ function applyFilters(nextFilters) {
     : matchingSlides[0].key;
   document.getElementById("slideSelect").value = preferredSlideKey;
   if (preferredSlideKey !== state.currentSlideKey) {
-    void changeSlide(preferredSlideKey);
+    void changeSlide(preferredSlideKey, { preserveViewport: true });
   }
 }
 
@@ -990,7 +1058,7 @@ function restorePendingClusterFilterState(clusterFilterState) {
 }
 
 async function changeSlide(slideKey, options = {}) {
-  const { syncEmptyFilters = false } = options;
+  const { syncEmptyFilters = false, preserveViewport = false } = options;
   if (!slideKey) {
     throw new Error("No slide is available for the current filter selection");
   }
@@ -1003,28 +1071,33 @@ async function changeSlide(slideKey, options = {}) {
     syncEmptyFilters &&
     (!state.activeFilters.diagnosis || !state.activeFilters.infiltration)
   ) {
-    state.displayFilters = {
-      ...state.displayFilters,
+    state.activeFilters = {
+      ...state.activeFilters,
       diagnosis: state.activeFilters.diagnosis
-        ? state.displayFilters.diagnosis
+        ? state.activeFilters.diagnosis
         : slideEntry.diagnosis,
       infiltration: state.activeFilters.infiltration
-        ? state.displayFilters.infiltration
+        ? state.activeFilters.infiltration
         : slideEntry.infiltration,
     };
     populateFilterSelectors();
+    populateSlideSelector();
   }
   const resolvedExperiment = ensureValidCurrentExperiment(slideKey);
   if (resolvedExperiment === null) {
     throw new Error(`No experiments are available for slide ${slideKey}`);
   }
   const preserveCurrentViewerImage = Boolean(state.viewer) && state.currentSlideKey === slideKey;
+  const preservedViewportState =
+    preserveViewport && !preserveCurrentViewerImage ? captureViewportState() : null;
   const preservedClusterFilterState = snapshotClusterFilterState();
 
   const slideSelect = document.getElementById("slideSelect");
   const diagnosisSelect = document.getElementById("diagnosisSelect");
   const infiltrationSelect = document.getElementById("infiltrationSelect");
   const experimentSelect = document.getElementById("experimentSelect");
+  const previousSlideButton = document.getElementById("previousSlideButton");
+  const nextSlideButton = document.getElementById("nextSlideButton");
   const loadToken = state.slideLoadToken + 1;
   state.slideLoadToken = loadToken;
   setTopbarStatus("loading");
@@ -1032,6 +1105,8 @@ async function changeSlide(slideKey, options = {}) {
   diagnosisSelect.disabled = true;
   infiltrationSelect.disabled = true;
   experimentSelect.disabled = true;
+  previousSlideButton.disabled = true;
+  nextSlideButton.disabled = true;
   slideSelect.value = slideKey;
   populateExperimentSelector(slideKey);
 
@@ -1066,7 +1141,7 @@ async function changeSlide(slideKey, options = {}) {
         scheduleRedraw();
         scheduleSidebarRedraw({ immediate: true });
       } else {
-        state.pendingViewportState = null;
+        state.pendingViewportState = preservedViewportState;
         openActiveImageLayer();
       }
     }
@@ -1086,6 +1161,7 @@ async function changeSlide(slideKey, options = {}) {
       if (getFilteredSlides().length > 0) {
         slideSelect.value = slideKey;
       }
+      syncSlideNavigationButtons();
     }
   }
 }

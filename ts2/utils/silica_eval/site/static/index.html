@@ -27,6 +27,19 @@
   <body>
     <header class="topbar">
       <div class="topbar-inner">
+        <button
+          type="button"
+          id="sidebarCollapseButton"
+          class="sidebar-collapse-button topbar-sidebar-toggle"
+          aria-label="Collapse sidebar"
+          aria-expanded="true"
+        >
+          <svg class="sidebar-collapse-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16" />
+            <path d="M4 12h16" />
+            <path d="M4 17h16" />
+          </svg>
+        </button>
         <a href="/" class="topbar-brand">
           <span class="topbar-brand-mark" aria-hidden="true">
             <img src="/static/logo.png" alt="mlins-logo">
@@ -68,6 +81,36 @@
               </select>
             </div>
           </div>
+          <div class="topbar-slide-nav-pill" role="group" aria-label="Slide navigation">
+            <button
+              type="button"
+              id="previousSlideButton"
+              class="topbar-slide-nav-button"
+              aria-label="Previous slide"
+            >
+              <svg
+                class="topbar-slide-nav-icon"
+                viewBox="0 0 20 20"
+                aria-hidden="true"
+              >
+                <path d="M12 4 L6 10 L12 16" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              id="nextSlideButton"
+              class="topbar-slide-nav-button"
+              aria-label="Next slide"
+            >
+              <svg
+                class="topbar-slide-nav-icon"
+                viewBox="0 0 20 20"
+                aria-hidden="true"
+              >
+                <path d="M8 4 L14 10 L8 16" />
+              </svg>
+            </button>
+          </div>
         </div>
         <div class="topbar-experiment-picker">
           <div class="topbar-experiment-pill">
@@ -86,6 +129,27 @@
     <div class="page-shell">
       <main class="layout">
         <aside class="sidebar">
+          <div class="sidebar-mobile-header">
+            <a href="/" class="sidebar-brand">
+              <span class="topbar-brand-mark" aria-hidden="true">
+                <img src="/static/logo.png" alt="mlins-logo">
+              </span>
+              <span>Silica</span>
+            </a>
+            <button
+              type="button"
+              id="sidebarHeaderCollapseButton"
+              class="sidebar-collapse-button sidebar-header-collapse-button"
+              aria-label="Collapse sidebar"
+              aria-expanded="true"
+            >
+              <svg class="sidebar-collapse-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h16" />
+                <path d="M4 12h16" />
+                <path d="M4 17h16" />
+              </svg>
+            </button>
+          </div>
           <div class="sidebar-scroll">
             <section class="panel-card info-card">
               <div class="info-grid">

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
+import logging
 import re
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from tqdm import tqdm
 import uvicorn
 
 
@@ -16,22 +18,14 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 GROUND_TRUTH_PATH = Path(__file__).resolve().parent / "gt.csv"
 DEFAULT_INITIAL_SLIDE_KEY = "NIO_UM_937b-4"
 DEFAULT_SLIDE_PORTAL_DIR = (
-    Path(__file__).resolve().parent
-    / "out"
-    / "b1a0cbe3"
-    / "nio_mouse_1-1"
-    / "portal"
+    Path(__file__).resolve().parent / "out" / "b1a0cbe3" / "nio_mouse_1-1" / "portal"
 )
+LOGGER = logging.getLogger("silica.site")
 
 
 def _natural_sort_key(value: str) -> list[str | int]:
     parts = re.split(r"(\d+)", value)
     return [int(part) if part.isdigit() else part.lower() for part in parts]
-
-
-def _read_manifest(manifest_path: Path) -> dict:
-    with manifest_path.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
 
 
 def _normalize_slide_token(value: str) -> str:
@@ -50,6 +44,7 @@ def _normalize_metadata_value(value: str | None) -> str:
 
 def _load_ground_truth(ground_truth_path: str | Path) -> dict[str, dict[str, str]]:
     csv_path = Path(ground_truth_path).resolve()
+    LOGGER.info("Loading ground-truth CSV: %s", csv_path)
     assert csv_path.is_file(), f"Ground-truth CSV not found: {csv_path}"
 
     metadata_by_slide: dict[str, dict[str, str]] = {}
@@ -57,15 +52,15 @@ def _load_ground_truth(ground_truth_path: str | Path) -> dict[str, dict[str, str
         reader = csv.DictReader(handle)
         required_columns = {"slide", "diagnosis", "infiltration"}
         missing_columns = required_columns.difference(reader.fieldnames or [])
-        assert not missing_columns, (
-            f"Ground-truth CSV is missing required columns: {sorted(missing_columns)}"
-        )
+        assert (
+            not missing_columns
+        ), f"Ground-truth CSV is missing required columns: {sorted(missing_columns)}"
 
         for row in reader:
             slide_value = row.get("slide")
-            assert slide_value is not None and slide_value.strip(), (
-                "Ground-truth CSV contains a row with an empty slide value"
-            )
+            assert (
+                slide_value is not None and slide_value.strip()
+            ), "Ground-truth CSV contains a row with an empty slide value"
             normalized_slide = _normalize_slide_token(slide_value)
             metadata = {
                 "diagnosis": _normalize_metadata_value(row.get("diagnosis")),
@@ -80,174 +75,183 @@ def _load_ground_truth(ground_truth_path: str | Path) -> dict[str, dict[str, str
                 )
             metadata_by_slide[normalized_slide] = metadata
 
+    LOGGER.info("Loaded %d ground-truth slide rows", len(metadata_by_slide))
     return metadata_by_slide
 
 
 def _resolve_slide_dzi_dir(
     portal_dir: Path,
     slide_key: str,
-    slide_dzi_root: str | Path | None = None,
+    slide_dzi_root: Path | None = None,
 ) -> Path:
     if slide_dzi_root is not None:
-        dzi_root = Path(slide_dzi_root).resolve()
-        assert dzi_root.is_dir(), f"Slide DZI root not found: {dzi_root}"
-        candidate_dirs = [
-            dzi_root / slide_key,
-            dzi_root / slide_key / "dzi",
-        ]
-        dzi_dir = next(
-            (
-                path
-                for path in candidate_dirs
-                if path.is_dir() and (path / "srhvhe.dzi").is_file()
-            ),
-            None,
-        )
-        if dzi_dir is None:
-            dzi_dir = next((path for path in candidate_dirs if path.is_dir()), None)
-        assert dzi_dir is not None, (
-            f"Could not find DZI directory for slide {slide_key!r} under {dzi_root}. "
-            f"Expected one of: {candidate_dirs[0]} or {candidate_dirs[1]}"
-        )
-        return dzi_dir.resolve()
-
-    local_dzi_dir = portal_dir / "dzi"
-    if local_dzi_dir.is_dir():
-        return local_dzi_dir.resolve()
-    old_layout_dzi_dir = portal_dir.parent / "dzi"
-    if old_layout_dzi_dir.is_dir():
-        return old_layout_dzi_dir.resolve()
-    return portal_dir.resolve()
+        return slide_dzi_root / slide_key / "dzi"
+    return portal_dir.parent / "dzi"
 
 
 def _make_slide_entry(
-    portal_dir: Path,
+    slide_key: str,
+    experiment_root: Path,
     experiment_name: str,
-    slide_dzi_root: str | Path | None = None,
+    slide_dzi_root: Path | None = None,
 ) -> dict:
-    manifest_path = portal_dir / "slide_manifest.json"
-    assert manifest_path.exists(), f"Slide portal manifest not found: {manifest_path}"
-    manifest = _read_manifest(manifest_path)
-    slide_label = portal_dir.parent.name if portal_dir.name == "portal" else portal_dir.name
-    slide_id = str(manifest.get("slide_id", slide_label))
+    portal_dir = experiment_root / slide_key / "portal"
     return {
-        "key": slide_label,
-        "label": slide_label,
-        "slide_id": slide_id,
+        "key": slide_key,
+        "label": slide_key,
+        "slide_id": slide_key,
         "experiment": experiment_name,
-        "portal_dir": portal_dir.resolve(),
+        "portal_dir": portal_dir,
         "dzi_dir": _resolve_slide_dzi_dir(
             portal_dir=portal_dir,
-            slide_key=slide_label,
+            slide_key=slide_key,
             slide_dzi_root=slide_dzi_root,
         ),
     }
 
 
-def _discover_slide_portals_for_root(
-    slide_portal_dir: str | Path,
+def _assert_unique_slide_entries(slide_entries: list[dict]) -> None:
+    seen_slide_keys: set[str] = set()
+    duplicate_slide_keys: set[str] = set()
+    for entry in slide_entries:
+        slide_key = entry["key"]
+        if slide_key in seen_slide_keys:
+            duplicate_slide_keys.add(slide_key)
+        seen_slide_keys.add(slide_key)
+    assert (
+        not duplicate_slide_keys
+    ), "Duplicate slide keys were discovered: " + ", ".join(
+        sorted(duplicate_slide_keys, key=_natural_sort_key)
+    )
+
+
+def _discover_slide_portals_from_slide_keys_for_root(
+    experiment_root: Path,
     experiment_name: str,
-    slide_dzi_root: str | Path | None = None,
+    slide_keys: list[str],
+    slide_dzi_root: Path | None = None,
 ) -> list[dict]:
-    root = Path(slide_portal_dir).resolve()
-    assert root.is_dir(), f"Slide portal directory not found: {root}"
-
-    if (root / "slide_manifest.json").exists():
-        slide_entries = [
+    started_at = time.perf_counter()
+    LOGGER.info(
+        "Building slide entries: experiment=%s root=%s slides=%d",
+        experiment_name,
+        experiment_root,
+        len(slide_keys),
+    )
+    slide_entries: list[dict] = []
+    for slide_key in tqdm(
+        slide_keys,
+        desc=f"register {experiment_name}",
+        unit="slide",
+        dynamic_ncols=True,
+    ):
+        slide_entries.append(
             _make_slide_entry(
-                root,
+                slide_key,
+                experiment_root=experiment_root,
                 experiment_name=experiment_name,
                 slide_dzi_root=slide_dzi_root,
             )
-        ]
-    else:
-        candidate_portals: list[Path] = []
-        for child in root.iterdir():
-            if not child.is_dir():
-                continue
-            if (child / "slide_manifest.json").exists():
-                candidate_portals.append(child)
-                continue
-            portal_dir = child / "portal"
-            if (portal_dir / "slide_manifest.json").exists():
-                candidate_portals.append(portal_dir)
-
-        assert candidate_portals, (
-            "No slide portal directories were found under "
-            f"{root}. Expected either a direct portal directory with "
-            "slide_manifest.json or child slide directories with slide_manifest.json."
         )
-        slide_entries = [
-            _make_slide_entry(
-                portal_dir,
-                experiment_name=experiment_name,
-                slide_dzi_root=slide_dzi_root,
-            )
-            for portal_dir in candidate_portals
-        ]
 
+    LOGGER.info(
+        "Sorting slide entries: experiment=%s count=%d",
+        experiment_name,
+        len(slide_entries),
+    )
     slide_entries.sort(key=lambda entry: _natural_sort_key(entry["label"]))
-    slide_keys = [entry["key"] for entry in slide_entries]
-    duplicate_slide_keys = sorted({key for key in slide_keys if slide_keys.count(key) > 1})
-    assert not duplicate_slide_keys, (
-        "Duplicate slide keys were discovered: " + ", ".join(duplicate_slide_keys)
+    LOGGER.info(
+        "Checking duplicate slide entries: experiment=%s count=%d",
+        experiment_name,
+        len(slide_entries),
+    )
+    _assert_unique_slide_entries(slide_entries)
+    LOGGER.info(
+        "Built slide entries: experiment=%s count=%d elapsed=%.2fs",
+        experiment_name,
+        len(slide_entries),
+        time.perf_counter() - started_at,
     )
     return slide_entries
 
 
-def _is_slide_leaf_dir(path: Path) -> bool:
-    return (path / "slide_manifest.json").is_file() or (path / "portal" / "slide_manifest.json").is_file()
-
-
-def _is_slide_collection_root(path: Path) -> bool:
-    if (path / "slide_manifest.json").is_file():
-        return True
-    return any(_is_slide_leaf_dir(child) for child in path.iterdir() if child.is_dir())
-
-
 def discover_slide_portals(
     slide_portal_dir: str | Path,
+    slide_keys: list[str],
     slide_dzi_root: str | Path | None = None,
+    default_experiment: str | None = None,
 ) -> tuple[list[dict], list[str]]:
     root = Path(slide_portal_dir).resolve()
+    LOGGER.info("Preparing slide portal records from root: %s", root)
     assert root.is_dir(), f"Slide portal directory not found: {root}"
-
-    if _is_slide_collection_root(root):
-        experiment_name = root.name or "default"
-        return (
-            _discover_slide_portals_for_root(
-                slide_portal_dir=root,
-                experiment_name=experiment_name,
-                slide_dzi_root=slide_dzi_root,
-            ),
-            [experiment_name],
+    resolved_slide_dzi_root = None
+    if slide_dzi_root is not None:
+        resolved_slide_dzi_root = Path(slide_dzi_root).resolve()
+        assert resolved_slide_dzi_root.is_dir(), (
+            f"Slide DZI root not found: {resolved_slide_dzi_root}"
         )
 
-    experiment_root_entries = [
-        child
-        for child in sorted(root.iterdir(), key=lambda path: _natural_sort_key(path.name))
-        if child.is_dir() and _is_slide_collection_root(child)
-    ]
-    if experiment_root_entries:
-        slide_entries: list[dict] = []
-        discovered_experiments: list[str] = []
-        for experiment_root in experiment_root_entries:
-            discovered_experiments.append(experiment_root.name)
-            slide_entries.extend(
-                _discover_slide_portals_for_root(
-                    slide_portal_dir=experiment_root,
-                    experiment_name=experiment_root.name,
-                    slide_dzi_root=slide_dzi_root,
-                )
-            )
-        return slide_entries, sorted(set(discovered_experiments), key=_natural_sort_key)
-
-    raise AssertionError(
-        "No slide portal directories were found under "
-        f"{root}. Expected either a direct portal directory, a root containing "
-        "slide folders, or a multi-experiment root whose child directories each "
-        "contain one of those layouts."
+    is_multi_experiment_root = (
+        default_experiment is not None and (root / default_experiment).is_dir()
     )
+    if default_experiment is None and slide_keys:
+        first_slide_key = slide_keys[0]
+        is_multi_experiment_root = not (
+            (root / first_slide_key).exists()
+            or (root / first_slide_key / "portal").exists()
+        )
+
+    if not is_multi_experiment_root:
+        experiment_name = root.name or "default"
+        LOGGER.info(
+            "Using single-experiment portal layout: experiment=%s slides=%d",
+            experiment_name,
+            len(slide_keys),
+        )
+        slide_entries = _discover_slide_portals_from_slide_keys_for_root(
+            experiment_root=root,
+            experiment_name=experiment_name,
+            slide_keys=slide_keys,
+            slide_dzi_root=resolved_slide_dzi_root,
+        )
+        return slide_entries, [experiment_name]
+
+    slide_entries: list[dict] = []
+    discovered_experiments: list[str] = []
+    LOGGER.info("Using multi-experiment portal layout")
+    for experiment_root in sorted(
+        root.iterdir(), key=lambda path: _natural_sort_key(path.name)
+    ):
+        if not experiment_root.is_dir():
+            continue
+        discovered_experiments.append(experiment_root.name)
+        LOGGER.info(
+            "Registering experiment=%s slides=%d",
+            experiment_root.name,
+            len(slide_keys),
+        )
+        experiment_started_at = time.perf_counter()
+        experiment_slide_entries = _discover_slide_portals_from_slide_keys_for_root(
+            experiment_root=experiment_root,
+                experiment_name=experiment_root.name,
+                slide_keys=slide_keys,
+                slide_dzi_root=resolved_slide_dzi_root,
+            )
+        slide_entries.extend(experiment_slide_entries)
+        LOGGER.info(
+            "Registered experiment=%s records=%d elapsed=%.2fs",
+            experiment_root.name,
+            len(experiment_slide_entries),
+            time.perf_counter() - experiment_started_at,
+        )
+
+    assert discovered_experiments, f"No experiment directories were found under {root}"
+    LOGGER.info(
+        "Prepared %d slide/experiment records across %d experiments",
+        len(slide_entries),
+        len(discovered_experiments),
+    )
+    return slide_entries, sorted(set(discovered_experiments), key=_natural_sort_key)
 
 
 def create_app(
@@ -256,28 +260,25 @@ def create_app(
     ground_truth_path: str | Path | None = None,
     default_experiment: str | None = None,
 ) -> FastAPI:
+    started_at = time.perf_counter()
+    LOGGER.info("Creating Silica portal backend")
+    ground_truth_by_slide = _load_ground_truth(ground_truth_path or GROUND_TRUTH_PATH)
     slide_entries, discovered_experiments = discover_slide_portals(
         slide_portal_dir or DEFAULT_SLIDE_PORTAL_DIR,
         slide_dzi_root=slide_dzi_root,
+        slide_keys=list(ground_truth_by_slide.keys()),
+        default_experiment=default_experiment,
     )
-    ground_truth_by_slide = _load_ground_truth(ground_truth_path or GROUND_TRUTH_PATH)
+    LOGGER.info(
+        "Prepared %d slide/experiment records from %d GT slides",
+        len(slide_entries),
+        len(ground_truth_by_slide),
+    )
     diagnoses: set[str] = set()
     infiltrations: set[str] = set()
     slides_by_key: dict[str, dict] = {}
     for entry in slide_entries:
-        candidate_tokens = {
-            _normalize_slide_token(entry["key"]),
-            _normalize_slide_token(entry["label"]),
-            _normalize_slide_token(entry["slide_id"]),
-        }
-        matched_metadata = {
-            "diagnosis": "UNK",
-            "infiltration": "UNK",
-        }
-        for token in candidate_tokens:
-            if token in ground_truth_by_slide:
-                matched_metadata = ground_truth_by_slide[token]
-                break
+        matched_metadata = ground_truth_by_slide[entry["key"]]
         entry["diagnosis"] = matched_metadata["diagnosis"]
         entry["infiltration"] = matched_metadata["infiltration"]
         diagnoses.add(entry["diagnosis"])
@@ -294,14 +295,16 @@ def create_app(
             },
         )
         slide_record["available_experiments"].append(entry["experiment"])
-        assert slide_record["diagnosis"] == entry["diagnosis"], (
-            f"Inconsistent diagnosis metadata for slide {entry['key']!r}"
-        )
-        assert slide_record["infiltration"] == entry["infiltration"], (
-            f"Inconsistent infiltration metadata for slide {entry['key']!r}"
-        )
+        assert (
+            slide_record["diagnosis"] == entry["diagnosis"]
+        ), f"Inconsistent diagnosis metadata for slide {entry['key']!r}"
+        assert (
+            slide_record["infiltration"] == entry["infiltration"]
+        ), f"Inconsistent infiltration metadata for slide {entry['key']!r}"
 
-    slide_variant_lookup = {(entry["key"], entry["experiment"]): entry for entry in slide_entries}
+    slide_variant_lookup = {
+        (entry["key"], entry["experiment"]): entry for entry in slide_entries
+    }
     for slide_record in slides_by_key.values():
         slide_record["available_experiments"] = sorted(
             set(slide_record["available_experiments"]),
@@ -318,20 +321,34 @@ def create_app(
     candidate_default_slide_keys = [
         slide_key
         for slide_key in sorted(slides_by_key.keys(), key=_natural_sort_key)
-        if resolved_default_experiment in slides_by_key[slide_key]["available_experiments"]
+        if resolved_default_experiment
+        in slides_by_key[slide_key]["available_experiments"]
     ]
-    assert candidate_default_slide_keys, (
-        f"No slides are available for default experiment {resolved_default_experiment!r}"
-    )
+    assert (
+        candidate_default_slide_keys
+    ), f"No slides are available for default experiment {resolved_default_experiment!r}"
     default_slide_key = (
         DEFAULT_INITIAL_SLIDE_KEY
         if DEFAULT_INITIAL_SLIDE_KEY in candidate_default_slide_keys
         else candidate_default_slide_keys[0]
     )
+    LOGGER.info(
+        "Resolved default selection: experiment=%s slide=%s",
+        resolved_default_experiment,
+        default_slide_key,
+    )
     assert STATIC_DIR.is_dir(), f"Static directory not found: {STATIC_DIR}"
 
     app = FastAPI(title="Silica Single-Cell Portal")
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    LOGGER.info(
+        "Backend ready: slides=%d experiments=%d diagnoses=%d infiltrations=%d elapsed=%.2fs",
+        len(slides_by_key),
+        len(discovered_experiments),
+        len(diagnoses),
+        len(infiltrations),
+        time.perf_counter() - started_at,
+    )
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
@@ -339,6 +356,7 @@ def create_app(
 
     @app.get("/api/slides")
     def slides() -> dict:
+        LOGGER.info("Serving /api/slides")
         return {
             "slides": [
                 slides_by_key[key]
@@ -353,10 +371,21 @@ def create_app(
             },
         }
 
-    @app.get("/portal-assets/{experiment_name}/{slide_key}/{asset_path:path}", include_in_schema=False)
-    def portal_asset(experiment_name: str, slide_key: str, asset_path: str) -> FileResponse:
+    @app.get(
+        "/portal-assets/{experiment_name}/{slide_key}/{asset_path:path}",
+        include_in_schema=False,
+    )
+    def portal_asset(
+        experiment_name: str, slide_key: str, asset_path: str
+    ) -> FileResponse:
         slide_entry = slide_variant_lookup.get((slide_key, experiment_name))
         if slide_entry is None:
+            LOGGER.info(
+                "Unknown portal asset request: experiment=%s slide=%s asset=%s",
+                experiment_name,
+                slide_key,
+                asset_path,
+            )
             raise HTTPException(
                 status_code=404,
                 detail=f"Unknown slide/experiment combination: {slide_key} @ {experiment_name}",
@@ -364,32 +393,75 @@ def create_app(
 
         portal_dir = slide_entry["portal_dir"]
         resolved_asset_path = (portal_dir / asset_path).resolve()
+        if asset_path in {"slide_manifest.json", "cells.json"}:
+            LOGGER.info(
+                "Serving portal asset: experiment=%s slide=%s asset=%s",
+                experiment_name,
+                slide_key,
+                asset_path,
+            )
         try:
             resolved_asset_path.relative_to(portal_dir)
         except ValueError as error:
-            raise HTTPException(status_code=404, detail="Asset path is outside slide portal") from error
+            raise HTTPException(
+                status_code=404, detail="Asset path is outside slide portal"
+            ) from error
 
         if not resolved_asset_path.exists() or not resolved_asset_path.is_file():
-            raise HTTPException(status_code=404, detail=f"Asset not found: {asset_path}")
+            LOGGER.info(
+                "Missing portal asset: experiment=%s slide=%s asset=%s path=%s",
+                experiment_name,
+                slide_key,
+                asset_path,
+                resolved_asset_path,
+            )
+            raise HTTPException(
+                status_code=404, detail=f"Asset not found: {asset_path}"
+            )
 
         return FileResponse(resolved_asset_path)
 
     @app.get("/dzi-assets/{slide_key}/{asset_path:path}", include_in_schema=False)
     def dzi_asset(slide_key: str, asset_path: str) -> FileResponse:
-        slide_candidates = [entry for entry in slide_entries if entry["key"] == slide_key]
+        slide_candidates = [
+            entry for entry in slide_entries if entry["key"] == slide_key
+        ]
         if not slide_candidates:
-            raise HTTPException(status_code=404, detail=f"Unknown slide key: {slide_key}")
+            LOGGER.info(
+                "Unknown DZI asset request: slide=%s asset=%s",
+                slide_key,
+                asset_path,
+            )
+            raise HTTPException(
+                status_code=404, detail=f"Unknown slide key: {slide_key}"
+            )
         slide_entry = slide_candidates[0]
 
         dzi_dir = slide_entry["dzi_dir"]
         resolved_asset_path = (dzi_dir / asset_path).resolve()
+        if asset_path.endswith(".dzi"):
+            LOGGER.info(
+                "Serving DZI metadata: slide=%s asset=%s",
+                slide_key,
+                asset_path,
+            )
         try:
             resolved_asset_path.relative_to(dzi_dir)
         except ValueError as error:
-            raise HTTPException(status_code=404, detail="Asset path is outside slide DZI") from error
+            raise HTTPException(
+                status_code=404, detail="Asset path is outside slide DZI"
+            ) from error
 
         if not resolved_asset_path.exists() or not resolved_asset_path.is_file():
-            raise HTTPException(status_code=404, detail=f"Asset not found: {asset_path}")
+            LOGGER.info(
+                "Missing DZI asset: slide=%s asset=%s path=%s",
+                slide_key,
+                asset_path,
+                resolved_asset_path,
+            )
+            raise HTTPException(
+                status_code=404, detail=f"Asset not found: {asset_path}"
+            )
 
         return FileResponse(resolved_asset_path)
 
@@ -402,10 +474,9 @@ def parse_args() -> argparse.Namespace:
         "--slide-portal-dir",
         default=str(DEFAULT_SLIDE_PORTAL_DIR),
         help=(
-            "Either a single portal directory containing slide_manifest.json, a "
-            "parent directory whose child slide folders each contain "
-            "slide_manifest.json, or a multi-experiment root whose child "
-            "directories each contain one of those layouts."
+            "Root containing slide portal assets as <slide>/portal or "
+            "<experiment>/<slide>/portal. Slide names come from the "
+            "ground-truth CSV."
         ),
     )
     parser.add_argument(
@@ -413,8 +484,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Optional root directory for DZI assets stored separately from portal "
-            "metadata. Each slide is resolved as either <slide-dzi-dir>/<slide_key>/ "
-            "or <slide-dzi-dir>/<slide_key>/dzi/."
+            "metadata. Each slide is resolved as <slide-dzi-dir>/<slide_key>/dzi/."
         ),
     )
     parser.add_argument(
@@ -437,7 +507,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     args = parse_args()
+    LOGGER.info("Starting server on %s:%s", args.host, args.port)
     app = create_app(
         slide_portal_dir=args.slide_portal_dir,
         slide_dzi_root=args.slide_dzi_dir,
