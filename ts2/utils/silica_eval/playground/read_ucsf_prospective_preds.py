@@ -66,6 +66,7 @@ def compute_label_correlations(
                 "prediction_key": prediction_key,
                 "n": len(data.dropna(subset=[prediction_key, "label"])),
                 "pearson_correlation": data[prediction_key].corr(data["label"]),
+                "spearman_correlation": data[prediction_key].corr(data["label"], method="spearman"),
             }
             for prediction_key in prediction_keys
         ]
@@ -208,7 +209,7 @@ def warn_missing_fastglioma_scores(data: pd.DataFrame) -> None:
 
 
 def main():
-    prospective_csv = "ucsf_prospective.csv"  # "ucsf_retrospective_val.csv"  #
+    prospective_csv = "data/ucsf_retrospective_val.csv"  #"data/ucsf_all_sorted.csv"  # 
     output_prefix = os.path.splitext(os.path.basename(prospective_csv))[0]
     pred_root = "/scratch/tocho_root/tocho0/chengjia/silica_ucsf/b1a0cbe3_k1024"
     sample_slide_map_csv = (
@@ -239,6 +240,8 @@ def main():
     data["fullsrh"] = fullsrh
     data_with_predictions = data.dropna(subset=prediction_display_keys)
     data_with_fastglioma = data_with_predictions.dropna(subset=["fullsrh"])
+
+    #import pdb; pdb.set_trace()
     correlations = pd.concat(
         (
             compute_label_correlations(
