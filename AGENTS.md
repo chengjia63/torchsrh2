@@ -1,7 +1,8 @@
 # AGENTS.md
 
 ## Implementation
-- Avoid silent failures. Unexpected states, violated assumptions, and invalid inputs should raise clear errors rather than quietly continuing with incorrect behavior.
+- Avoid silent failures: do not catch, mask, log-and-continue, or substitute defaults for errors without telling the user.
+- Do not add extra validation, guard clauses, or custom exceptions unless they are necessary for the requested behavior or prevent a genuinely unclear downstream failure. Prefer letting ordinary runtime errors surface when they are already clear enough to debug.
 - Prefer minimal, localized diffs unless a broader refactor is clearly necessary for correctness or maintainability.
 - Do not rename public APIs, change file formats, or alter external interfaces unless necessary.
 - Preserve existing interfaces exactly unless the user explicitly asks to change them. This includes dataset return keys, config structure, file layout, and logging assumptions relied on elsewhere.
@@ -17,7 +18,7 @@
 - Do not remove existing `pdb.set_trace()` calls added by the user unless explicitly asked.
 - Do not report user-added `pdb.set_trace()` calls as bugs or cleanup items unless the user explicitly asks for review of them.
 - Prefer straightforward implementations over clever or heavily abstracted ones unless the abstraction materially improves correctness or maintainability.
-- Avoid adding speculative abstractions, feature-detection branches, marker attributes, or defensive helper layers unless they are required for correctness.
+- Avoid adding speculative abstractions, feature-detection branches, marker attributes, validation layers, or defensive helper layers unless they are required for correctness.
 
 ## Communication
 - Be concise and direct.
