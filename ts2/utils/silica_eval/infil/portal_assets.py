@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import KDTree
 
-from ts2.utils.silica_sc_eval.generate_gmm_visualization import (
+from ts2.utils.silica_eval.infil.generate_gmm_visualization import (
     load_mosaic_image,
     parse_assignment_vector,
     parse_cell_path,

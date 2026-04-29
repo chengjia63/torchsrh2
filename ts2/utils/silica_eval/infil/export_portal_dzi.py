@@ -10,8 +10,8 @@ from omegaconf import OmegaConf
 from PIL import Image
 from tqdm.auto import tqdm
 
-from ts2.utils.silica_sc_eval.generate_gmm_visualization import load_mosaic_image
-from ts2.utils.silica_sc_eval.run_single_cell_inference import (
+from ts2.utils.silica_eval.infil.generate_gmm_visualization import load_mosaic_image
+from ts2.utils.silica_eval.infil.run_single_cell_inference import (
     infer_mosaic_io_paths,
     parse_mosaic_run,
     select_mosaic_runs_for_task,

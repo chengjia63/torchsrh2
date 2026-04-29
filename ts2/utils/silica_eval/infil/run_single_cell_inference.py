@@ -18,9 +18,11 @@ from ts2.utils.ds_inf.inference import (
     DEFAULT_CLASSES,
     run_inference,
 )
-from ts2.utils.silica_sc_eval.generate_gmm_visualization import generate_visualization
-from ts2.utils.silica_sc_eval.gmm_inference import instantiate_gmm, run_gmm_inference
-from ts2.utils.silica_sc_eval.portal_assets import (
+from ts2.utils.silica_eval.infil.generate_gmm_visualization import (
+    generate_visualization,
+)
+from ts2.utils.silica_eval.infil.gmm_inference import instantiate_gmm, run_gmm_inference
+from ts2.utils.silica_eval.infil.portal_assets import (
     build_slide_statistics,
     export_slide_portal_assets,
 )
@@ -29,6 +31,39 @@ from ts2.utils.srh_viz import prepare_two_channel_viz_image
 from ts2.utils.strip_patching.patching import generate_paired_strip_patches_from_lists
 
 logger = logging.getLogger(__name__)
+CELL_PREDICTION_OUTLINE_COLORS = {
+    "nuclei": (255, 255, 0),
+    "cyto": (255, 0, 255),
+    "rbc": (255, 0, 0),
+    "mp": (255, 165, 0),
+}
+
+
+def _strip_index_from_dicom_path(path: str, is_ucsf: bool) -> int:
+    name = os.path.splitext(os.path.basename(path))[0]
+    if is_ucsf:
+        parts = name.split("_", 2)
+        assert len(parts) >= 2 and parts[1].isdigit(), (
+            "Expected UCSF strip DICOM filename in "
+            f"`img<mosaic>_<strip>_<hash>.dcm` format, got: {path}"
+        )
+        return int(parts[1])
+
+    assert len(name) > 3 and name[:3] == "IMG" and name[3:].isdigit(), (
+        "Expected non-UCSF strip DICOM filename in `IMG<strip>.dcm` "
+        f"format, got: {path}"
+    )
+    return int(name[3:])
+
+
+def _sorted_strip_dicom_paths(strip_dir: str, is_ucsf: bool) -> List[str]:
+    return sorted(
+        glob.glob(os.path.join(strip_dir, "*.dcm")),
+        key=lambda path: (
+            _strip_index_from_dicom_path(path, is_ucsf=is_ucsf),
+            os.path.basename(path),
+        ),
+    )
 
 
 def _resolve_standard_gmm_paths(gmm_cf: dict) -> dict:
@@ -113,8 +148,9 @@ def infer_mosaic_io_paths(
         "Expected either `mosaics/` or `mosaic/`."
     )
 
-    ch2_dicom_paths = sorted(glob.glob(os.path.join(ch2_dir, "*.dcm")))
-    ch3_dicom_paths = sorted(glob.glob(os.path.join(ch3_dir, "*.dcm")))
+    is_ucsf = "UCSF" in mouse_id
+    ch2_dicom_paths = _sorted_strip_dicom_paths(ch2_dir, is_ucsf=is_ucsf)
+    ch3_dicom_paths = _sorted_strip_dicom_paths(ch3_dir, is_ucsf=is_ucsf)
     mosaic_dicom_paths = sorted(glob.glob(os.path.join(mosaics_dir, "*.dcm")))
 
     assert ch2_dicom_paths, f"No CH2 DICOM files found under {ch2_dir}"
@@ -337,8 +373,7 @@ def _load_patch_valid_regions(
     with open(patch_valid_regions_path, "r", encoding="utf-8") as fd:
         patch_valid_regions = json.load(fd)
     assert isinstance(patch_valid_regions, dict), (
-        "Expected patch valid regions JSON object: "
-        f"{patch_valid_regions_path}"
+        "Expected patch valid regions JSON object: " f"{patch_valid_regions_path}"
     )
     return patch_valid_regions
 
@@ -492,7 +527,9 @@ def resolve_mosaic_output_dirs(
     assert static_infra_out_root, "Expected a non-empty static_infra_out_root."
     assert portal_out_root, "Expected a non-empty portal_out_root."
 
-    output_dir = mosaic_run.get("output_dir", os.path.join(out_root, viz_candidate_name))
+    output_dir = mosaic_run.get(
+        "output_dir", os.path.join(out_root, viz_candidate_name)
+    )
     static_output_dir = mosaic_run.get(
         "static_output_dir",
         os.path.join(static_infra_out_root, viz_candidate_name),
@@ -546,9 +583,9 @@ def save_cell_prediction_visualization(
     max_right = 0
 
     for patch_name, patch_array in patch_dict.items():
-        assert patch_name in patch_valid_regions, (
-            f"Patch missing from valid-region metadata during visualization: {patch_name}"
-        )
+        assert (
+            patch_name in patch_valid_regions
+        ), f"Patch missing from valid-region metadata during visualization: {patch_name}"
         coord_str = patch_name.rsplit("-", 1)[1]
         y_str, x_str = coord_str.split("_", 1)
         top = int(y_str)
@@ -610,9 +647,10 @@ def save_cell_prediction_visualization(
             top = row["global_bbox_cy"] - half_height
             right = row["global_bbox_cx"] + half_width
             bottom = row["global_bbox_cy"] + half_height
+            celltype = str(row["celltype"])
             draw.rectangle(
                 [(left, top), (right, bottom)],
-                outline=outline_color,
+                outline=CELL_PREDICTION_OUTLINE_COLORS.get(celltype, outline_color),
                 width=outline_width,
             )
 
@@ -842,9 +880,7 @@ def run_single_mosaic_pipeline(
     cell_predictions_image_path = os.path.join(
         static_output_dir, f"{artifact_prefix}cell_predictions.png"
     )
-    srhrgb_image_path = os.path.join(
-        static_output_dir, f"{artifact_prefix}srhrgb.png"
-    )
+    srhrgb_image_path = os.path.join(static_output_dir, f"{artifact_prefix}srhrgb.png")
     cell_representations_path = os.path.join(
         output_dir, f"{artifact_prefix}cell_representations.pt"
     )
@@ -899,6 +935,11 @@ def run_single_mosaic_pipeline(
     logger.info("[%s] End step 1: generate strip patches", viz_candidate_name)
 
     logger.info("[%s] Begin step 2: run cell detection inference", viz_candidate_name)
+    cell_detection_kwargs = OmegaConf.to_container(
+        cf.cell_detection,
+        resolve=True,
+    )
+    cell_detection_kwargs.pop("ckpt_path", None)
     if _can_use_cache(cf.infra.cache_stages, "C"):
         logger.info(
             "[%s] Loading cached detection outputs from %s and %s",
@@ -914,6 +955,7 @@ def run_single_mosaic_pipeline(
                 model=detection_model,
                 classes=DEFAULT_CLASSES,
                 patch_names=patch_names,
+                **cell_detection_kwargs,
             )
         )
         assert not results.empty, "Cell detection inference returned no detections."
@@ -934,14 +976,15 @@ def run_single_mosaic_pipeline(
                 dropped_overlap_cells,
             )
 
-        results, dropped_duplicate_repr_cells = _drop_duplicate_representation_cells(results)
+        results, dropped_duplicate_repr_cells = _drop_duplicate_representation_cells(
+            results
+        )
         if dropped_duplicate_repr_cells > 0:
             logger.info(
                 "[%s] Removed %d duplicate detected cells before representation inference",
                 viz_candidate_name,
                 dropped_duplicate_repr_cells,
             )
-
 
         results.to_csv(detected_cells_csv_path, index=False)
         logger.info(
@@ -956,13 +999,18 @@ def run_single_mosaic_pipeline(
             patch_valid_regions=patch_valid_regions,
         )
 
-        save_cell_prediction_visualization(    patch_dict=patch_dict,    cell_predictions=pd.DataFrame([]),    output_path=srhrgb_image_path,    patch_valid_regions=patch_valid_regions,)
+        save_cell_prediction_visualization(
+            patch_dict=patch_dict,
+            cell_predictions=pd.DataFrame([]),
+            output_path=srhrgb_image_path,
+            patch_valid_regions=patch_valid_regions,
+        )
 
-    #results, dropped_overlap_cells = _filter_detections_to_patch_valid_regions(
+    # results, dropped_overlap_cells = _filter_detections_to_patch_valid_regions(
     #    results=results,
     #    patch_valid_regions=patch_valid_regions,
-    #)
-    #if dropped_overlap_cells > 0:
+    # )
+    # if dropped_overlap_cells > 0:
     #    logger.info(
     #        "[%s] Removed %d cached detections from patch overlap regions",
     #        viz_candidate_name,
@@ -976,8 +1024,8 @@ def run_single_mosaic_pipeline(
     #        patch_valid_regions=patch_valid_regions,
     #    )
 
-    #results, dropped_duplicate_repr_cells = _drop_duplicate_representation_cells(results)
-    #if dropped_duplicate_repr_cells > 0:
+    # results, dropped_duplicate_repr_cells = _drop_duplicate_representation_cells(results)
+    # if dropped_duplicate_repr_cells > 0:
     #    logger.info(
     #        "[%s] Removed %d duplicate detected cells before representation inference",
     #        viz_candidate_name,
@@ -1003,8 +1051,7 @@ def run_single_mosaic_pipeline(
         "[%s] Begin step 3: run cell representation inference", viz_candidate_name
     )
     use_repr_cache = (
-        _can_use_cache(cf.infra.cache_stages, "R")
-        and dropped_duplicate_repr_cells == 0
+        _can_use_cache(cf.infra.cache_stages, "R") and dropped_duplicate_repr_cells == 0
     )
     if use_repr_cache:
         logger.info(
@@ -1014,7 +1061,9 @@ def run_single_mosaic_pipeline(
         )
         cell_representations = torch.load(cell_representations_path, weights_only=False)
     else:
-        if dropped_duplicate_repr_cells > 0 and os.path.exists(cell_representations_path):
+        if dropped_duplicate_repr_cells > 0 and os.path.exists(
+            cell_representations_path
+        ):
             logger.info(
                 "[%s] Ignoring cached cell representations because detection "
                 "deduplication changed the inference set",
@@ -1041,8 +1090,7 @@ def run_single_mosaic_pipeline(
         viz_candidate_name,
     )
     use_gmm_cache = (
-        _can_use_cache(cf.infra.cache_stages, "G")
-        and dropped_duplicate_repr_cells == 0
+        _can_use_cache(cf.infra.cache_stages, "G") and dropped_duplicate_repr_cells == 0
     )
     if use_gmm_cache:
         logger.info(
@@ -1055,7 +1103,9 @@ def run_single_mosaic_pipeline(
         with open(slide_statistics_path, "r", encoding="utf-8") as fd:
             slide_statistics = json.load(fd)
     else:
-        if dropped_duplicate_repr_cells > 0 and os.path.exists(gmm_predictions_csv_path):
+        if dropped_duplicate_repr_cells > 0 and os.path.exists(
+            gmm_predictions_csv_path
+        ):
             logger.info(
                 "[%s] Ignoring cached GMM predictions because detection "
                 "deduplication changed the inference set",
