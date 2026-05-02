@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import logging
 import re
 import time
@@ -21,6 +22,10 @@ DEFAULT_SLIDE_PORTAL_DIR = (
     Path(__file__).resolve().parent / "out" / "b1a0cbe3" / "nio_mouse_1-1" / "portal"
 )
 LOGGER = logging.getLogger("silica.site")
+PREDICTION_CHART_EXTENSION = ".json"
+PREDICTION_METRICS_EXTENSION = ".json"
+PREDICTION_CHART_SUFFIX = "_fg_score_charts"
+PREDICTION_METRICS_SUFFIX = "_metrics"
 
 
 def _natural_sort_key(value: str) -> list[str | int]:
@@ -77,6 +82,78 @@ def _load_ground_truth(ground_truth_path: str | Path) -> dict[str, dict[str, str
 
     LOGGER.info("Loaded %d ground-truth slide rows", len(metadata_by_slide))
     return metadata_by_slide
+
+
+def _discover_prediction_charts(
+    prediction_chart_dir: str | Path,
+) -> tuple[Path | None, list[dict[str, str]]]:
+    root = Path(prediction_chart_dir).resolve()
+    assert root.is_dir(), f"Prediction chart directory not found: {root}"
+    chart_paths = [
+        path
+        for path in root.rglob("*")
+        if (
+            path.is_file()
+            and path.suffix.lower() == PREDICTION_CHART_EXTENSION
+            and path.stem.endswith(PREDICTION_CHART_SUFFIX)
+        )
+    ]
+    chart_paths.sort(key=lambda path: _natural_sort_key(path.relative_to(root).as_posix()))
+    return root, [
+        {
+            "id": path.relative_to(root).as_posix(),
+            "label": path.stem,
+            "experiment": path.stem[: -len(PREDICTION_CHART_SUFFIX)],
+            "filename": path.name,
+        }
+        for path in chart_paths
+    ]
+
+
+def _discover_prediction_metrics(
+    prediction_metrics_dir: str | Path,
+) -> tuple[Path | None, list[dict[str, str]]]:
+    root = Path(prediction_metrics_dir).resolve()
+    assert root.is_dir(), f"Prediction metrics directory not found: {root}"
+    metrics_paths = [
+        path
+        for path in root.rglob("*")
+        if (
+            path.is_file()
+            and path.suffix.lower() == PREDICTION_METRICS_EXTENSION
+            and path.stem.endswith(PREDICTION_METRICS_SUFFIX)
+        )
+    ]
+    metrics_paths.sort(key=lambda path: _natural_sort_key(path.relative_to(root).as_posix()))
+    return root, [
+        {
+            "id": path.relative_to(root).as_posix(),
+            "label": path.stem,
+            "experiment": path.stem[: -len(PREDICTION_METRICS_SUFFIX)],
+            "filename": path.name,
+        }
+        for path in metrics_paths
+    ]
+
+
+def _read_prediction_chart_spec(chart_path: Path) -> dict:
+    assert (
+        chart_path.suffix.lower() == PREDICTION_CHART_EXTENSION
+    ), f"Unsupported prediction chart type: {chart_path.suffix}"
+    with chart_path.open("r", encoding="utf-8") as handle:
+        spec = json.load(handle)
+    assert isinstance(spec, dict), "Prediction chart JSON spec must be an object"
+    return spec
+
+
+def _read_prediction_metrics(metrics_path: Path) -> dict:
+    assert (
+        metrics_path.suffix.lower() == PREDICTION_METRICS_EXTENSION
+    ), f"Unsupported prediction metrics type: {metrics_path.suffix}"
+    with metrics_path.open("r", encoding="utf-8") as handle:
+        metrics = json.load(handle)
+    assert isinstance(metrics, dict), "Prediction metrics JSON must be an object"
+    return metrics
 
 
 def _resolve_slide_dzi_dir(
@@ -259,6 +336,8 @@ def create_app(
     slide_dzi_root: str | Path | None = None,
     ground_truth_path: str | Path | None = None,
     default_experiment: str | None = None,
+    prediction_chart_dir: str | Path | None = None,
+    prediction_metrics_dir: str | Path | None = None,
 ) -> FastAPI:
     started_at = time.perf_counter()
     LOGGER.info("Creating Silica portal backend")
@@ -337,6 +416,16 @@ def create_app(
         resolved_default_experiment,
         default_slide_key,
     )
+    assert (
+        prediction_metrics_dir is not None
+    ), "--prediction-metrics-dir is required for the predictions page"
+    resolved_prediction_chart_dir = prediction_chart_dir or prediction_metrics_dir
+    prediction_chart_root, prediction_charts = _discover_prediction_charts(
+        resolved_prediction_chart_dir
+    )
+    prediction_metrics_root, prediction_metrics = _discover_prediction_metrics(
+        prediction_metrics_dir
+    )
     assert STATIC_DIR.is_dir(), f"Static directory not found: {STATIC_DIR}"
 
     app = FastAPI(title="Silica Single-Cell Portal")
@@ -354,6 +443,22 @@ def create_app(
     def index() -> FileResponse:
         return FileResponse(STATIC_DIR / "index.html")
 
+    @app.get("/slideviewer", include_in_schema=False)
+    def slideviewer() -> FileResponse:
+        return FileResponse(STATIC_DIR / "slideviewer.html")
+
+    @app.get("/slideviewer/", include_in_schema=False)
+    def slideviewer_slash() -> FileResponse:
+        return FileResponse(STATIC_DIR / "slideviewer.html")
+
+    @app.get("/predictions", include_in_schema=False)
+    def predictions() -> FileResponse:
+        return FileResponse(STATIC_DIR / "predictions.html")
+
+    @app.get("/predictions/", include_in_schema=False)
+    def predictions_slash() -> FileResponse:
+        return FileResponse(STATIC_DIR / "predictions.html")
+
     @app.get("/api/slides")
     def slides() -> dict:
         LOGGER.info("Serving /api/slides")
@@ -370,6 +475,62 @@ def create_app(
                 "infiltration": sorted(infiltrations, key=_natural_sort_key),
             },
         }
+
+    @app.get("/api/prediction-charts")
+    def prediction_chart_index() -> dict:
+        LOGGER.info("Serving /api/prediction-charts")
+        return {"charts": prediction_charts}
+
+    @app.get("/api/prediction-charts/{chart_id:path}")
+    def prediction_chart_spec(chart_id: str) -> dict:
+        if prediction_chart_root is None:
+            raise HTTPException(
+                status_code=404, detail="Prediction chart directory is not configured"
+            )
+        chart_path = (prediction_chart_root / chart_id).resolve()
+        try:
+            chart_path.relative_to(prediction_chart_root)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=404, detail="Chart path is outside chart root"
+            ) from error
+        if (
+            not chart_path.is_file()
+            or chart_path.suffix.lower() != PREDICTION_CHART_EXTENSION
+        ):
+            raise HTTPException(
+                status_code=404, detail=f"Prediction chart not found: {chart_id}"
+            )
+        LOGGER.info("Serving prediction chart spec: %s", chart_id)
+        return _read_prediction_chart_spec(chart_path)
+
+    @app.get("/api/prediction-metrics")
+    def prediction_metrics_index() -> dict:
+        LOGGER.info("Serving /api/prediction-metrics")
+        return {"metrics": prediction_metrics}
+
+    @app.get("/api/prediction-metrics/{metrics_id:path}")
+    def prediction_metrics_payload(metrics_id: str) -> dict:
+        if prediction_metrics_root is None:
+            raise HTTPException(
+                status_code=404, detail="Prediction metrics directory is not configured"
+            )
+        metrics_path = (prediction_metrics_root / metrics_id).resolve()
+        try:
+            metrics_path.relative_to(prediction_metrics_root)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=404, detail="Metrics path is outside metrics root"
+            ) from error
+        if (
+            not metrics_path.is_file()
+            or metrics_path.suffix.lower() != PREDICTION_METRICS_EXTENSION
+        ):
+            raise HTTPException(
+                status_code=404, detail=f"Prediction metrics not found: {metrics_id}"
+            )
+        LOGGER.info("Serving prediction metrics: %s", metrics_id)
+        return _read_prediction_metrics(metrics_path)
 
     @app.get(
         "/portal-assets/{experiment_name}/{slide_key}/{asset_path:path}",
@@ -501,6 +662,22 @@ def parse_args() -> argparse.Namespace:
             "in natural-sort order is used."
         ),
     )
+    parser.add_argument(
+        "--prediction-chart-dir",
+        default=None,
+        help=(
+            "Optional directory containing Altair prediction charts exported as "
+            ".json Vega-Lite specs."
+        ),
+    )
+    parser.add_argument(
+        "--prediction-metrics-dir",
+        required=True,
+        help=(
+            "Directory containing prediction artifacts as "
+            "*_fg_score_charts.json and *_metrics.json files."
+        ),
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     return parser.parse_args()
@@ -518,6 +695,8 @@ def main() -> None:
         slide_dzi_root=args.slide_dzi_dir,
         ground_truth_path=args.ground_truth_csv,
         default_experiment=args.default_experiment,
+        prediction_chart_dir=args.prediction_chart_dir,
+        prediction_metrics_dir=args.prediction_metrics_dir,
     )
     uvicorn.run(app, host=args.host, port=args.port)
 

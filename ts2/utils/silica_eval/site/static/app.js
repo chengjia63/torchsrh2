@@ -111,6 +111,77 @@ const INFILTRATION_LABELS = {
   "3": "Dense Tumor (3)",
   UNK: "UNK",
 };
+const els = {};
+
+function bindElements() {
+  Object.assign(els, {
+    areaSlideTumorScore: document.getElementById("areaSlideTumorScore"),
+    binaryThresholdSlider: document.getElementById("binaryThresholdSlider"),
+    binaryThresholdValue: document.getElementById("binaryThresholdValue"),
+    boxSizeCard: document.getElementById("boxSizeCard"),
+    boxSizeSlider: document.getElementById("boxSizeSlider"),
+    boxSizeValue: document.getElementById("boxSizeValue"),
+    clusterFilterInput: document.getElementById("clusterFilterInput"),
+    clusterFilterStatus: document.getElementById("clusterFilterStatus"),
+    clusterHistogram: document.getElementById("clusterHistogram"),
+    diagnosisSelect: document.getElementById("diagnosisSelect"),
+    dotSizeCard: document.getElementById("dotSizeCard"),
+    dotSizeSlider: document.getElementById("dotSizeSlider"),
+    dotSizeValue: document.getElementById("dotSizeValue"),
+    experimentSelect: document.getElementById("experimentSelect"),
+    hardSlideTumorScore: document.getElementById("hardSlideTumorScore"),
+    infiltrationSelect: document.getElementById("infiltrationSelect"),
+    meanTumorScore: document.getElementById("meanTumorScore"),
+    mobileExperimentPickerSlot: document.getElementById("mobileExperimentPickerSlot"),
+    mobileFilterPickerSlot: document.getElementById("mobileFilterPickerSlot"),
+    narrowMobileSlideNavSlot: document.getElementById("narrowMobileSlideNavSlot"),
+    nextSlideButton: document.getElementById("nextSlideButton"),
+    overlayCanvas: document.getElementById("overlayCanvas"),
+    partitionAlphaCard: document.getElementById("partitionAlphaCard"),
+    partitionAlphaSlider: document.getElementById("partitionAlphaSlider"),
+    partitionAlphaValue: document.getElementById("partitionAlphaValue"),
+    previousSlideButton: document.getElementById("previousSlideButton"),
+    scoreHistogram: document.getElementById("scoreHistogram"),
+    scoreScaleBar: document.getElementById("scoreScaleBar"),
+    slideSelect: document.getElementById("slideSelect"),
+    softSlideTumorScore: document.getElementById("softSlideTumorScore"),
+    toggleBinaryDots: document.getElementById("toggleBinaryDots"),
+    toggleBoxes: document.getElementById("toggleBoxes"),
+    toggleClusterText: document.getElementById("toggleClusterText"),
+    toggleContributionText: document.getElementById("toggleContributionText"),
+    toggleDots: document.getElementById("toggleDots"),
+    togglePartitionFill: document.getElementById("togglePartitionFill"),
+    toggleScoreText: document.getElementById("toggleScoreText"),
+    topCluster: document.getElementById("topCluster"),
+    totalCellCount: document.getElementById("totalCellCount"),
+    viewportBoundsForm: document.getElementById("viewportBoundsForm"),
+    viewportEditorStatus: document.getElementById("viewportEditorStatus"),
+    viewportInputVx: document.getElementById("viewportInputVx"),
+    viewportInputVy: document.getElementById("viewportInputVy"),
+    viewportInputVz: document.getElementById("viewportInputVz"),
+    visibleCellCount: document.getElementById("visibleCellCount"),
+  });
+}
+
+function commit(patch, effects = {}) {
+  Object.assign(state, patch);
+
+  if (effects.clusterEditor) {
+    syncClusterFilterEditor();
+  }
+  if (effects.overlayControls) {
+    syncOverlayControlVisibility();
+  }
+  if (effects.query) {
+    syncUiStateQuery();
+  }
+  if (effects.redraw) {
+    scheduleRedraw();
+  }
+  if (effects.sidebar) {
+    scheduleSidebarRedraw({ immediate: effects.sidebar === "immediate" });
+  }
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   void bootstrapPortal().catch((error) => {
@@ -121,21 +192,27 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 async function bootstrapPortal() {
+  bindElements();
   setTopbarStatus("loading");
   applyUiStateFromQuery();
   const slidesPayload = await fetchJson(window.SILICA_PORTAL.slidesUrl);
-  state.slides = normalizeSlidesPayload(slidesPayload.slides);
-  state.availableExperiments = normalizeExperimentNames(slidesPayload.experiments);
-  state.filterOptions = resolveFilterOptions(slidesPayload.filters, state.slides);
+  const slides = normalizeSlidesPayload(slidesPayload.slides);
+  commit({
+    slides,
+    availableExperiments: normalizeExperimentNames(slidesPayload.experiments),
+    filterOptions: resolveFilterOptions(slidesPayload.filters, slides),
+  });
   if (state.slides.length === 0) {
     throw new Error("No slides were returned by /api/slides");
   }
   const initialSlideKey = resolveInitialSlideKey(slidesPayload.default_slide_key);
-  state.currentExperiment = resolveInitialExperiment(
-    slidesPayload.default_experiment,
-    initialSlideKey,
-  );
-  state.pendingExperiment = null;
+  commit({
+    currentExperiment: resolveInitialExperiment(
+      slidesPayload.default_experiment,
+      initialSlideKey,
+    ),
+    pendingExperiment: null,
+  });
   populateFilterSelectors();
   populateSlideSelector();
   populateExperimentSelector(initialSlideKey);
@@ -147,30 +224,14 @@ async function bootstrapPortal() {
 }
 
 function revealTopbarSelectionLabels() {
-  if (state.topbarSelectionRevealed) {
-    return;
-  }
-  state.topbarSelectionRevealed = true;
-  document.body.classList.add("topbar-selection-revealed");
+  SilicaUI.revealTopbarSelectionLabels(state);
 }
 
 function bindTopbarSelectionReveal() {
-  const revealOnce = () => {
-    revealTopbarSelectionLabels();
-  };
-  const topbarFilterPill = document.querySelector(".topbar-filter-pill");
-
-  topbarFilterPill?.addEventListener("pointerenter", revealOnce, {
-    once: true,
-    passive: true,
+  SilicaUI.bindTopbarSelectionReveal({
+    state,
+    triggerSelectors: [".topbar-filter-pill"],
   });
-
-  for (const eventName of ["pointerdown", "keydown", "wheel", "touchstart"]) {
-    document.addEventListener(eventName, revealOnce, {
-      once: true,
-      passive: true,
-    });
-  }
 }
 
 function normalizeSlidesPayload(rawSlides) {
@@ -239,9 +300,7 @@ function getFilterDisplayLabel(filterKey, value, defaultLabel) {
 }
 
 function populateSlideHeader() {
-  document.getElementById("totalCellCount").textContent = formatInteger(
-    state.cells.cell_count,
-  );
+  els.totalCellCount.textContent = formatInteger(state.cells.cell_count);
   const slideStatistics = state.manifest?.slide_statistics || {};
   setSavedPercentMetric(
     "softSlideTumorScore",
@@ -258,7 +317,7 @@ function populateSlideHeader() {
 }
 
 function setPercentMetric(elementId, value) {
-  const element = document.getElementById(elementId);
+  const element = els[elementId];
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) {
     element.textContent = "-";
@@ -271,7 +330,7 @@ function setPercentMetric(elementId, value) {
 }
 
 function setSavedPercentMetric(elementId, value) {
-  const element = document.getElementById(elementId);
+  const element = els[elementId];
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) {
     element.textContent = "-";
@@ -324,18 +383,11 @@ function formatClusterFilterValue(clusterIds) {
 }
 
 function setClusterFilterStatus(message) {
-  const status = document.getElementById("clusterFilterStatus");
-  if (!status) {
-    return;
-  }
-  status.textContent = message || "";
+  els.clusterFilterStatus.textContent = message || "";
 }
 
 function syncClusterFilterEditor() {
-  const input = document.getElementById("clusterFilterInput");
-  if (!input) {
-    return;
-  }
+  const input = els.clusterFilterInput;
 
   if (!state.cells) {
     if (state.pendingClusterFilterIds === "none") {
@@ -383,28 +435,23 @@ function applyClusterFilterInputValue() {
   if (!state.cells) {
     return;
   }
-  const input = document.getElementById("clusterFilterInput");
-  if (!input) {
-    return;
-  }
+  const input = els.clusterFilterInput;
 
   const allClusterIds = getAllClusterIds();
   const rawValue = input.value.trim();
   const normalizedValue = rawValue.toLowerCase();
   if (!rawValue || normalizedValue === "all") {
-    state.activeClusterFilters = new Set(allClusterIds);
-    syncClusterFilterEditor();
-    syncUiStateQuery();
-    scheduleRedraw();
-    scheduleSidebarRedraw({ immediate: true });
+    commit(
+      { activeClusterFilters: new Set(allClusterIds) },
+      { clusterEditor: true, query: true, redraw: true, sidebar: "immediate" },
+    );
     return;
   }
   if (normalizedValue === "none") {
-    state.activeClusterFilters = new Set();
-    syncClusterFilterEditor();
-    syncUiStateQuery();
-    scheduleRedraw();
-    scheduleSidebarRedraw({ immediate: true });
+    commit(
+      { activeClusterFilters: new Set() },
+      { clusterEditor: true, query: true, redraw: true, sidebar: "immediate" },
+    );
     return;
   }
 
@@ -415,32 +462,32 @@ function applyClusterFilterInputValue() {
     .map((value) => Number.parseInt(value, 10))
     .filter((value) => Number.isInteger(value));
   if (requestedClusterIds.length === 0) {
-    state.activeClusterFilters = new Set(allClusterIds);
-    syncClusterFilterEditor();
+    commit(
+      { activeClusterFilters: new Set(allClusterIds) },
+      { clusterEditor: true, query: true, redraw: true, sidebar: "immediate" },
+    );
     setClusterFilterStatus("No valid cluster ids in list. Showing all clusters.");
-    syncUiStateQuery();
-    scheduleRedraw();
-    scheduleSidebarRedraw({ immediate: true });
     return;
   }
   const validClusterIds = [...new Set(requestedClusterIds)].filter((clusterId) =>
     allClusterIds.includes(clusterId),
   );
 
-  state.activeClusterFilters =
-    validClusterIds.length > 0 ? new Set(validClusterIds) : new Set(allClusterIds);
-  syncClusterFilterEditor();
+  commit(
+    {
+      activeClusterFilters:
+        validClusterIds.length > 0 ? new Set(validClusterIds) : new Set(allClusterIds),
+    },
+    { clusterEditor: true, query: true, redraw: true, sidebar: "immediate" },
+  );
   if (validClusterIds.length === 0) {
     setClusterFilterStatus("No matching cluster ids in list. Showing all clusters.");
   }
-  syncUiStateQuery();
-  scheduleRedraw();
-  scheduleSidebarRedraw({ immediate: true });
 }
 
 function populateSlideSelector() {
   const matchingSlides = getFilteredSlides();
-  const slideSelect = document.getElementById("slideSelect");
+  const slideSelect = els.slideSelect;
   const previousValue = slideSelect.value;
   slideSelect.replaceChildren();
 
@@ -472,11 +519,8 @@ function populateSlideSelector() {
 }
 
 function syncSlideNavigationButtons() {
-  const previousButton = document.getElementById("previousSlideButton");
-  const nextButton = document.getElementById("nextSlideButton");
-  if (!previousButton || !nextButton) {
-    return;
-  }
+  const previousButton = els.previousSlideButton;
+  const nextButton = els.nextSlideButton;
 
   const matchingSlides = getFilteredSlides();
   const currentIndex = matchingSlides.findIndex(
@@ -493,7 +537,7 @@ function populateFilterSelectors() {
 }
 
 function populateFilterSelector(selectId, filterKey, defaultLabel) {
-  const select = document.getElementById(selectId);
+  const select = els[selectId];
   select.replaceChildren();
 
   const placeholderOption = document.createElement("option");
@@ -578,22 +622,19 @@ function resolveInitialExperiment(defaultExperiment, slideKey) {
 function ensureValidCurrentExperiment(slideKey = state.currentSlideKey) {
   const slideAvailableExperiments = getSlideAvailableExperiments(slideKey);
   if (slideAvailableExperiments.length === 0) {
-    state.currentExperiment = null;
+    commit({ currentExperiment: null });
     return null;
   }
   if (slideAvailableExperiments.includes(state.currentExperiment)) {
     return state.currentExperiment;
   }
   const fallbackExperiment = slideAvailableExperiments[0];
-  state.currentExperiment = fallbackExperiment;
+  commit({ currentExperiment: fallbackExperiment });
   return fallbackExperiment;
 }
 
 function populateExperimentSelector(slideKey = state.currentSlideKey) {
-  const select = document.getElementById("experimentSelect");
-  if (!select) {
-    return;
-  }
+  const select = els.experimentSelect;
 
   const slideAvailableExperiments = getSlideAvailableExperiments(slideKey);
   const resolvedExperiment = ensureValidCurrentExperiment(slideKey);
@@ -691,9 +732,11 @@ function resolveFilterTransition(nextFilters) {
 
 function bindControls() {
   bindTopbarSelectionReveal();
+  bindResponsiveExperimentPicker();
+  bindResponsiveTopbarPickerControls();
   bindSidebarCollapse();
 
-  document.getElementById("diagnosisSelect").addEventListener("change", (event) => {
+  els.diagnosisSelect.addEventListener("change", (event) => {
     revealTopbarSelectionLabels();
     applyFilters({
       diagnosis:
@@ -701,33 +744,31 @@ function bindControls() {
     });
   });
 
-  document
-    .getElementById("infiltrationSelect")
-    .addEventListener("change", (event) => {
-      revealTopbarSelectionLabels();
-      applyFilters({
-        infiltration:
-          event.target.value === FILTER_ALL_VALUE ? "" : event.target.value,
-      });
+  els.infiltrationSelect.addEventListener("change", (event) => {
+    revealTopbarSelectionLabels();
+    applyFilters({
+      infiltration:
+        event.target.value === FILTER_ALL_VALUE ? "" : event.target.value,
     });
+  });
 
-  document.getElementById("slideSelect").addEventListener("change", (event) => {
+  els.slideSelect.addEventListener("change", (event) => {
     revealTopbarSelectionLabels();
     if (event.target.value) {
       syncUiStateQuery(event.target.value);
-      void changeSlide(event.target.value, {
+      loadSlideFromUi(event.target.value, {
         syncEmptyFilters: true,
         preserveViewport: true,
       });
     }
   });
-  document.getElementById("previousSlideButton").addEventListener("click", () => {
+  els.previousSlideButton.addEventListener("click", () => {
     navigateFilteredSlides(-1);
   });
-  document.getElementById("nextSlideButton").addEventListener("click", () => {
+  els.nextSlideButton.addEventListener("click", () => {
     navigateFilteredSlides(1);
   });
-  document.getElementById("experimentSelect").addEventListener("change", (event) => {
+  els.experimentSelect.addEventListener("change", (event) => {
     const requestedExperiment = String(event.target.value ?? "").trim();
     if (!requestedExperiment) {
       return;
@@ -736,10 +777,9 @@ function bindControls() {
       populateExperimentSelector(state.currentSlideKey);
       return;
     }
-    state.currentExperiment = requestedExperiment;
-    syncUiStateQuery();
+    commit({ currentExperiment: requestedExperiment }, { query: true });
     if (state.currentSlideKey) {
-      void changeSlide(state.currentSlideKey);
+      loadSlideFromUi(state.currentSlideKey);
     }
   });
   document.querySelector(".image-layer-pill").addEventListener("click", (event) => {
@@ -750,14 +790,13 @@ function bindControls() {
     setActiveImageLayer(button.dataset.imageLayer);
   });
   bindLayoutResizeHandle();
-  const clusterFilterInput = document.getElementById("clusterFilterInput");
-  clusterFilterInput.addEventListener("change", () => {
+  els.clusterFilterInput.addEventListener("change", () => {
     applyClusterFilterInputValue();
   });
-  clusterFilterInput.addEventListener("blur", () => {
+  els.clusterFilterInput.addEventListener("blur", () => {
     applyClusterFilterInputValue();
   });
-  clusterFilterInput.addEventListener("keydown", (event) => {
+  els.clusterFilterInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter") {
       return;
     }
@@ -767,23 +806,22 @@ function bindControls() {
 
   for (const input of document.querySelectorAll("input[type='checkbox']")) {
     input.addEventListener("change", () => {
-      syncUiStateQuery();
-      scheduleRedraw();
+      commit({}, { query: true, redraw: true });
     });
   }
-  document.getElementById("toggleDots").addEventListener("change", () => {
+  els.toggleDots.addEventListener("change", () => {
     syncOverlayControlVisibility();
   });
-  document.getElementById("toggleBoxes").addEventListener("change", () => {
+  els.toggleBoxes.addEventListener("change", () => {
     syncOverlayControlVisibility();
   });
-  document.getElementById("togglePartitionFill").addEventListener("change", () => {
+  els.togglePartitionFill.addEventListener("change", () => {
     syncOverlayControlVisibility();
   });
-  document.getElementById("toggleBinaryDots").addEventListener("change", () => {
+  els.toggleBinaryDots.addEventListener("change", () => {
     syncOverlayControlVisibility();
   });
-  document.getElementById("dotSizeSlider").addEventListener("input", (event) => {
+  els.dotSizeSlider.addEventListener("input", (event) => {
     const sliderValue = Number(event.target.value);
     if (!Number.isFinite(sliderValue)) {
       return;
@@ -793,13 +831,16 @@ function bindControls() {
       DOT_DIAMETER_IMAGE_MIN,
       DOT_DIAMETER_IMAGE_MAX,
     );
-    state.dotDiameterImagePx = clampedSliderValue;
-    state.pendingDotRadiusValue = null;
+    commit(
+      {
+        dotDiameterImagePx: clampedSliderValue,
+        pendingDotRadiusValue: null,
+      },
+      { query: true, redraw: true },
+    );
     updateDotSizeControl(clampedSliderValue);
-    syncUiStateQuery();
-    scheduleRedraw();
   });
-  document.getElementById("boxSizeSlider").addEventListener("input", (event) => {
+  els.boxSizeSlider.addEventListener("input", (event) => {
     const sliderValue = Number(event.target.value);
     if (!Number.isFinite(sliderValue)) {
       return;
@@ -809,38 +850,37 @@ function bindControls() {
       BOX_SIZE_IMAGE_MIN,
       BOX_SIZE_IMAGE_MAX,
     );
-    state.boxSizeImagePx = clampedSliderValue;
-    state.pendingBoxSizeValue = null;
+    commit(
+      {
+        boxSizeImagePx: clampedSliderValue,
+        pendingBoxSizeValue: null,
+      },
+      { query: true, redraw: true },
+    );
     updateBoxSizeControl(clampedSliderValue);
-    syncUiStateQuery();
-    scheduleRedraw();
   });
-  document.getElementById("partitionAlphaSlider").addEventListener("input", (event) => {
+  els.partitionAlphaSlider.addEventListener("input", (event) => {
     const sliderValue = Number(event.target.value);
     if (!Number.isFinite(sliderValue)) {
       return;
     }
-    state.partitionFillAlpha = clampNumber(sliderValue / 100, 0, 1);
+    const partitionFillAlpha = clampNumber(sliderValue / 100, 0, 1);
+    commit({ partitionFillAlpha }, { query: true, redraw: true });
     updatePartitionAlphaControl(state.partitionFillAlpha);
-    syncUiStateQuery();
-    scheduleRedraw();
   });
-  document.getElementById("binaryThresholdSlider").addEventListener("input", (event) => {
+  els.binaryThresholdSlider.addEventListener("input", (event) => {
     const sliderValue = Number(event.target.value);
     if (!Number.isFinite(sliderValue)) {
       return;
     }
-    state.binaryDotThreshold = clampNumber(sliderValue / 100, 0, 1);
+    const binaryDotThreshold = clampNumber(sliderValue / 100, 0, 1);
+    commit({ binaryDotThreshold }, { query: true, redraw: true });
     updateBinaryThresholdControl(state.binaryDotThreshold);
-    syncUiStateQuery();
-    scheduleRedraw();
   });
-  const viewportForm = document.getElementById("viewportBoundsForm");
-  viewportForm.addEventListener("submit", (event) => {
+  els.viewportBoundsForm.addEventListener("submit", (event) => {
     event.preventDefault();
   });
-  for (const inputId of ["viewportInputVx", "viewportInputVy", "viewportInputVz"]) {
-    const input = document.getElementById(inputId);
+  for (const input of [els.viewportInputVx, els.viewportInputVy, els.viewportInputVz]) {
     input.addEventListener("input", () => {
       scheduleViewportAutoApply();
     });
@@ -862,78 +902,54 @@ function bindControls() {
   });
 }
 
-function bindSidebarCollapse() {
-  const buttons = [
-    document.getElementById("sidebarCollapseButton"),
-    document.getElementById("sidebarHeaderCollapseButton"),
-  ].filter(Boolean);
-  if (buttons.length === 0) {
-    return;
-  }
-  for (const button of buttons) {
-    button.addEventListener("click", () => {
-      setSidebarCollapsed(!state.sidebarCollapsed);
+function bindResponsiveExperimentPicker() {
+  SilicaUI.bindResponsivePlacement({
+    element: document.querySelector(".topbar-experiment-picker"),
+    mobileSlot: els.mobileExperimentPickerSlot,
+    desktopParent: document.querySelector(".topbar-inner"),
+    mediaQueryText: "(max-width: 1024px)",
+    anchorLabel: "experiment picker desktop anchor",
+  });
+}
+
+function bindResponsiveTopbarPickerControls() {
+  const desktopParent = document.querySelector(".topbar-picker");
+  const responsiveControls = [
+    {
+      element: document.querySelector(".topbar-filter-pill"),
+      mobileSlot: els.mobileFilterPickerSlot,
+      anchorLabel: "filter picker desktop anchor",
+    },
+    {
+      element: document.querySelector(".topbar-slide-nav-pill"),
+      mobileSlot: els.narrowMobileSlideNavSlot,
+      anchorLabel: "slide navigation desktop anchor",
+    },
+  ];
+  for (const responsiveControl of responsiveControls) {
+    SilicaUI.bindResponsivePlacement({
+      ...responsiveControl,
+      desktopParent,
+      mediaQueryText: "(max-width: 700px)",
     });
   }
-  setSidebarCollapsed(state.sidebarCollapsed);
+}
+
+function bindSidebarCollapse() {
+  SilicaUI.bindSidebarCollapse({
+    state,
+    buttonIds: ["sidebarCollapseButton", "sidebarHeaderCollapseButton"],
+    onChange: refreshViewerAfterLayoutResize,
+  });
 }
 
 function bindLayoutResizeHandle() {
-  const resizeHandle = document.getElementById("layoutResizeHandle");
-  const layout = document.querySelector(".layout");
-  if (!resizeHandle || !layout) {
-    return;
-  }
-
-  resizeHandle.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) {
-      return;
-    }
-    event.preventDefault();
-    state.layoutResizeActive = true;
-    document.body.classList.add("is-resizing-layout");
-    resizeHandle.setPointerCapture(event.pointerId);
-    updateSidebarWidthFromPointer(event.clientX);
+  SilicaUI.bindLayoutResize({
+    state,
+    handleId: "layoutResizeHandle",
+    updateFromPointer: updateSidebarWidthFromPointer,
+    onEnd: refreshViewerAfterLayoutResize,
   });
-
-  resizeHandle.addEventListener("pointermove", (event) => {
-    if (!state.layoutResizeActive) {
-      return;
-    }
-    updateSidebarWidthFromPointer(event.clientX);
-  });
-
-  const endResize = (event) => {
-    if (!state.layoutResizeActive) {
-      return;
-    }
-    state.layoutResizeActive = false;
-    document.body.classList.remove("is-resizing-layout");
-    if (resizeHandle.hasPointerCapture(event.pointerId)) {
-      resizeHandle.releasePointerCapture(event.pointerId);
-    }
-    refreshViewerAfterLayoutResize();
-  };
-
-  resizeHandle.addEventListener("pointerup", endResize);
-  resizeHandle.addEventListener("pointercancel", endResize);
-}
-
-function setSidebarCollapsed(isCollapsed) {
-  state.sidebarCollapsed = isCollapsed;
-  document.body.classList.toggle("sidebar-collapsed", isCollapsed);
-  const buttons = [
-    document.getElementById("sidebarCollapseButton"),
-    document.getElementById("sidebarHeaderCollapseButton"),
-  ].filter(Boolean);
-  for (const button of buttons) {
-    button.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
-    button.setAttribute(
-      "aria-label",
-      isCollapsed ? "Expand sidebar" : "Collapse sidebar",
-    );
-  }
-  refreshViewerAfterLayoutResize();
 }
 
 function navigateFilteredSlides(direction) {
@@ -953,10 +969,18 @@ function navigateFilteredSlides(direction) {
   }
 
   const nextSlideKey = matchingSlides[nextIndex].key;
-  document.getElementById("slideSelect").value = nextSlideKey;
+  els.slideSelect.value = nextSlideKey;
   syncSlideNavigationButtons();
   syncUiStateQuery(nextSlideKey);
-  void changeSlide(nextSlideKey, { preserveViewport: true });
+  loadSlideFromUi(nextSlideKey, { preserveViewport: true });
+}
+
+function loadSlideFromUi(slideKey, options = {}) {
+  void changeSlide(slideKey, options).catch((error) => {
+    console.error(error);
+    setTopbarStatus("error");
+    setViewportEditorStatus(String(error));
+  });
 }
 
 function updateSidebarWidthFromPointer(clientX) {
@@ -974,7 +998,7 @@ function updateSidebarWidthFromPointer(clientX) {
     SIDEBAR_WIDTH_MIN_PERCENT,
     (SIDEBAR_WIDTH_MIN_PX / layoutRect.width) * 100,
   );
-  const rawPercent = ((clientX - layoutRect.left) / layoutRect.width) * 100;
+  const rawPercent = ((layoutRect.right - clientX) / layoutRect.width) * 100;
   const sidebarWidthPercent = clampNumber(
     rawPercent,
     minPercent,
@@ -1004,7 +1028,7 @@ function refreshViewerAfterLayoutResize() {
 
 function applyFilters(nextFilters) {
   const { filters, matchingSlides } = resolveFilterTransition(nextFilters);
-  state.activeFilters = filters;
+  commit({ activeFilters: filters });
   populateFilterSelectors();
   populateSlideSelector();
   if (matchingSlides.length === 0) {
@@ -1016,9 +1040,9 @@ function applyFilters(nextFilters) {
   )
     ? state.currentSlideKey
     : matchingSlides[0].key;
-  document.getElementById("slideSelect").value = preferredSlideKey;
+  els.slideSelect.value = preferredSlideKey;
   if (preferredSlideKey !== state.currentSlideKey) {
-    void changeSlide(preferredSlideKey, { preserveViewport: true });
+    loadSlideFromUi(preferredSlideKey, { preserveViewport: true });
   }
 }
 
@@ -1051,10 +1075,10 @@ function restorePendingClusterFilterState(clusterFilterState) {
     clusterFilterState === "none" ||
     Array.isArray(clusterFilterState)
   ) {
-    state.pendingClusterFilterIds = clusterFilterState;
+    commit({ pendingClusterFilterIds: clusterFilterState });
     return;
   }
-  state.pendingClusterFilterIds = null;
+  commit({ pendingClusterFilterIds: null });
 }
 
 async function changeSlide(slideKey, options = {}) {
@@ -1071,15 +1095,17 @@ async function changeSlide(slideKey, options = {}) {
     syncEmptyFilters &&
     (!state.activeFilters.diagnosis || !state.activeFilters.infiltration)
   ) {
-    state.activeFilters = {
-      ...state.activeFilters,
-      diagnosis: state.activeFilters.diagnosis
-        ? state.activeFilters.diagnosis
-        : slideEntry.diagnosis,
-      infiltration: state.activeFilters.infiltration
-        ? state.activeFilters.infiltration
-        : slideEntry.infiltration,
-    };
+    commit({
+      activeFilters: {
+        ...state.activeFilters,
+        diagnosis: state.activeFilters.diagnosis
+          ? state.activeFilters.diagnosis
+          : slideEntry.diagnosis,
+        infiltration: state.activeFilters.infiltration
+          ? state.activeFilters.infiltration
+          : slideEntry.infiltration,
+      },
+    });
     populateFilterSelectors();
     populateSlideSelector();
   }
@@ -1092,22 +1118,16 @@ async function changeSlide(slideKey, options = {}) {
     preserveViewport && !preserveCurrentViewerImage ? captureViewportState() : null;
   const preservedClusterFilterState = snapshotClusterFilterState();
 
-  const slideSelect = document.getElementById("slideSelect");
-  const diagnosisSelect = document.getElementById("diagnosisSelect");
-  const infiltrationSelect = document.getElementById("infiltrationSelect");
-  const experimentSelect = document.getElementById("experimentSelect");
-  const previousSlideButton = document.getElementById("previousSlideButton");
-  const nextSlideButton = document.getElementById("nextSlideButton");
   const loadToken = state.slideLoadToken + 1;
-  state.slideLoadToken = loadToken;
+  commit({ slideLoadToken: loadToken });
   setTopbarStatus("loading");
-  slideSelect.disabled = true;
-  diagnosisSelect.disabled = true;
-  infiltrationSelect.disabled = true;
-  experimentSelect.disabled = true;
-  previousSlideButton.disabled = true;
-  nextSlideButton.disabled = true;
-  slideSelect.value = slideKey;
+  els.slideSelect.disabled = true;
+  els.diagnosisSelect.disabled = true;
+  els.infiltrationSelect.disabled = true;
+  els.experimentSelect.disabled = true;
+  els.previousSlideButton.disabled = true;
+  els.nextSlideButton.disabled = true;
+  els.slideSelect.value = slideKey;
   populateExperimentSelector(slideKey);
 
   try {
@@ -1121,13 +1141,15 @@ async function changeSlide(slideKey, options = {}) {
       return;
     }
 
-    state.currentSlideKey = slideKey;
-    state.currentExperiment = resolvedExperiment;
-    state.pendingExperiment = null;
-    state.manifest = manifest;
-    state.cells = cells;
+    commit({
+      currentSlideKey: slideKey,
+      currentExperiment: resolvedExperiment,
+      pendingExperiment: null,
+      manifest,
+      cells,
+    });
     syncImageLayerControls();
-    state.activeClusterFilters = new Set(getAllClusterIds());
+    commit({ activeClusterFilters: new Set(getAllClusterIds()) });
     restorePendingClusterFilterState(preservedClusterFilterState);
     applyPendingClusterFilters();
     populateSlideHeader();
@@ -1138,10 +1160,9 @@ async function changeSlide(slideKey, options = {}) {
     if (state.viewer) {
       if (preserveCurrentViewerImage) {
         setTopbarStatus("ready");
-        scheduleRedraw();
-        scheduleSidebarRedraw({ immediate: true });
+        commit({}, { redraw: true, sidebar: "immediate" });
       } else {
-        state.pendingViewportState = preservedViewportState;
+        commit({ pendingViewportState: preservedViewportState });
         openActiveImageLayer();
       }
     }
@@ -1155,11 +1176,11 @@ async function changeSlide(slideKey, options = {}) {
     if (loadToken === state.slideLoadToken) {
       populateSlideSelector();
       populateExperimentSelector(slideKey);
-      diagnosisSelect.disabled = false;
-      infiltrationSelect.disabled = false;
-      experimentSelect.disabled = false;
+      els.diagnosisSelect.disabled = false;
+      els.infiltrationSelect.disabled = false;
+      els.experimentSelect.disabled = false;
       if (getFilteredSlides().length > 0) {
-        slideSelect.value = slideKey;
+        els.slideSelect.value = slideKey;
       }
       syncSlideNavigationButtons();
     }
@@ -1173,13 +1194,13 @@ function syncSlideQuery(slideKey) {
 function initializeViewer() {
   const initialTileSource = dziAssetUrl(IMAGE_LAYER_TILE_SOURCES[state.activeImageLayer]);
   const viewportMargins = getViewerViewportMargins();
-  state.viewer = OpenSeadragon({
+  const viewer = OpenSeadragon({
     id: "viewer",
     prefixUrl: window.SILICA_PORTAL.openSeadragonPrefix,
     tileSources: initialTileSource,
     showNavigator: true,
-    navigatorPosition: "BOTTOM_RIGHT",
-    toolbarPosition: "BOTTOM_LEFT",
+    navigatorPosition: "BOTTOM_LEFT",
+    navigationControlAnchor: OpenSeadragon.ControlAnchor.BOTTOM_RIGHT,
     viewportMargins,
     visibilityRatio: 1,
     constrainDuringPan: true,
@@ -1189,10 +1210,11 @@ function initializeViewer() {
     maxZoomPixelRatio: 2.5,
     zoomPerScroll: 1.25,
   });
+  commit({ viewer });
   attachOverlayCanvasToViewer();
 
   state.viewer.addHandler("open", () => {
-    state.pendingImageLayerFallback = null;
+    commit({ pendingImageLayerFallback: null });
     setTopbarStatus("ready");
     restoreOrInitializeViewportState();
     applyPendingDotRadiusValue();
@@ -1202,8 +1224,10 @@ function initializeViewer() {
   });
   state.viewer.addHandler("open-failed", () => {
     if (state.pendingImageLayerFallback !== null) {
-      state.activeImageLayer = state.pendingImageLayerFallback;
-      state.pendingImageLayerFallback = null;
+      commit({
+        activeImageLayer: state.pendingImageLayerFallback,
+        pendingImageLayerFallback: null,
+      });
       syncImageLayerControls();
       openActiveImageLayer();
       return;
@@ -1238,12 +1262,11 @@ function initializeViewer() {
 }
 
 function attachOverlayCanvasToViewer() {
-  const overlayCanvas = document.getElementById("overlayCanvas");
   const viewerContainer = document.querySelector("#viewer .openseadragon-container");
-  if (!overlayCanvas || !viewerContainer) {
+  if (!els.overlayCanvas || !viewerContainer) {
     throw new Error("Unable to attach overlay canvas to OpenSeadragon viewer");
   }
-  viewerContainer.appendChild(overlayCanvas);
+  viewerContainer.appendChild(els.overlayCanvas);
 }
 
 function getViewerViewportMargins() {
@@ -1270,10 +1293,11 @@ function setActiveImageLayer(imageLayer) {
   if (state.activeImageLayer === imageLayer) {
     return;
   }
-  state.pendingImageLayerFallback = state.activeImageLayer;
-  state.activeImageLayer = imageLayer;
+  commit({
+    pendingImageLayerFallback: state.activeImageLayer,
+    activeImageLayer: imageLayer,
+  }, { query: true });
   syncImageLayerControls();
-  syncUiStateQuery();
   openActiveImageLayer({ preserveViewport: true });
 }
 
@@ -1290,7 +1314,7 @@ function openActiveImageLayer({ preserveViewport = false } = {}) {
     return;
   }
   if (preserveViewport) {
-    state.pendingViewportState = captureViewportState();
+    commit({ pendingViewportState: captureViewportState() });
   }
   const tileSource = slideDziAssetUrl(
     state.currentSlideKey,
@@ -1301,28 +1325,12 @@ function openActiveImageLayer({ preserveViewport = false } = {}) {
 }
 
 function setTopbarStatus(status) {
-  if (!["loading", "ready", "error"].includes(status)) {
-    throw new Error(`Unknown topbar status: ${status}`);
-  }
-  const statusPill = document.querySelector(".topbar-filter-pill");
-  if (!statusPill) {
-    return;
-  }
-  if (state.topbarStatusHideTimer !== null) {
-    window.clearTimeout(state.topbarStatusHideTimer);
-    state.topbarStatusHideTimer = null;
-  }
-  state.topbarStatus = status;
-  statusPill.classList.toggle("is-working", status === "loading");
-  statusPill.classList.toggle("is-ready", status === "ready");
-  statusPill.classList.toggle("is-error", status === "error");
-  if (status === "ready") {
-    state.topbarStatusHideTimer = window.setTimeout(() => {
-      statusPill.classList.remove("is-working", "is-ready", "is-error");
-      state.topbarStatus = "idle";
-      state.topbarStatusHideTimer = null;
-    }, 1000);
-  }
+  SilicaUI.setStatusPill({
+    state,
+    status,
+    pillSelector: ".topbar-filter-pill",
+    statusName: "topbar",
+  });
 }
 
 function captureViewportState() {
@@ -1390,7 +1398,7 @@ function restoreViewportState() {
   );
   state.viewer.viewport.fitBounds(viewportRect, true);
   state.viewer.viewport.applyConstraints();
-  state.pendingViewportState = null;
+  commit({ pendingViewportState: null });
 }
 
 function restoreOrInitializeViewportState() {
@@ -1398,13 +1406,15 @@ function restoreOrInitializeViewportState() {
     restoreViewportState();
     return;
   }
-  state.pendingViewportState = {
-    center: {
-      x: DEFAULT_VIEWPORT_CENTER_X,
-      y: DEFAULT_VIEWPORT_CENTER_Y,
+  commit({
+    pendingViewportState: {
+      center: {
+        x: DEFAULT_VIEWPORT_CENTER_X,
+        y: DEFAULT_VIEWPORT_CENTER_Y,
+      },
+      zoom: DEFAULT_VIEWPORT_HEIGHT_RATIO,
     },
-    zoom: DEFAULT_VIEWPORT_HEIGHT_RATIO,
-  };
+  });
   restoreViewportState();
 }
 
@@ -1455,9 +1465,8 @@ function redrawScene() {
     return;
   }
 
-  const overlayCanvas = document.getElementById("overlayCanvas");
-  const overlayContext = overlayCanvas.getContext("2d");
-  const { width: overlayWidth, height: overlayHeight } = resizeCanvas(overlayCanvas);
+  const overlayContext = els.overlayCanvas.getContext("2d");
+  const { width: overlayWidth, height: overlayHeight } = resizeCanvas(els.overlayCanvas);
   overlayContext.clearRect(0, 0, overlayWidth, overlayHeight);
 
   const visible = collectVisibleCells();
@@ -1576,64 +1585,46 @@ function getRenderedDotRadius() {
 }
 
 function updateDotSizeControl(dotDiameterImagePx) {
-  const slider = document.getElementById("dotSizeSlider");
-  const valueLabel = document.getElementById("dotSizeValue");
-  if (!slider || !valueLabel) {
-    return;
-  }
-  slider.min = `${DOT_DIAMETER_IMAGE_MIN}`;
-  slider.max = `${DOT_DIAMETER_IMAGE_MAX}`;
+  els.dotSizeSlider.min = `${DOT_DIAMETER_IMAGE_MIN}`;
+  els.dotSizeSlider.max = `${DOT_DIAMETER_IMAGE_MAX}`;
   const clampedDiameter = clampNumber(
     dotDiameterImagePx,
     DOT_DIAMETER_IMAGE_MIN,
     DOT_DIAMETER_IMAGE_MAX,
   );
-  slider.value = clampedDiameter.toFixed(1);
-  valueLabel.textContent = `${clampedDiameter.toFixed(1)}px`;
+  els.dotSizeSlider.value = clampedDiameter.toFixed(1);
+  els.dotSizeValue.textContent = `${clampedDiameter.toFixed(1)}px`;
 }
 
 function updateBoxSizeControl(boxSizeImagePx) {
-  const slider = document.getElementById("boxSizeSlider");
-  const valueLabel = document.getElementById("boxSizeValue");
-  if (!slider || !valueLabel) {
-    return;
-  }
-  slider.min = `${BOX_SIZE_IMAGE_MIN}`;
-  slider.max = `${BOX_SIZE_IMAGE_MAX}`;
+  els.boxSizeSlider.min = `${BOX_SIZE_IMAGE_MIN}`;
+  els.boxSizeSlider.max = `${BOX_SIZE_IMAGE_MAX}`;
   const clampedSize = clampNumber(
     boxSizeImagePx,
     BOX_SIZE_IMAGE_MIN,
     BOX_SIZE_IMAGE_MAX,
   );
-  slider.value = clampedSize.toFixed(1);
-  valueLabel.textContent = `${clampedSize.toFixed(1)}px`;
+  els.boxSizeSlider.value = clampedSize.toFixed(1);
+  els.boxSizeValue.textContent = `${clampedSize.toFixed(1)}px`;
 }
 
 function updatePartitionAlphaControl(alpha) {
-  const slider = document.getElementById("partitionAlphaSlider");
-  const valueLabel = document.getElementById("partitionAlphaValue");
-  if (!slider || !valueLabel) {
-    return;
-  }
   const clampedAlpha = clampNumber(alpha, 0, 1);
-  slider.value = `${Math.round(clampedAlpha * 100)}`;
-  valueLabel.textContent = `${Math.round(clampedAlpha * 100)}%`;
+  els.partitionAlphaSlider.value = `${Math.round(clampedAlpha * 100)}`;
+  els.partitionAlphaValue.textContent = `${Math.round(clampedAlpha * 100)}%`;
 }
 
 function updateBinaryThresholdControl(threshold) {
-  const slider = document.getElementById("binaryThresholdSlider");
-  const valueLabel = document.getElementById("binaryThresholdValue");
-  const scaleBar = document.getElementById("scoreScaleBar");
-  if (!slider || !valueLabel) {
-    return;
-  }
   const clampedThreshold = clampNumber(threshold, 0, 1);
   const thresholdPercent = Math.round(clampedThreshold * 100);
-  slider.value = `${thresholdPercent}`;
-  valueLabel.textContent = `${thresholdPercent}%`;
-  valueLabel.style.setProperty("--binary-threshold-percent", `${thresholdPercent}%`);
-  if (scaleBar) {
-    scaleBar.style.setProperty(
+  els.binaryThresholdSlider.value = `${thresholdPercent}`;
+  els.binaryThresholdValue.textContent = `${thresholdPercent}%`;
+  els.binaryThresholdValue.style.setProperty(
+    "--binary-threshold-percent",
+    `${thresholdPercent}%`,
+  );
+  if (els.scoreScaleBar) {
+    els.scoreScaleBar.style.setProperty(
       "--binary-threshold-percent",
       `${thresholdPercent}%`,
     );
@@ -1649,9 +1640,11 @@ function applyPendingDotRadiusValue() {
     DOT_DIAMETER_IMAGE_MIN,
     DOT_DIAMETER_IMAGE_MAX,
   );
-  state.dotDiameterImagePx = clampedDiameter;
+  commit({
+    dotDiameterImagePx: clampedDiameter,
+    pendingDotRadiusValue: null,
+  });
   updateDotSizeControl(clampedDiameter);
-  state.pendingDotRadiusValue = null;
 }
 
 function applyPendingBoxSizeValue() {
@@ -1663,9 +1656,11 @@ function applyPendingBoxSizeValue() {
     BOX_SIZE_IMAGE_MIN,
     BOX_SIZE_IMAGE_MAX,
   );
-  state.boxSizeImagePx = clampedSize;
+  commit({
+    boxSizeImagePx: clampedSize,
+    pendingBoxSizeValue: null,
+  });
   updateBoxSizeControl(clampedSize);
-  state.pendingBoxSizeValue = null;
 }
 
 function applyPendingClusterFilters() {
@@ -1675,75 +1670,51 @@ function applyPendingClusterFilters() {
 
   const allClusterIds = getAllClusterIds();
   if (state.pendingClusterFilterIds === "all") {
-    state.activeClusterFilters = new Set(allClusterIds);
-    state.pendingClusterFilterIds = null;
+    commit({
+      activeClusterFilters: new Set(allClusterIds),
+      pendingClusterFilterIds: null,
+    });
     return;
   }
   if (state.pendingClusterFilterIds === "none") {
-    state.activeClusterFilters = new Set();
-    state.pendingClusterFilterIds = null;
+    commit({
+      activeClusterFilters: new Set(),
+      pendingClusterFilterIds: null,
+    });
     return;
   }
 
   const validClusterIds = state.pendingClusterFilterIds.filter((clusterId) =>
     allClusterIds.includes(clusterId),
   );
-  state.activeClusterFilters =
-    validClusterIds.length > 0 ? new Set(validClusterIds) : new Set(allClusterIds);
-  state.pendingClusterFilterIds = null;
+  commit({
+    activeClusterFilters:
+      validClusterIds.length > 0 ? new Set(validClusterIds) : new Set(allClusterIds),
+    pendingClusterFilterIds: null,
+  });
 }
 
 function syncOverlayControlVisibility() {
-  const dotSizeCard = document.getElementById("dotSizeCard");
-  const boxSizeCard = document.getElementById("boxSizeCard");
-  const partitionAlphaCard = document.getElementById("partitionAlphaCard");
-  const binaryThresholdSlider = document.getElementById("binaryThresholdSlider");
-  const binaryThresholdValue = document.getElementById("binaryThresholdValue");
-  const scaleBar = document.getElementById("scoreScaleBar");
-  const showDots = document.getElementById("toggleDots")?.checked ?? false;
-  const showBoxes = document.getElementById("toggleBoxes")?.checked ?? false;
-  const showPartitionFill =
-    document.getElementById("togglePartitionFill")?.checked ?? false;
-  const showBinaryDots =
-    document.getElementById("toggleBinaryDots")?.checked ?? false;
-  if (dotSizeCard) {
-    dotSizeCard.hidden = !showDots;
-  }
-  if (boxSizeCard) {
-    boxSizeCard.hidden = !showBoxes;
-  }
-  if (partitionAlphaCard) {
-    partitionAlphaCard.hidden = !showPartitionFill;
-  }
-  if (binaryThresholdSlider) {
-    binaryThresholdSlider.hidden = !showBinaryDots;
-  }
-  if (binaryThresholdValue) {
-    binaryThresholdValue.hidden = !showBinaryDots;
-  }
-  if (scaleBar) {
-    scaleBar.classList.toggle("is-binary", showBinaryDots);
-  }
+  const showDots = els.toggleDots.checked;
+  const showBoxes = els.toggleBoxes.checked;
+  const showPartitionFill = els.togglePartitionFill.checked;
+  const showBinaryDots = els.toggleBinaryDots.checked;
+  els.dotSizeCard.hidden = !showDots;
+  els.boxSizeCard.hidden = !showBoxes;
+  els.partitionAlphaCard.hidden = !showPartitionFill;
+  els.binaryThresholdSlider.hidden = !showBinaryDots;
+  els.binaryThresholdValue.hidden = !showBinaryDots;
+  els.scoreScaleBar?.classList.toggle("is-binary", showBinaryDots);
 }
 
 function setViewportEditorStatus(message) {
-  const status = document.getElementById("viewportEditorStatus");
-  if (!status) {
-    return;
-  }
-  status.textContent = message || "";
+  els.viewportEditorStatus.textContent = message || "";
 }
 
 function updateViewportInputs(bounds) {
-  const inputVx = document.getElementById("viewportInputVx");
-  const inputVy = document.getElementById("viewportInputVy");
-  const inputVz = document.getElementById("viewportInputVz");
-  if (!inputVx || !inputVy || !inputVz) {
-    return;
-  }
-  inputVx.value = `${bounds.center.x.toFixed(2)}`;
-  inputVy.value = `${bounds.center.y.toFixed(2)}`;
-  inputVz.value = `${bounds.zoom.toFixed(2)}`;
+  els.viewportInputVx.value = `${bounds.center.x.toFixed(2)}`;
+  els.viewportInputVy.value = `${bounds.center.y.toFixed(2)}`;
+  els.viewportInputVz.value = `${bounds.zoom.toFixed(2)}`;
   setViewportEditorStatus("");
 }
 
@@ -1752,12 +1723,9 @@ function applyViewportBoundsFromInputs() {
     return;
   }
 
-  const inputVx = document.getElementById("viewportInputVx");
-  const inputVy = document.getElementById("viewportInputVy");
-  const inputVz = document.getElementById("viewportInputVz");
-  const rawVx = Number(inputVx?.value);
-  const rawVy = Number(inputVy?.value);
-  const rawVz = Number(inputVz?.value);
+  const rawVx = Number(els.viewportInputVx.value);
+  const rawVy = Number(els.viewportInputVy.value);
+  const rawVz = Number(els.viewportInputVz.value);
   if (
     !Number.isFinite(rawVx) ||
     !Number.isFinite(rawVy) ||
@@ -1771,19 +1739,19 @@ function applyViewportBoundsFromInputs() {
     return;
   }
 
-  state.pendingViewportState = {
-    center: {
-      x: clampNumber(rawVx, 0, 1),
-      y: clampNumber(rawVy, 0, 1),
+  commit({
+    pendingViewportState: {
+      center: {
+        x: clampNumber(rawVx, 0, 1),
+        y: clampNumber(rawVy, 0, 1),
+      },
+      zoom: clampNumber(rawVz, 1.0e-6, 1),
     },
-    zoom: clampNumber(rawVz, 1.0e-6, 1),
-  };
+  });
   restoreViewportState();
   updateViewportInputs(captureViewportState() || state.pendingViewportState);
   setViewportEditorStatus("Viewport updated.");
-  syncUiStateQuery();
-  scheduleRedraw();
-  scheduleSidebarRedraw({ immediate: true });
+  commit({}, { query: true, redraw: true, sidebar: "immediate" });
 }
 
 function scheduleViewportAutoApply(options = {}) {
@@ -1805,28 +1773,30 @@ function scheduleViewportAutoApply(options = {}) {
 
 function getOverlayToggleConfig() {
   return [
-    { id: "toggleDots", key: "dots" },
-    { id: "toggleBoxes", key: "boxes" },
-    { id: "togglePartitionFill", key: "partition" },
-    { id: "toggleScoreText", key: "score" },
-    { id: "toggleClusterText", key: "cluster" },
-    { id: "toggleContributionText", key: "contrib" },
+    { element: els.toggleDots, key: "dots" },
+    { element: els.toggleBoxes, key: "boxes" },
+    { element: els.togglePartitionFill, key: "partition" },
+    { element: els.toggleScoreText, key: "score" },
+    { element: els.toggleClusterText, key: "cluster" },
+    { element: els.toggleContributionText, key: "contrib" },
   ];
 }
 
 function applyUiStateFromQuery() {
   const searchParams = new URLSearchParams(window.location.search);
-  state.pendingDotRadiusValue = DEFAULT_DOT_DIAMETER_IMAGE_PX;
-  state.pendingBoxSizeValue = DEFAULT_BOX_SIZE_IMAGE_PX;
-  state.partitionFillAlpha = DEFAULT_PARTITION_FILL_ALPHA;
-  state.binaryDotThreshold = DEFAULT_BINARY_DOT_SCORE_THRESHOLD;
+  const patch = {
+    pendingDotRadiusValue: DEFAULT_DOT_DIAMETER_IMAGE_PX,
+    pendingBoxSizeValue: DEFAULT_BOX_SIZE_IMAGE_PX,
+    partitionFillAlpha: DEFAULT_PARTITION_FILL_ALPHA,
+    binaryDotThreshold: DEFAULT_BINARY_DOT_SCORE_THRESHOLD,
+  };
   const requestedExperiment = (
     searchParams.get(EXPERIMENT_QUERY_PARAM) ??
     searchParams.get(LEGACY_EXPERIMENT_QUERY_PARAM) ??
     ""
   ).trim();
   if (requestedExperiment) {
-    state.pendingExperiment = requestedExperiment;
+    patch.pendingExperiment = requestedExperiment;
   }
   let requestedOverlays = null;
   const overlaysRaw = searchParams.get(OVERLAY_QUERY_PARAM);
@@ -1838,30 +1808,24 @@ function applyUiStateFromQuery() {
         .filter(Boolean),
     );
     for (const overlay of getOverlayToggleConfig()) {
-      const input = document.getElementById(overlay.id);
-      if (input) {
-        input.checked = requestedOverlays.has(overlay.key);
-      }
+      overlay.element.checked = requestedOverlays.has(overlay.key);
     }
   }
 
   const viewRaw = (searchParams.get(VIEW_QUERY_PARAM) ?? "").trim();
-  const binaryDotsInput = document.getElementById("toggleBinaryDots");
-  if (binaryDotsInput) {
-    if (viewRaw === VIEW_MODE_BINARY) {
-      binaryDotsInput.checked = true;
-    } else if (viewRaw === VIEW_MODE_CONTINUOUS) {
-      binaryDotsInput.checked = false;
-    } else if (requestedOverlays?.has("binary")) {
-      binaryDotsInput.checked = true;
-    }
+  if (viewRaw === VIEW_MODE_BINARY) {
+    els.toggleBinaryDots.checked = true;
+  } else if (viewRaw === VIEW_MODE_CONTINUOUS) {
+    els.toggleBinaryDots.checked = false;
+  } else if (requestedOverlays?.has("binary")) {
+    els.toggleBinaryDots.checked = true;
   }
 
   const dotSizeRawValue = searchParams.get(DOT_SIZE_QUERY_PARAM);
   const dotSizeRaw =
     dotSizeRawValue === null ? Number.NaN : Number(dotSizeRawValue);
   if (Number.isFinite(dotSizeRaw)) {
-    state.pendingDotRadiusValue = clampNumber(
+    patch.pendingDotRadiusValue = clampNumber(
       dotSizeRaw,
       DOT_DIAMETER_IMAGE_MIN,
       DOT_DIAMETER_IMAGE_MAX,
@@ -1872,7 +1836,7 @@ function applyUiStateFromQuery() {
   const boxSizeRaw =
     boxSizeRawValue === null ? Number.NaN : Number(boxSizeRawValue);
   if (Number.isFinite(boxSizeRaw)) {
-    state.pendingBoxSizeValue = clampNumber(
+    patch.pendingBoxSizeValue = clampNumber(
       boxSizeRaw,
       BOX_SIZE_IMAGE_MIN,
       BOX_SIZE_IMAGE_MAX,
@@ -1883,30 +1847,30 @@ function applyUiStateFromQuery() {
   const alphaRaw =
     alphaRawValue === null ? Number.NaN : Number(alphaRawValue);
   if (requestedOverlays?.has("partition") && Number.isFinite(alphaRaw)) {
-    state.partitionFillAlpha = clampNumber(alphaRaw / 100, 0, 1);
+    patch.partitionFillAlpha = clampNumber(alphaRaw / 100, 0, 1);
   }
 
   const thresholdRawValue = searchParams.get(BINARY_THRESHOLD_QUERY_PARAM);
   const thresholdRaw =
     thresholdRawValue === null ? Number.NaN : Number(thresholdRawValue);
   if (Number.isFinite(thresholdRaw)) {
-    state.binaryDotThreshold = clampNumber(thresholdRaw / 100, 0, 1);
+    patch.binaryDotThreshold = clampNumber(thresholdRaw / 100, 0, 1);
   }
 
   const clustersRaw = searchParams.get(CLUSTER_QUERY_PARAM);
   if (clustersRaw === "all" || clustersRaw === "none") {
-    state.pendingClusterFilterIds = clustersRaw;
+    patch.pendingClusterFilterIds = clustersRaw;
   } else if (clustersRaw) {
     const clusterIds = clustersRaw
       .split(",")
       .map((value) => Number.parseInt(value, 10))
       .filter((value) => Number.isInteger(value));
-    state.pendingClusterFilterIds = clusterIds;
+    patch.pendingClusterFilterIds = clusterIds;
   }
 
   const imageLayerRaw = searchParams.get(IMAGE_LAYER_QUERY_PARAM);
   if (Object.prototype.hasOwnProperty.call(IMAGE_LAYER_TILE_SOURCES, imageLayerRaw)) {
-    state.activeImageLayer = imageLayerRaw;
+    patch.activeImageLayer = imageLayerRaw;
   }
 
   const viewportXRaw = Number(searchParams.get(VIEWPORT_X_QUERY_PARAM));
@@ -1918,21 +1882,21 @@ function applyUiStateFromQuery() {
     Number.isFinite(viewportZoomRaw) &&
     viewportZoomRaw > 0
   ) {
-    state.pendingViewportState = {
+    patch.pendingViewportState = {
       center: { x: viewportXRaw, y: viewportYRaw },
       zoom: viewportZoomRaw,
     };
   }
+  commit(patch);
 }
 
 function syncUiStateQuery(slideKey = state.currentSlideKey) {
   const url = new URL(window.location.href);
   const enabledOverlays = getOverlayToggleConfig()
-    .filter((overlay) => document.getElementById(overlay.id)?.checked)
+    .filter((overlay) => overlay.element.checked)
     .map((overlay) => overlay.key);
   const partitionFillEnabled = enabledOverlays.includes("partition");
-  const binaryViewEnabled =
-    document.getElementById("toggleBinaryDots")?.checked ?? false;
+  const binaryViewEnabled = els.toggleBinaryDots.checked;
   const dotSizeValue = clampNumber(
     state.pendingDotRadiusValue ?? state.dotDiameterImagePx ?? DEFAULT_DOT_DIAMETER_IMAGE_PX,
     DOT_DIAMETER_IMAGE_MIN,
@@ -2058,15 +2022,13 @@ function ensureMinimumScreenRectSize(rect, centerPoint, minSize) {
 }
 
 function drawCellOverlay(context, visible) {
-  const showDots = document.getElementById("toggleDots").checked;
-  const showBinaryDots = document.getElementById("toggleBinaryDots").checked;
-  const showBoxes = document.getElementById("toggleBoxes").checked;
-  const showPartitionFill = document.getElementById("togglePartitionFill").checked;
-  const showScoreText = document.getElementById("toggleScoreText").checked;
-  const showClusterText = document.getElementById("toggleClusterText").checked;
-  const showContributionText = document.getElementById(
-    "toggleContributionText",
-  ).checked;
+  const showDots = els.toggleDots.checked;
+  const showBinaryDots = els.toggleBinaryDots.checked;
+  const showBoxes = els.toggleBoxes.checked;
+  const showPartitionFill = els.togglePartitionFill.checked;
+  const showScoreText = els.toggleScoreText.checked;
+  const showClusterText = els.toggleClusterText.checked;
+  const showContributionText = els.toggleContributionText.checked;
   const viewWidthRatio = visible.bounds.width / state.manifest.image_width;
 
   const renderScoreText =
@@ -2183,9 +2145,8 @@ function getDotOverlayColor(index, useBinaryColors) {
 
 function drawPartitionOverlay(context, viewWidthRatio, visibleImageBounds, options = {}) {
   const { useBinaryColors = false } = options;
-  const overlayCanvas = document.getElementById("overlayCanvas");
-  const overlayWidth = overlayCanvas?.getBoundingClientRect().width ?? 0;
-  const overlayHeight = overlayCanvas?.getBoundingClientRect().height ?? 0;
+  const overlayWidth = els.overlayCanvas?.getBoundingClientRect().width ?? 0;
+  const overlayHeight = els.overlayCanvas?.getBoundingClientRect().height ?? 0;
   if (overlayWidth <= 0 || overlayHeight <= 0) {
     return;
   }
@@ -2427,13 +2388,11 @@ function imageToScreenPoint(x, y) {
 
 function updateViewportSummary(visible, viewportCells = visible) {
   const visibleCount = viewportCells.indices.length;
-  document.getElementById("visibleCellCount").textContent =
-    formatInteger(visibleCount);
+  els.visibleCellCount.textContent = formatInteger(visibleCount);
 
   if (!visibleCount) {
-    const meanTumorScoreElement = document.getElementById("meanTumorScore");
-    meanTumorScoreElement.textContent = "-";
-    meanTumorScoreElement.style.color = "";
+    els.meanTumorScore.textContent = "-";
+    els.meanTumorScore.style.color = "";
   } else {
     const meanTumorScore = meanTumorScoreForIndices(viewportCells.indices);
     setPercentMetric("meanTumorScore", meanTumorScore);
@@ -2446,7 +2405,7 @@ function updateViewportSummary(visible, viewportCells = visible) {
   }
 
   if (!clusterCounts.size) {
-    document.getElementById("topCluster").textContent = "-";
+    els.topCluster.textContent = "-";
     return;
   }
 
@@ -2459,7 +2418,7 @@ function updateViewportSummary(visible, viewportCells = visible) {
     }
   }
 
-  document.getElementById("topCluster").textContent = `C${topCluster} (${topClusterCount})`;
+  els.topCluster.textContent = `C${topCluster} (${topClusterCount})`;
 }
 
 function getTumorScoreColor(tumorScore) {
@@ -2484,9 +2443,8 @@ function getTumorScoreColor(tumorScore) {
 }
 
 function drawScoreHistogram(indices) {
-  const canvas = document.getElementById("scoreHistogram");
-  const { width, height } = resizeCanvas(canvas);
-  const context = canvas.getContext("2d");
+  const { width, height } = resizeCanvas(els.scoreHistogram);
+  const context = els.scoreHistogram.getContext("2d");
   context.clearRect(0, 0, width, height);
   const histogram = buildHistogram(
     indices.map((index) => state.cells.tumor_score[index]),
@@ -2506,9 +2464,8 @@ function drawScoreHistogram(indices) {
 }
 
 function drawClusterHistogram(indices) {
-  const canvas = document.getElementById("clusterHistogram");
-  const { width, height } = resizeCanvas(canvas);
-  const context = canvas.getContext("2d");
+  const { width, height } = resizeCanvas(els.clusterHistogram);
+  const context = els.clusterHistogram.getContext("2d");
   context.clearRect(0, 0, width, height);
   const clusterCounts = Array.from(
     { length: state.manifest.num_clusters },
@@ -2522,10 +2479,26 @@ function drawClusterHistogram(indices) {
     width,
     height,
     xTickLabels: clusterCounts.map((_, index) => `${index}`),
+    xTickIndices: buildClusterXAxisTickIndices(clusterCounts.length),
     values: clusterCounts,
     fillStyle: CLUSTER_HISTOGRAM_FILL_STYLE,
     emptyLabel: "No visible cells",
   });
+}
+
+function buildClusterXAxisTickIndices(clusterCount) {
+  if (clusterCount <= 18) {
+    return Array.from({ length: clusterCount }, (_, index) => index);
+  }
+  const lastIndex = clusterCount - 1;
+  const tickCount = 5;
+  return Array.from(
+    new Set(
+      Array.from({ length: tickCount }, (_, index) =>
+        Math.round((lastIndex * index) / (tickCount - 1)),
+      ),
+    ),
+  );
 }
 
 function drawBarChart({
@@ -2533,6 +2506,7 @@ function drawBarChart({
   width,
   height,
   xTickLabels,
+  xTickIndices = null,
   values,
   fillStyle,
   emptyLabel,
@@ -2597,12 +2571,10 @@ function drawBarChart({
 
   const barCount = values.length;
   const sideInset = barCount > 24 ? 1 : 3;
-  const gap = barCount > 30 ? 1 : barCount > 14 ? 2 : 3;
+  const gap = barCount > 80 ? 0 : barCount > 30 ? 1 : barCount > 14 ? 2 : 3;
   const plotWidth = Math.max(0, chartWidth - sideInset * 2);
-  const barWidth = Math.max(
-    1,
-    (plotWidth - gap * Math.max(0, barCount - 1)) / barCount,
-  );
+  const rawBarWidth = (plotWidth - gap * Math.max(0, barCount - 1)) / barCount;
+  const barWidth = barCount > 80 ? rawBarWidth : Math.max(1, rawBarWidth);
 
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
@@ -2617,8 +2589,14 @@ function drawBarChart({
   context.font = "11px 'Roboto Mono', monospace";
   context.textAlign = "center";
   context.textBaseline = "top";
-  const tickStep = barCount > 18 ? Math.ceil(barCount / 10) : 1;
-  for (let index = 0; index < xTickLabels.length; index += tickStep) {
+  const defaultTickStep = barCount > 18 ? Math.ceil(barCount / 10) : 1;
+  const tickIndices =
+    xTickIndices ??
+    Array.from(
+      { length: Math.ceil(xTickLabels.length / defaultTickStep) },
+      (_, index) => index * defaultTickStep,
+    );
+  for (const index of tickIndices) {
     const label = xTickLabels[index];
     const x =
       padding.left + sideInset + index * (barWidth + gap) + barWidth / 2;

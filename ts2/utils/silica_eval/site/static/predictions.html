@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Predictions | Silica</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+    <script>
+      window.SILICA_PREDICTIONS = {
+        chartsUrl: "/api/prediction-charts",
+        metricsUrl: "/api/prediction-metrics",
+        slidesUrl: "/api/slides",
+        slideViewerUrl: "/static/slideviewer.html",
+      };
+    </script>
+    <script defer src="/static/site-ui.js"></script>
+    <script defer src="/static/predictions.js"></script>
+  </head>
+  <body class="predictions-page">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <button
+          type="button"
+          id="predictionSidebarCollapseButton"
+          class="sidebar-collapse-button topbar-sidebar-toggle"
+          aria-label="Collapse sidebar"
+          aria-expanded="true"
+        >
+          <svg class="sidebar-collapse-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 7h16" />
+            <path d="M4 12h16" />
+            <path d="M4 17h16" />
+          </svg>
+        </button>
+        <a href="/" class="topbar-brand">
+          <span class="topbar-brand-mark" aria-hidden="true">
+            <img src="/static/logo.png" alt="mlins-logo">
+          </span>
+          <span class="topbar-brand-text">Predictions</span>
+        </a>
+        <div class="topbar-experiment-picker">
+          <div class="topbar-experiment-pill">
+            <span class="topbar-select-label" aria-hidden="true">Experiment</span>
+            <select
+              id="predictionExperimentSelect"
+              class="topbar-select topbar-segment-select topbar-experiment-select"
+              aria-label="Select experiment"
+            >
+              <option>Experiment</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-shell predictions-shell">
+      <main class="layout predictions-layout">
+        <aside class="sidebar predictions-sidebar">
+          <div class="sidebar-scroll">
+            <div id="predictionMobileExperimentPickerSlot" class="mobile-experiment-picker-slot"></div>
+
+            <section class="panel-card info-card prediction-metrics-card">
+              <div id="predictionMetricsGrid" class="info-grid">
+                <div class="metric-row">
+                  <span class="metric-label">Datapoints</span>
+                  <strong id="metricNumDatapoints">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Mean Class Accuracy</span>
+                  <strong id="metricPredLabelMeanClassAccuracy">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Sigmoid Sum MCA</span>
+                  <strong id="metricSigmoidSumPredLabelMeanClassAccuracy">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Raw Pearson</span>
+                  <strong id="metricRawScorePearson">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Sigmoid Sum Pearson</span>
+                  <strong id="metricSigmoidSumScorePearson">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Raw Spearman</span>
+                  <strong id="metricRawScoreSpearman">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">Sigmoid Sum Spearman</span>
+                  <strong id="metricSigmoidSumScoreSpearman">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">AUROC 0 vs 1/2/3</span>
+                  <strong id="metricAuroc0Vs123">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">AUROC 0/1 vs 2/3</span>
+                  <strong id="metricAuroc01Vs23">-</strong>
+                </div>
+                <div class="metric-row">
+                  <span class="metric-label">AUROC 0/1/2 vs 3</span>
+                  <strong id="metricAuroc012Vs3">-</strong>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel-card prediction-matrix-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Prediction Confusion Matrix</h2>
+                </div>
+              </div>
+              <div id="predictionConfusionMatrix" class="prediction-confusion-matrix"></div>
+            </section>
+
+            <section class="panel-card prediction-matrix-panel">
+              <div class="panel-header">
+                <div>
+                  <h2>Sigmoid Sum Confusion Matrix</h2>
+                </div>
+              </div>
+              <div
+                id="sigmoidSumConfusionMatrix"
+                class="prediction-confusion-matrix"
+              ></div>
+            </section>
+
+            <section class="panel-card prediction-metrics-status-panel">
+              <div id="predictionMetricsStatus" class="hint-box" aria-live="polite"></div>
+            </section>
+          </div>
+        </aside>
+
+        <div
+          id="predictionLayoutResizeHandle"
+          class="layout-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+        >
+          <div class="layout-resize-pill" aria-hidden="true"></div>
+        </div>
+
+        <section class="viewer-panel panel-card">
+          <div class="viewer-frame valid-viewer-frame predictions-frame">
+            <div
+              id="predictionChartStatus"
+              class="viewport-status predictions-status"
+              aria-live="polite"
+            ></div>
+            <div id="predictionChart" class="embedded-chart predictions-chart"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
