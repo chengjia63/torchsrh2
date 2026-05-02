@@ -28,8 +28,8 @@ gpu=0
 for i in "${!COMBINATIONS[@]}"; do
   echo "GPU $gpu | Running combination $i: ${COMBINATIONS[$i]}"
 
-  #HYDRA_FULL_ERROR=1 CUDA_VISIBLE_DEVICES=$gpu srun python -m ts3.train.main --config-name config/abmil_coral \
-  HYDRA_FULL_ERROR=1 CUDA_VISIBLE_DEVICES=$gpu python -m ts3.train.main --config-name config/rtamil_coral \
+  #HYDRA_FULL_ERROR=1 CUDA_VISIBLE_DEVICES=$gpu srun python -m ts3.train.main --config-name config/abmil_coral_pos \
+  HYDRA_FULL_ERROR=1 CUDA_VISIBLE_DEVICES=$gpu python -m ts3.train.main --config-name config/rtamil_coral_pos \
     ${COMBINATIONS[$i]} &
 
   gpu=$(( (gpu + 1) % 4 ))

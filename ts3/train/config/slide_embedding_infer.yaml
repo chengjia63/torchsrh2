@@ -2,6 +2,7 @@
 
 defaults:
   - hydra
+  - _self_
 
 infra:
   seed: 1000
@@ -14,11 +15,15 @@ data:
     trainval:
       dataset:
         _target_: ts3.data.slide_dataset.SlideEmbeddingDataset
-        embedding_root: /scratch/tocho_root/tocho0/chengjia/silica_ucsf/b1a0cbe3_k1024
+        embedding_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/silica_cellinf/b1a0cbe3_k1024
         embedding_path_template: "{patient}-{mosaic}/{patient}-{mosaic}-cell_representations.pt"
         class_order: ["0", "1", "2", "3"]
         slides_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_eval/playground/data/ucsf_retrospective_val.csv
         balance_instance_class: false
+        transform:
+          _target_: ts3.data.transforms.CoordBaseTransforms
+          max_size: 6000.0
+          center: true
       sampler: null
       dataloader:
         _target_: torch.utils.data.DataLoader
@@ -33,22 +38,32 @@ data:
         drop_last: false
 
 meta_arch:
-  _target_: ts3.train.meta_arch.SlideABMILModule
+  _target_: ts3.meta_arch.meta_arch.SlideABMILOrdinalModule
   num_classes: 4
   criterion:
-    _target_: ts3.train.meta_arch.CORALLoss
+    _target_: ts3.losses.coral.CORALLoss
     _partial_: true
   model:
-    _target_: ts3.train.meta_arch.MILOrdinalModel
+    _target_: ts3.models.ordinal.MILOrdinalModel
+    #pe:
+    #  _target_: ts3.models.ffpe.LearnableFourierPositionalEncoding
+    #  G: 1
+    #  M: 2
+    #  F_dim: 128
+    #  H_dim: 256
+    #  D: 384
+    #  gamma: 2.0
     mil:
-      _target_: ts3.train.meta_arch.GatedABMIL
+      _target_: ts3.models.abmil.GatedABMILRegThenAgg
       input_dim: 384
       hidden_dim: 256
-      attention_dim: 128
+      final_dim: 128
       dropout: 0.5
+      regressor_hidden_dims: [128]
+      regressor_drop: 0.0
+      regressor_bias: true
     head:
-      _target_: ts3.train.meta_arch.SharedCORALHead
-      input_dim: 256
+      _target_: ts3.models.ordinal.SharedCORALHead
       num_classes: ${meta_arch.num_classes}
 
 inference:

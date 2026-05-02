@@ -39,7 +39,7 @@ def make_ts3_eval_dir(checkpoint_path: str, run_name: str = "") -> str:
     timestamp = datetime.now().strftime("%b%d-%H-%M-%S")
     run_id = uuid.uuid4().hex[:8]
     eval_name = "_".join(filter(None, [run_name, timestamp, run_id]))
-    return opj(train_dir, "eval", eval_name)
+    return opj(train_dir, "evals", eval_name)
 
 
 def register_resolvers() -> None:
@@ -87,6 +87,12 @@ def setup_output_dirs():
     return exp_root, model_dir, config_dir, code_dir
 
 
+def setup_eval_output_dirs():
+    exp_root = HydraConfig.get().runtime.output_dir
+    os.makedirs(exp_root, exist_ok=True)
+    return exp_root
+
+
 @rank_zero_only
 def create_artifact_dirs(dir_names) -> None:
     for dir_name in dir_names:
@@ -112,6 +118,16 @@ def config_loggers(exp_root: str) -> None:
         force=True,
     )
     logging.info("Exp root %s", exp_root)
+
+
+def setup_inference_infra(cf: DictConfig) -> None:
+    pl.seed_everything(cf.infra.seed, workers=True)
+    torch.set_float32_matmul_precision(
+        cf.infra.get("float32_matmul_precision", "medium")
+    )
+    exp_root = setup_eval_output_dirs()
+    config_loggers(exp_root)
+    return exp_root
 
 
 @rank_zero_only

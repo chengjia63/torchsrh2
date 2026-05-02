@@ -222,7 +222,7 @@ class SlideEmbeddingDataset(BalanceableBaseDataset):
         )
 
         if self.transform_ is not None:
-            sample["embeddings"] = self.transform_(sample["embeddings"])
+            sample = self.transform_(sample)
         if self.target_transform_ is not None:
             sample[self.label_col_] = self.target_transform_(sample[self.label_col_])
 
