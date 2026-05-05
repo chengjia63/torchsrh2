@@ -38,37 +38,18 @@ class MLPRegressor(nn.Module):
 class GatedABMIL(nn.Module):
     def __init__(
         self,
-        input_dim: int,
-        hidden_dim: int,
-        final_dim: int,
-        dropout: float = 0.0,
-        regressor_hidden_dims: tuple[int, ...] = (),
-        regressor_act_layer: Callable[..., nn.Module] = nn.GELU,
-        regressor_drop: float = 0.0,
-        regressor_bias: bool = True,
+        instance_encoder: nn.Module,
+        attention_v: nn.Module,
+        attention_u: nn.Module,
+        attention_w: nn.Module,
+        regressor: nn.Module,
     ):
         super().__init__()
-        self.instance_encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-        )
-        self.attention_v = nn.Sequential(
-            nn.Linear(hidden_dim, final_dim),
-            nn.Tanh(),
-        )
-        self.attention_u = nn.Sequential(
-            nn.Linear(hidden_dim, final_dim),
-            nn.Sigmoid(),
-        )
-        self.attention_w = nn.Linear(final_dim, 1)
-        self.regressor = MLPRegressor(
-            hidden_dim,
-            hidden_dims=regressor_hidden_dims,
-            act_layer=regressor_act_layer,
-            drop=regressor_drop,
-            bias=regressor_bias,
-        )
+        self.instance_encoder = instance_encoder
+        self.attention_v = attention_v
+        self.attention_u = attention_u
+        self.attention_w = attention_w
+        self.regressor = regressor
 
     def forward(self, embeddings: torch.Tensor):
         encoded = self.instance_encoder(embeddings)  # [N, H]
@@ -93,37 +74,18 @@ class GatedABMIL(nn.Module):
 class GatedABMILRegThenAgg(nn.Module):
     def __init__(
         self,
-        input_dim: int,
-        hidden_dim: int,
-        final_dim: int,
-        dropout: float = 0.0,
-        regressor_hidden_dims: tuple[int, ...] = (),
-        regressor_act_layer: Callable[..., nn.Module] = nn.GELU,
-        regressor_drop: float = 0.0,
-        regressor_bias: bool = True,
+        instance_encoder: nn.Module,
+        attention_v: nn.Module,
+        attention_u: nn.Module,
+        attention_w: nn.Module,
+        regressor: nn.Module,
     ):
         super().__init__()
-        self.instance_encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-        )
-        self.attention_v = nn.Sequential(
-            nn.Linear(hidden_dim, final_dim),
-            nn.Tanh(),
-        )
-        self.attention_u = nn.Sequential(
-            nn.Linear(hidden_dim, final_dim),
-            nn.Sigmoid(),
-        )
-        self.attention_w = nn.Linear(final_dim, 1)
-        self.regressor = MLPRegressor(
-            hidden_dim,
-            hidden_dims=regressor_hidden_dims,
-            act_layer=regressor_act_layer,
-            drop=regressor_drop,
-            bias=regressor_bias,
-        )
+        self.instance_encoder = instance_encoder
+        self.attention_v = attention_v
+        self.attention_u = attention_u
+        self.attention_w = attention_w
+        self.regressor = regressor
 
     def forward(self, embeddings: torch.Tensor):
         encoded = self.instance_encoder(embeddings)  # [N, H]

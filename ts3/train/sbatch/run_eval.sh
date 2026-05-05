@@ -2,23 +2,36 @@
 set -euo pipefail
 
 ckpts=(
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr10e4_bs16_May01-03-39-18_757950a3/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr10e4_bs32_May01-03-55-44_6d6b7f29/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr10e4_bs64_May01-04-17-18_f03f475d/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr10e5_bs16_May01-00-42-25_70e9fa61/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr10e5_bs32_May01-01-07-51_e77bec3c/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr10e5_bs64_May01-01-41-10_2abfe0cd/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr10e6_bs16_May01-03-53-52_5950d245/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr10e6_bs32_May01-04-08-46_51eb3328/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr10e6_bs64_May01-04-30-00_317bbc5c/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr50e4_bs16_May01-02-21-21_82aff3d3/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr50e4_bs32_May01-02-35-19_ccd475d8/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr50e4_bs64_May01-02-57-28_c5e8bfff/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr50e5_bs32_Apr30-23-30-44_b392d3d2/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr50e5_bs64_Apr30-23-50-12_5782b542/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr50e6_bs16_May01-15-35-17_efd23519/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr50e6_bs32_May01-02-51-19_2c92af49/models/epochepoch\=09.ckpt'
-'/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_mlp_tune/slocal__rtamil_lr50e6_bs64_May01-03-12-35_4c03dea9/models/epochepoch\=09.ckpt'
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr10e4_bs16_May04-17-39-37_870689fc/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr10e4_bs32_May04-17-58-14_a684df25/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr10e4_bs64_May04-18-29-55_d030bab3/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr10e5_bs16_May04-17-28-54_8e2835d4/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr10e5_bs32_May04-17-39-37_aa463a37/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr10e5_bs64_May04-18-29-55_90fef0d5/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr10e6_bs16_May04-17-28-54_33c0a0d9/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr10e6_bs32_May04-17-39-37_742a1c44/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr10e6_bs64_May04-17-58-14_d3451973/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr50e5_bs16_May04-17-28-54_48615743/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr50e5_bs32_May04-17-58-14_56dbfedd/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr50e5_bs64_May04-18-29-55_bc613189/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr50e6_bs16_May04-17-28-54_4755e0d4/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr50e6_bs32_May04-17-39-37_9b62a575/models/epoch09.ckpt"
+#"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_drop2575_lr50e6_bs64_May04-17-58-14_6a59f261/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr10e4_bs16_May04-19-09-26_9f2db686/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr10e4_bs32_May04-19-32-41_0d14f1d2/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr10e4_bs64_May04-20-14-40_6a70fb73/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr10e5_bs16_May04-18-56-11_ca8ba891/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr10e5_bs32_May04-19-09-26_fbe12771/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr10e5_bs64_May04-20-14-40_a612fca4/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr10e6_bs16_May04-18-56-11_cdb0fc3e/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr10e6_bs32_May04-19-09-26_1ea7a53a/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr10e6_bs64_May04-19-32-41_d10b9e67/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr50e5_bs16_May04-18-56-11_2dc8d5cc/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr50e5_bs32_May04-19-32-41_46fd979b/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr50e5_bs64_May04-20-14-40_57c43198/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr50e6_bs16_May04-18-56-11_6900376d/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr50e6_bs32_May04-19-09-26_9aa75746/models/epoch09.ckpt"
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_celldropout_tune/slocal__rtamil_pos_drop2575_lr50e6_bs64_May04-19-32-41_d50bd45c/models/epoch09.ckpt"
 )
 
 
@@ -26,8 +39,12 @@ gpu=0
 for ckpt in "${ckpts[@]}"; do
   echo "GPU $gpu | Running inference on: $ckpt"
 
-  CUDA_VISIBLE_DEVICES=$gpu python -m ts3.train.eval --config-name config/slide_embedding_infer \
+  #CUDA_VISIBLE_DEVICES=$gpu python -m ts3.train.eval --config-name config/eval_rtamil \
+  #  ++inference.checkpoint_path="$ckpt" &
+
+  CUDA_VISIBLE_DEVICES=$gpu python -m ts3.train.eval --config-name config/eval_rtamil_pos \
     ++inference.checkpoint_path="$ckpt" &
+
 
   gpu=$(( (gpu + 1) % 4 ))
   if [[ $gpu -eq 0 ]]; then

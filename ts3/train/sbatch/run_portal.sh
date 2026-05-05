@@ -4,7 +4,7 @@ set -euo pipefail
 SITE_RES_DIR='/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_eval/infil/site_res'
 
 eval_dirs=(
-# '/path/to/train_run/evals/eval_name'
+"/nfs/turbo/umms-tocho-snr/exp/chengjia/ts3/fix_patch/silica_mil_coral_lin_tune/slocal__rtamil_lr10e5_bs64_May02-00-53-02_6201e950/evals/trainval_May03-02-46-54_53f3999c"
 )
 
 for eval_dir in "${eval_dirs[@]}"; do

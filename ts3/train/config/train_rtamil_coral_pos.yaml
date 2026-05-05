@@ -6,8 +6,8 @@ defaults:
 infra:
   seed: 1000
   log_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia
-  exp_name: ts3/fix_patch/silica_mil_coral
-  comment: abmil
+  exp_name: TODO
+  comment: rtamil_pos_drop2575
   tune_comment: TODO
   float32_matmul_precision: medium
 
@@ -17,6 +17,9 @@ data:
     embedding_root: /scratch/tocho_root/tocho0/chengjia/silica_ucsf_fixpatch/b1a0cbe3_k1024
     embedding_path_template: "{patient}-{mosaic}/{patient}-{mosaic}-cell_representations.pt"
     class_order: ["0", "1", "2", "3"]
+    target_transform:
+      _target_: ts3.data.base_dataset.LabelIndexTensorTransform
+      class_order: ${data.dataset_common.class_order}
   dataloader_common: &dataloader_common
     _target_: torch.utils.data.DataLoader
     _partial_: true
@@ -36,14 +39,18 @@ data:
         <<: *dataset_common
         slides_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_eval/playground/data/ucsf_retrospective_train.csv
         balance_instance_class: true
-        #transform:
-        #  _target_: torchvision.transforms.Compose
-        #  transforms:
-        #    - _target_: ts3.data.transforms.StrongCoordAugment
-        #      max_size: 6000.0
-        #    - _target_: ts3.data.transforms.CoordBaseTransforms
-        #      max_size: 6000.0
-        #      center: true
+        transform:
+          _target_: torchvision.transforms.Compose
+          transforms:
+            - _target_: ts3.data.transforms.CellDropAugment
+              drop_rate: [0.25, 0.75]
+              min_cells: 1
+              p: 0.5
+            - _target_: ts3.data.transforms.StrongCoordAugment
+              max_size: 6000.0
+            - _target_: ts3.data.transforms.CoordBaseTransforms
+              max_size: 6000.0
+              center: true
       sampler: *infinite_train_sampler
       dataloader:
         <<: *dataloader_common
@@ -54,10 +61,10 @@ data:
         <<: *dataset_common
         slides_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_eval/playground/data/ucsf_retrospective_val.csv
         balance_instance_class: false
-        #transform:
-        #  _target_: ts3.data.transforms.CoordBaseTransforms
-        #  max_size: 6000.0
-        #  center: true
+        transform:
+          _target_: ts3.data.transforms.CoordBaseTransforms
+          max_size: 6000.0
+          center: true
       sampler: null
       dataloader:
         <<: *dataloader_common
@@ -73,23 +80,49 @@ meta_arch:
     _partial_: true
   model:
     _target_: ts3.models.ordinal.MILOrdinalModel
-    #pe:
-    #  _target_: ts3.models.ffpe.LearnableFourierPositionalEncoding
-    #  G: 1
-    #  M: 2
-    #  F_dim: 128
-    #  H_dim: 256
-    #  D: 384
-    #  gamma: 2.0
+    pe:
+      _target_: ts3.models.ffpe.LearnableFourierPositionalEncoding
+      G: 1
+      M: 2
+      F_dim: 128
+      H_dim: 256
+      D: 384
+      gamma: 2.0
     mil:
-      _target_: ts3.models.abmil.GatedABMIL
-      input_dim: 384
-      hidden_dim: 256
-      final_dim: 128
-      dropout: 0.5
-      regressor_hidden_dims: [128]
-      regressor_drop: 0.0
-      regressor_bias: true
+      _target_: ts3.models.abmil.GatedABMILRegThenAgg
+      instance_encoder:
+        _target_: torch.nn.Sequential
+        _args_:
+          - _target_: torch.nn.Linear
+            in_features: 384
+            out_features: 256
+          - _target_: torch.nn.ReLU
+          - _target_: torch.nn.Dropout
+            p: 0.5
+      attention_v:
+        _target_: torch.nn.Sequential
+        _args_:
+          - _target_: torch.nn.Linear
+            in_features: 256
+            out_features: 128
+          - _target_: torch.nn.Tanh
+      attention_u:
+        _target_: torch.nn.Sequential
+        _args_:
+          - _target_: torch.nn.Linear
+            in_features: 256
+            out_features: 128
+          - _target_: torch.nn.Sigmoid
+      attention_w:
+        _target_: torch.nn.Linear
+        in_features: 128
+        out_features: 1
+      regressor:
+        _target_: ts3.models.abmil.MLPRegressor
+        input_dim: 256
+        hidden_dims: []
+        drop: 0.0
+        bias: true
     head:
       _target_: ts3.models.ordinal.SharedCORALHead
       num_classes: ${meta_arch.num_classes}

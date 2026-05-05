@@ -1,0 +1,133 @@
+# @package _global_
+
+defaults:
+  - hydra
+  - _self_
+
+infra:
+  seed: 1000
+  float32_matmul_precision: medium
+  comment: ${inference.split}
+  output_dir: ${hydra:runtime.output_dir}
+
+data:
+  splits:
+    trainval:
+      dataset:
+        _target_: ts3.data.slide_dataset.SlideEmbeddingDataset
+        embedding_root: /nfs/turbo/umms-tocho-snr/exp/chengjia/silica_cellinf/b1a0cbe3_k1024
+        embedding_path_template: "{patient}-{mosaic}/{patient}-{mosaic}-cell_representations.pt"
+        class_order: ["0", "1", "2", "3"]
+        target_transform:
+          _target_: ts3.data.base_dataset.LabelIndexTensorTransform
+          class_order: ${data.splits.trainval.dataset.class_order}
+        slides_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_eval/playground/data/ucsf_retrospective_val.csv
+        balance_instance_class: false
+        transform:
+          _target_: ts3.data.transforms.CoordBaseTransforms
+          max_size: 6000.0
+          center: true
+      sampler: null
+      dataloader:
+        _target_: torch.utils.data.DataLoader
+        _partial_: true
+        collate_fn:
+          _target_: ts3.data.collate.SlideEmbeddingMILCollator
+        num_workers: 7
+        pin_memory: false
+        persistent_workers: true
+        batch_size: 8
+        shuffle: false
+        drop_last: false
+
+meta_arch:
+  _target_: ts3.meta_arch.meta_arch.SlideABMILOrdinalModule
+  num_classes: 4
+  criterion:
+    _target_: ts3.losses.coral.CORALLoss
+    _partial_: true
+  model:
+    _target_: ts3.models.ordinal.MILOrdinalModel
+    #mil:
+    #  _target_: ts3.models.abmil.GatedABMILRegThenAgg
+    #  instance_encoder:
+    #    _target_: torch.nn.Identity
+    #  attention_v:
+    #    _target_: torch.nn.Sequential
+    #    _args_:
+    #      - _target_: torch.nn.Linear
+    #        in_features: 384
+    #        out_features: 128
+    #      - _target_: torch.nn.Tanh
+    #  attention_u:
+    #    _target_: torch.nn.Sequential
+    #    _args_:
+    #      - _target_: torch.nn.Linear
+    #        in_features: 384
+    #        out_features: 128
+    #      - _target_: torch.nn.Sigmoid
+    #  attention_w:
+    #    _target_: torch.nn.Linear
+    #    in_features: 128
+    #    out_features: 1
+    #  regressor:
+    #    _target_: ts3.models.abmil.MLPRegressor
+    #    input_dim: 384
+    #    hidden_dims: []
+    #    drop: 0.0
+    #    bias: true
+    mil:
+      _target_: ts3.models.abmil.GatedABMILRegThenAgg
+      instance_encoder:
+        _target_: torch.nn.Sequential
+        _args_:
+          - _target_: torch.nn.Linear
+            in_features: 384
+            out_features: 256
+          - _target_: torch.nn.ReLU
+          - _target_: torch.nn.Dropout
+            p: 0.5
+      attention_v:
+        _target_: torch.nn.Sequential
+        _args_:
+          - _target_: torch.nn.Linear
+            in_features: 256
+            out_features: 128
+          - _target_: torch.nn.Tanh
+      attention_u:
+        _target_: torch.nn.Sequential
+        _args_:
+          - _target_: torch.nn.Linear
+            in_features: 256
+            out_features: 128
+          - _target_: torch.nn.Sigmoid
+      attention_w:
+        _target_: torch.nn.Linear
+        in_features: 128
+        out_features: 1
+      regressor:
+        _target_: ts3.models.abmil.MLPRegressor
+        input_dim: 256
+        hidden_dims: []
+        drop: 0.0
+        bias: true
+    head:
+      _target_: ts3.models.ordinal.SharedCORALHead
+      num_classes: ${meta_arch.num_classes}
+
+inference:
+  split: trainval
+  checkpoint_path: TODO
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  accelerator: auto
+  devices: 1
+  logger: false
+  enable_checkpointing: false
+  enable_progress_bar: true
+  precision: 32-true
+
+hydra:
+  run:
+    dir: ${ts3_eval_dir:${inference.checkpoint_path},${infra.comment}}

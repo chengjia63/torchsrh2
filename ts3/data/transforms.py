@@ -45,6 +45,63 @@ class CoordBaseTransforms:
         return out
 
 
+class CellDropAugment:
+    """
+    Train-only cell dropping augmentation.
+
+    Randomly discards a fraction of cells, updating both embeddings and coords
+    consistently.
+
+    Reads/writes:
+        sample["embeddings"]: [N, D]
+        sample["coords"]: [N, 2]
+
+    Intended to run before CoordBaseTransforms.
+    """
+
+    def __init__(
+        self,
+        drop_rate: list[float] = [0.0, 0.5],
+        min_cells: int = 1,
+        p: float = 0.5,
+    ):
+        if len(drop_rate) != 2 or not (0.0 <= drop_rate[0] <= drop_rate[1] < 1.0):
+            raise ValueError(
+                f"drop_rate must be [min, max] with 0 <= min <= max < 1, got {drop_rate}."
+            )
+        if not 0.0 <= p <= 1.0:
+            raise ValueError(f"p must be in [0, 1], got {p}.")
+        self.drop_rate_min = float(drop_rate[0])
+        self.drop_rate_range = float(drop_rate[1]) - float(drop_rate[0])
+        self.min_cells = int(min_cells)
+        self.p = float(p)
+
+    def __call__(self, sample: dict) -> dict:
+        if torch.rand(()) >= self.p:
+            return sample
+
+        out = dict(sample)
+        embeddings = out["embeddings"]
+        coords = out["coords"]
+
+        if not torch.is_tensor(embeddings):
+            embeddings = torch.as_tensor(embeddings)
+        if not torch.is_tensor(coords):
+            coords = torch.as_tensor(coords)
+
+        rate = self.drop_rate_min + torch.rand(()).item() * self.drop_rate_range
+        n = embeddings.shape[0]
+        keep_n = max(self.min_cells, int(round(n * (1.0 - rate))))
+
+        if keep_n >= n:
+            return out
+
+        keep_idx = torch.randperm(n, device=embeddings.device)[:keep_n].sort().values
+        out["embeddings"] = embeddings[keep_idx]
+        out["coords"] = coords[keep_idx]
+        return out
+
+
 class StrongCoordAugment:
     """
     Train-only coordinate augmentation.
