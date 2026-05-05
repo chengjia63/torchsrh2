@@ -34,8 +34,9 @@ for i in "${!COMBINATIONS[@]}"; do
 
   # HYDRA_FULL_ERROR=1 CUDA_VISIBLE_DEVICES=$gpu srun python -m ts3.train.main --config-name config/abmil_coral ${COMBINATIONS[$i]} &
 
-  HYDRA_FULL_ERROR=1 CUDA_VISIBLE_DEVICES=$gpu python -m ts3.train.main --config-name config/train_rtamil_coral ${COMBINATIONS[$i]} &
+  # HYDRA_FULL_ERROR=1 CUDA_VISIBLE_DEVICES=$gpu python -m ts3.train.main --config-name config/train_rtamil_coral ${COMBINATIONS[$i]} &
 
+  HYDRA_FULL_ERROR=1 CUDA_VISIBLE_DEVICES=$gpu python -m ts3.train.main --config-name  config/train_panther_coral  ${COMBINATIONS[$i]} &
   gpu=$(( (gpu + 1) % 4 ))
   if [[ $gpu -eq 0 ]]; then
     wait
