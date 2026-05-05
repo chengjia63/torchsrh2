@@ -6,7 +6,6 @@ const predictionState = {
   selectedExperiment: "",
   selectedMetricsId: "",
   chartView: null,
-  invalidRequestedExperiment: "",
   topbarStatus: "idle",
   topbarStatusHideTimer: null,
   sidebarCollapsed: false,
@@ -14,6 +13,8 @@ const predictionState = {
   topbarSelectionRevealed: false,
 };
 const PREDICTION_CHART_Y_DOMAIN = [-5, 6];
+const EXPERIMENT_QUERY_PARAM = "experiment";
+const SLIDE_QUERY_PARAM = "slide";
 
 document.addEventListener("DOMContentLoaded", () => {
   void bootstrapPredictions().catch((error) => {
@@ -25,24 +26,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function bootstrapPredictions() {
   const slidePayload = await fetchJson(window.SILICA_PREDICTIONS.slidesUrl);
-  predictionState.experiments = slidePayload.experiments ?? [];
+  predictionState.experiments = slidePayload.experiments;
   predictionState.selectedExperiment = resolveInitialPredictionExperiment(
-    slidePayload.default_experiment ?? "",
+    slidePayload.default_experiment,
   );
   populatePredictionExperimentSelect(predictionState.experiments);
   bindPredictionControls();
   bindPredictionTopbarSelectionReveal();
   bindPredictionSidebarControls();
-  if (predictionState.invalidRequestedExperiment) {
-    syncPredictionExperimentQuery();
-    clearPredictionMetrics();
-    clearPredictionChart();
-    setPredictionTopbarStatus("error");
-    setPredictionStatus(
-      `Unknown experiment: ${predictionState.invalidRequestedExperiment}`,
-    );
-    return;
-  }
   syncPredictionExperimentQuery();
 
   setPredictionTopbarStatus("loading");
@@ -51,16 +42,11 @@ async function bootstrapPredictions() {
     fetchJson(window.SILICA_PREDICTIONS.chartsUrl),
     fetchJson(window.SILICA_PREDICTIONS.metricsUrl),
   ]);
-  predictionState.charts = chartPayload.charts ?? [];
-  predictionState.metrics = metricsPayload.metrics ?? [];
+  predictionState.charts = chartPayload.charts;
+  predictionState.metrics = metricsPayload.metrics;
   const selectedChart = resolveSelectedPredictionChart();
   if (!selectedChart) {
-    clearPredictionMetrics();
-    clearPredictionChart();
-    setPredictionTopbarStatus("error");
-    setPredictionStatus(
-      `No prediction chart is configured for experiment: ${predictionState.selectedExperiment}`,
-    );
+    showMissingPredictionChart();
     return;
   }
   await renderPredictionChart(selectedChart.id);
@@ -75,15 +61,6 @@ function populatePredictionExperimentSelect(experiments) {
     option.textContent = experiment;
     select.appendChild(option);
   }
-  if (
-    predictionState.invalidRequestedExperiment &&
-    !experiments.includes(predictionState.invalidRequestedExperiment)
-  ) {
-    const option = document.createElement("option");
-    option.value = predictionState.invalidRequestedExperiment;
-    option.textContent = predictionState.invalidRequestedExperiment;
-    select.appendChild(option);
-  }
   select.value = predictionState.selectedExperiment;
 }
 
@@ -95,49 +72,40 @@ function bindPredictionControls() {
     revealPredictionTopbarSelectionLabels();
     predictionState.selectedExperiment = event.target.value;
     if (!predictionState.experiments.includes(predictionState.selectedExperiment)) {
-      predictionState.invalidRequestedExperiment = predictionState.selectedExperiment;
-      syncPredictionExperimentQuery();
-      clearPredictionMetrics();
-      clearPredictionChart();
-      setPredictionTopbarStatus("error");
-      setPredictionStatus(`Unknown experiment: ${predictionState.selectedExperiment}`);
-      return;
+      throw new Error(`Unknown experiment: ${predictionState.selectedExperiment}`);
     }
-    predictionState.invalidRequestedExperiment = "";
     syncPredictionExperimentQuery();
     const selectedChart = resolveSelectedPredictionChart();
     if (!selectedChart) {
-      clearPredictionMetrics();
-      clearPredictionChart();
-      setPredictionTopbarStatus("error");
-      setPredictionStatus(
-        `No prediction chart is configured for experiment: ${predictionState.selectedExperiment}`,
-      );
+      showMissingPredictionChart();
       return;
     }
     void renderPredictionChart(selectedChart.id);
   });
 }
 
+function showMissingPredictionChart() {
+  clearPredictionMetrics();
+  clearPredictionChart();
+  setPredictionTopbarStatus("error");
+  setPredictionStatus(
+    `No prediction chart is configured for experiment: ${predictionState.selectedExperiment}`,
+  );
+}
+
 function resolveInitialPredictionExperiment(defaultExperiment) {
   const searchParams = new URLSearchParams(window.location.search);
-  const requestedExperiment = searchParams.get("experiment") ?? "";
+  const requestedExperiment = searchParams.get(EXPERIMENT_QUERY_PARAM) ?? "";
   if (predictionState.experiments.includes(requestedExperiment)) {
     return requestedExperiment;
   }
   if (requestedExperiment) {
-    predictionState.invalidRequestedExperiment = requestedExperiment;
-    return requestedExperiment;
+    throw new Error(`Unknown experiment: ${requestedExperiment}`);
   }
   if (predictionState.experiments.includes(defaultExperiment)) {
     return defaultExperiment;
   }
-  if (defaultExperiment) {
-    predictionState.invalidRequestedExperiment = defaultExperiment;
-    return defaultExperiment;
-  }
-  predictionState.invalidRequestedExperiment = "default experiment";
-  return "";
+  throw new Error(`Unknown default experiment: ${defaultExperiment}`);
 }
 
 function revealPredictionTopbarSelectionLabels() {
@@ -172,15 +140,7 @@ async function renderPredictionChart(chartId) {
     });
     predictionState.chartView = result.view;
     result.view.addEventListener("click", (_event, item) => {
-      const datum = resolveClickedDatum(item);
-      if (!datum) {
-        return;
-      }
-      const slideKey = datum.slide ?? datum.Slide ?? datum.path;
-      if (!slideKey) {
-        return;
-      }
-      openSlideViewer(String(slideKey));
+      handlePredictionChartClick(item);
     });
     setPredictionStatus("");
     refreshPredictionChartLayout();
@@ -294,33 +254,26 @@ function isNumericDomain(domain) {
 
 function syncPredictionExperimentQuery() {
   const url = new URL(window.location.href);
-  const experiment =
-    predictionState.invalidRequestedExperiment || predictionState.selectedExperiment;
-  if (experiment) {
-    url.searchParams.set("experiment", experiment);
-  } else {
-    url.searchParams.delete("experiment");
-  }
+  url.searchParams.set(EXPERIMENT_QUERY_PARAM, predictionState.selectedExperiment);
   window.history.replaceState({}, "", url);
 }
 
-function resolveClickedDatum(item) {
-  let cursor = item;
-  while (cursor) {
-    if (cursor.datum) {
-      return cursor.datum.datum ?? cursor.datum;
-    }
-    cursor = cursor.mark?.group;
+function handlePredictionChartClick(item) {
+  const datum = item.datum.datum;
+  if (
+    datum.slide_id === null ||
+    datum.slide_id === undefined ||
+    String(datum.slide_id).trim() === ""
+  ) {
+    const message = `Unable to resolve slide key from prediction datum fields: ${Object.keys(datum).join(", ")}`;
+    setPredictionTopbarStatus("error");
+    setPredictionStatus(message);
+    throw new Error(message);
   }
-  return null;
-}
-
-function openSlideViewer(slideKey) {
+  const slideKey = String(datum.slide_id).trim();
   const url = new URL(window.SILICA_PREDICTIONS.slideViewerUrl, window.location.origin);
-  url.searchParams.set("slide", slideKey);
-  if (predictionState.selectedExperiment) {
-    url.searchParams.set("experiment", predictionState.selectedExperiment);
-  }
+  url.searchParams.set(SLIDE_QUERY_PARAM, slideKey);
+  url.searchParams.set(EXPERIMENT_QUERY_PARAM, predictionState.selectedExperiment);
   window.location.href = url.toString();
 }
 
@@ -350,54 +303,25 @@ async function renderPredictionMetrics() {
     "metricPredLabelMeanClassAccuracy",
     formatPercent(payload.pred_label_mean_class_accuracy),
   );
-  setMetricText(
-    "metricSigmoidSumPredLabelMeanClassAccuracy",
-    formatPercent(payload.sigmoid_sum_pred_label_mean_class_accuracy),
-  );
   setMetricText("metricRawScorePearson", formatNumber(payload.raw_score_pearson));
-  setMetricText(
-    "metricSigmoidSumScorePearson",
-    formatNumber(payload.sigmoid_sum_score_pearson),
-  );
   setMetricText("metricRawScoreSpearman", formatNumber(payload.raw_score_spearman));
-  setMetricText(
-    "metricSigmoidSumScoreSpearman",
-    formatNumber(payload.sigmoid_sum_score_spearman),
-  );
   setMetricText("metricAuroc0Vs123", formatNumber(payload.auroc_0_vs_123));
   setMetricText("metricAuroc01Vs23", formatNumber(payload.auroc_01_vs_23));
   setMetricText("metricAuroc012Vs3", formatNumber(payload.auroc_012_vs_3));
   renderConfusionMatrix("predictionConfusionMatrix", payload.confusion_matrix);
-  renderConfusionMatrix(
-    "sigmoidSumConfusionMatrix",
-    payload.sigmoid_sum_confusion_matrix,
-  );
   setPredictionMetricsStatus("");
   return true;
 }
 
 function resolveSelectedMetrics() {
-  if (predictionState.metrics.length === 0) {
-    return null;
-  }
-
-  return predictionState.metrics.find((metrics) =>
-    predictionRecordMatchesExperiment(metrics, predictionState.selectedExperiment),
-  ) ?? null;
+  return predictionState.metrics.find(
+    (metrics) => metrics.experiment === predictionState.selectedExperiment,
+  );
 }
 
 function resolveSelectedPredictionChart() {
-  return predictionState.charts.find((chart) =>
-    predictionRecordMatchesExperiment(chart, predictionState.selectedExperiment),
-  ) ?? null;
-}
-
-function predictionRecordMatchesExperiment(record, experiment) {
-  return (
-    record.id === experiment ||
-    record.filename === experiment ||
-    record.label === experiment ||
-    record.experiment === experiment
+  return predictionState.charts.find(
+    (chart) => chart.experiment === predictionState.selectedExperiment,
   );
 }
 
@@ -409,30 +333,68 @@ function renderConfusionMatrix(containerId, matrix) {
     return;
   }
 
-  const table = document.createElement("table");
-  const tbody = document.createElement("tbody");
-  for (const row of matrix) {
-    const tr = document.createElement("tr");
-    for (const value of row) {
-      const td = document.createElement("td");
-      td.textContent = formatCount(value);
-      tr.appendChild(td);
-    }
-    tbody.appendChild(tr);
+  const numCols = matrix[0].length;
+  const numRows = matrix.length;
+  const classLabels = Array.from({ length: numCols }, (_, i) => String(i));
+
+  const wrap = document.createElement("div");
+  wrap.className = "confusion-matrix-wrap";
+
+  const yAxisTitle = document.createElement("div");
+  yAxisTitle.className = "confusion-axis-title confusion-axis-title-y";
+  yAxisTitle.textContent = "True";
+  wrap.appendChild(yAxisTitle);
+
+  const yTicks = document.createElement("div");
+  yTicks.className = "confusion-ticks confusion-ticks-y";
+  yTicks.style.gridTemplateRows = `repeat(${numRows}, minmax(0, 1fr))`;
+  for (let r = 0; r < numRows; r++) {
+    const tick = document.createElement("div");
+    tick.className = "confusion-tick";
+    tick.textContent = classLabels[r] ?? String(r);
+    yTicks.appendChild(tick);
   }
-  table.appendChild(tbody);
-  container.appendChild(table);
+  wrap.appendChild(yTicks);
+
+  const xTicks = document.createElement("div");
+  xTicks.className = "confusion-ticks confusion-ticks-x";
+  xTicks.style.gridTemplateColumns = `repeat(${numCols}, minmax(0, 1fr))`;
+  for (let c = 0; c < numCols; c++) {
+    const tick = document.createElement("div");
+    tick.className = "confusion-tick";
+    tick.textContent = classLabels[c];
+    xTicks.appendChild(tick);
+  }
+  wrap.appendChild(xTicks);
+
+  const grid = document.createElement("div");
+  grid.className = "confusion-matrix-grid";
+  grid.style.gridTemplateColumns = `repeat(${numCols}, minmax(0, 1fr))`;
+  grid.style.gridTemplateRows = `repeat(${numRows}, minmax(0, 1fr))`;
+  for (const row of matrix) {
+    for (const value of row) {
+      const cell = document.createElement("div");
+      cell.className = "confusion-cell";
+      cell.textContent = formatCount(value);
+      grid.appendChild(cell);
+    }
+  }
+  wrap.appendChild(grid);
+
+  const xAxisTitle = document.createElement("div");
+  xAxisTitle.className = "confusion-axis-title confusion-axis-title-x";
+  xAxisTitle.textContent = "Predicted";
+  wrap.appendChild(xAxisTitle);
+
+  container.appendChild(wrap);
 }
 
 function clearPredictionMetrics() {
   for (const id of [
     "metricNumDatapoints",
     "metricPredLabelMeanClassAccuracy",
-    "metricSigmoidSumPredLabelMeanClassAccuracy",
     "metricRawScorePearson",
-    "metricSigmoidSumScorePearson",
     "metricRawScoreSpearman",
-    "metricSigmoidSumScoreSpearman",
     "metricAuroc0Vs123",
     "metricAuroc01Vs23",
     "metricAuroc012Vs3",
@@ -440,7 +402,6 @@ function clearPredictionMetrics() {
     setMetricText(id, "-");
   }
   renderConfusionMatrix("predictionConfusionMatrix", []);
-  renderConfusionMatrix("sigmoidSumConfusionMatrix", []);
 }
 
 function clearPredictionChart() {

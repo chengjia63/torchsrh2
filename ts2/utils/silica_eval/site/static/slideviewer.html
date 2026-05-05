@@ -136,29 +136,35 @@
             <div id="mobileExperimentPickerSlot" class="mobile-experiment-picker-slot"></div>
             <section class="panel-card info-card">
               <div class="info-grid">
-                <div class="metric-row">
-                  <span class="metric-label">Slide Cells</span>
-                  <strong id="totalCellCount">-</strong>
+                <div class="metric-grid-row">
+                  <div class="metric-row">
+                    <span class="metric-label">Slide Cells</span>
+                    <strong id="totalCellCount">-</strong>
+                  </div>
+                  <div class="metric-row">
+                    <span class="metric-label">Viewport Cells</span>
+                    <strong id="visibleCellCount">-</strong>
+                  </div>
                 </div>
-                <div class="metric-row">
-                  <span class="metric-label">Viewport Cells</span>
-                  <strong id="visibleCellCount">-</strong>
+                <div class="metric-grid-row">
+                  <div class="metric-row">
+                    <span class="metric-label">Soft slide score</span>
+                    <strong id="softSlideTumorScore">-</strong>
+                  </div>
+                  <div class="metric-row">
+                    <span class="metric-label">Soft viewport score</span>
+                    <strong id="meanTumorScore">-</strong>
+                  </div>
                 </div>
-                <div class="metric-row">
-                  <span class="metric-label">Soft slide score</span>
-                  <strong id="softSlideTumorScore">-</strong>
-                </div>
-                <div class="metric-row">
-                  <span class="metric-label">Soft viewport score</span>
-                  <strong id="meanTumorScore">-</strong>
-                </div>
-                <div class="metric-row">
-                  <span class="metric-label">Hard slide score</span>
-                  <strong id="hardSlideTumorScore">-</strong>
-                </div>
-                <div class="metric-row">
-                  <span class="metric-label">Soft area score</span>
-                  <strong id="areaSlideTumorScore">-</strong>
+                <div class="metric-grid-row">
+                  <div class="metric-row">
+                    <span class="metric-label">Hard slide score</span>
+                    <strong id="hardSlideTumorScore">-</strong>
+                  </div>
+                  <div class="metric-row">
+                    <span class="metric-label">Soft area score</span>
+                    <strong id="areaSlideTumorScore">-</strong>
+                  </div>
                 </div>
               </div>
             </section>
@@ -203,6 +209,10 @@
                   <label class="toggle-chip">
                     <input type="checkbox" id="toggleDots" checked />
                     <span class="toggle-label">Dots</span>
+                  </label>
+                  <label class="toggle-chip" id="toggleAttnDotsChip">
+                    <input type="checkbox" id="toggleAttnDots" />
+                    <span class="toggle-label">Attn dots</span>
                   </label>
                   <label class="toggle-chip">
                     <input type="checkbox" id="toggleBoxes" />
@@ -339,6 +349,25 @@
                   <div class="legend-labels">
                     <span>Normal</span>
                     <span>Tumor</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel-card scale-panel attn-scale-panel is-hidden" id="attnScalePanel" hidden>
+              <div class="panel-header">
+                <div>
+                  <h2>Attn scale</h2>
+                </div>
+              </div>
+              <div class="control-group">
+                <div class="legend-strip">
+                  <div class="legend-scale">
+                    <div id="attnScaleBar" class="legend-gradient legend-gradient-plasma"></div>
+                  </div>
+                  <div class="legend-labels">
+                    <span id="attnScaleMinLabel">-</span>
+                    <span id="attnScaleMaxLabel">-</span>
                   </div>
                 </div>
               </div>

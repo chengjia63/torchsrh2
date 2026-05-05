@@ -71,45 +71,41 @@
 
             <section class="panel-card info-card prediction-metrics-card">
               <div id="predictionMetricsGrid" class="info-grid">
-                <div class="metric-row">
-                  <span class="metric-label">Datapoints</span>
-                  <strong id="metricNumDatapoints">-</strong>
+                <div class="metric-grid-row metric-grid-row-full">
+                  <div class="metric-row">
+                    <span class="metric-label">Datapoints</span>
+                    <strong id="metricNumDatapoints">-</strong>
+                  </div>
                 </div>
-                <div class="metric-row">
-                  <span class="metric-label">Mean Class Accuracy</span>
-                  <strong id="metricPredLabelMeanClassAccuracy">-</strong>
+                <div class="metric-grid-row">
+                  <div class="metric-row">
+                    <span class="metric-label">Mean Class Accuracy</span>
+                    <strong id="metricPredLabelMeanClassAccuracy">-</strong>
+                  </div>
+                  <div class="metric-row">
+                    <span class="metric-label">Raw Pearson</span>
+                    <strong id="metricRawScorePearson">-</strong>
+                  </div>
                 </div>
-                <div class="metric-row">
-                  <span class="metric-label">Sigmoid Sum MCA</span>
-                  <strong id="metricSigmoidSumPredLabelMeanClassAccuracy">-</strong>
+                <div class="metric-grid-row">
+                  <div class="metric-row">
+                    <span class="metric-label">Raw Spearman</span>
+                    <strong id="metricRawScoreSpearman">-</strong>
+                  </div>
+                  <div class="metric-row">
+                    <span class="metric-label">AUROC 0 vs 1/2/3</span>
+                    <strong id="metricAuroc0Vs123">-</strong>
+                  </div>
                 </div>
-                <div class="metric-row">
-                  <span class="metric-label">Raw Pearson</span>
-                  <strong id="metricRawScorePearson">-</strong>
-                </div>
-                <div class="metric-row">
-                  <span class="metric-label">Sigmoid Sum Pearson</span>
-                  <strong id="metricSigmoidSumScorePearson">-</strong>
-                </div>
-                <div class="metric-row">
-                  <span class="metric-label">Raw Spearman</span>
-                  <strong id="metricRawScoreSpearman">-</strong>
-                </div>
-                <div class="metric-row">
-                  <span class="metric-label">Sigmoid Sum Spearman</span>
-                  <strong id="metricSigmoidSumScoreSpearman">-</strong>
-                </div>
-                <div class="metric-row">
-                  <span class="metric-label">AUROC 0 vs 1/2/3</span>
-                  <strong id="metricAuroc0Vs123">-</strong>
-                </div>
-                <div class="metric-row">
-                  <span class="metric-label">AUROC 0/1 vs 2/3</span>
-                  <strong id="metricAuroc01Vs23">-</strong>
-                </div>
-                <div class="metric-row">
-                  <span class="metric-label">AUROC 0/1/2 vs 3</span>
-                  <strong id="metricAuroc012Vs3">-</strong>
+                <div class="metric-grid-row">
+                  <div class="metric-row">
+                    <span class="metric-label">AUROC 0/1 vs 2/3</span>
+                    <strong id="metricAuroc01Vs23">-</strong>
+                  </div>
+                  <div class="metric-row">
+                    <span class="metric-label">AUROC 0/1/2 vs 3</span>
+                    <strong id="metricAuroc012Vs3">-</strong>
+                  </div>
                 </div>
               </div>
             </section>
@@ -121,18 +117,6 @@
                 </div>
               </div>
               <div id="predictionConfusionMatrix" class="prediction-confusion-matrix"></div>
-            </section>
-
-            <section class="panel-card prediction-matrix-panel">
-              <div class="panel-header">
-                <div>
-                  <h2>Sigmoid Sum Confusion Matrix</h2>
-                </div>
-              </div>
-              <div
-                id="sigmoidSumConfusionMatrix"
-                class="prediction-confusion-matrix"
-              ></div>
             </section>
 
             <section class="panel-card prediction-metrics-status-panel">
