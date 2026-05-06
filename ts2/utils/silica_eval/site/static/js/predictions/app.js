@@ -1,3 +1,5 @@
+const { fetchJson } = SilicaSiteUtils;
+
 const predictionState = {
   charts: [],
   metrics: [],
@@ -263,7 +265,13 @@ function handlePredictionChartClick(item) {
     return;
   }
   const datum = resolvePredictionClickDatum(item);
+  if (!datum) {
+    return;
+  }
   const slideKey = resolvePredictionSlideKey(datum);
+  if (!slideKey) {
+    return;
+  }
   const url = new URL(window.SILICA_PREDICTIONS.slideViewerUrl, window.location.origin);
   url.searchParams.set(SLIDE_QUERY_PARAM, slideKey);
   url.searchParams.set(EXPERIMENT_QUERY_PARAM, predictionState.selectedExperiment);
@@ -281,10 +289,7 @@ function resolvePredictionClickDatum(item) {
   ) {
     return datum.datum;
   }
-  const message = `Unable to resolve prediction datum from Vega item fields: ${Object.keys(datum).join(", ")}`;
-  setPredictionTopbarStatus("error");
-  setPredictionStatus(message);
-  throw new Error(message);
+  return null;
 }
 
 function resolvePredictionSlideKey(datum) {
@@ -303,10 +308,7 @@ function resolvePredictionSlideKey(datum) {
       return slideKey;
     }
   }
-  const message = `Unable to resolve slide key from prediction datum fields: ${Object.keys(datum).join(", ")}`;
-  setPredictionTopbarStatus("error");
-  setPredictionStatus(message);
-  throw new Error(message);
+  return null;
 }
 
 function predictionChartSpecUrl(chartId) {
@@ -545,20 +547,22 @@ function setPredictionTopbarStatus(status) {
     pillSelector: ".topbar-experiment-pill",
     statusName: "prediction topbar",
   });
-}
-
-async function fetchJson(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${url}: ${response.status}`);
+  if (
+    status === "error" &&
+    !document.getElementById("predictionDiagnosticsStatus").textContent
+  ) {
+    setPredictionDiagnosticsStatus("The predictions page encountered an error.");
   }
-  return response.json();
 }
 
 function setPredictionStatus(message) {
-  document.getElementById("predictionChartStatus").textContent = message;
+  setPredictionDiagnosticsStatus(message);
 }
 
 function setPredictionMetricsStatus(message) {
-  document.getElementById("predictionMetricsStatus").textContent = message;
+  setPredictionDiagnosticsStatus(message);
+}
+
+function setPredictionDiagnosticsStatus(message) {
+  document.getElementById("predictionDiagnosticsStatus").textContent = message;
 }

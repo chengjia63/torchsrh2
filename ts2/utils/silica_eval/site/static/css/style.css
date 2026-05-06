@@ -35,6 +35,7 @@
   --topbar-picker-width: 600px;
   --topbar-filter-pill-width: 512px;
   --sidebar-card-bg: rgb(var(--tw-zinc-50));
+  --sidebar-card-edge: 14px;
   --chart-canvas-bg: rgb(var(--tw-zinc-50));
   --sidebar-width: 25%;
 }
@@ -565,7 +566,7 @@ body.is-resizing-layout {
   justify-content: space-between;
   gap: 14px;
   align-items: flex-start;
-  padding: 16px 16px 0;
+  padding: var(--sidebar-card-edge) var(--sidebar-card-edge) 0;
 }
 
 .panel-header h2 {
@@ -753,7 +754,9 @@ body.is-resizing-layout {
 }
 
 .scale-panel .control-group {
-  min-height: 0;
+  align-content: start;
+  height: 96px;
+  min-height: 96px;
 }
 
 .legend-scale {
@@ -1061,8 +1064,8 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
   content: "";
   position: absolute;
   top: 0;
-  left: 12px;
-  right: 12px;
+  left: var(--sidebar-card-edge);
+  right: var(--sidebar-card-edge);
   height: 1px;
   background: rgb(var(--tw-zinc-300) / 0.82);
   pointer-events: none;
@@ -1077,19 +1080,20 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
 }
 
 .image-layer-panel {
-  padding-bottom: 16px;
+  padding-bottom: var(--sidebar-card-edge);
 }
 
 .image-layer-pill {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  min-height: 60px;
-  margin: 12px 16px 0;
+  height: 44px;
+  min-height: 44px;
+  margin: var(--sidebar-card-edge) var(--sidebar-card-edge) 0;
   padding: 5px;
   border: 0;
   border-radius: 999px;
   background: rgb(var(--tw-zinc-200) / 0.62);
-  width: calc(100% - 32px);
+  width: calc(100% - (var(--sidebar-card-edge) * 2));
 }
 
 .image-layer-button {
@@ -1157,8 +1161,8 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
   content: "";
   position: absolute;
   top: 0;
-  left: 14px;
-  right: 14px;
+  left: var(--sidebar-card-edge);
+  right: var(--sidebar-card-edge);
   height: 1px;
   background: rgb(var(--tw-zinc-300) / 0.82);
   z-index: 1;
@@ -1172,7 +1176,7 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
 .viewport-panel,
 .cluster-filter-panel,
 .prediction-matrix-panel {
-  padding-bottom: 16px;
+  padding-bottom: var(--sidebar-card-edge);
 }
 
 .prediction-matrix-panel .panel-header h2 {
@@ -1182,7 +1186,7 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
 }
 
 .prediction-confusion-matrix {
-  padding: 12px 16px 12px;
+  padding: var(--sidebar-card-edge);
 }
 
 .confusion-matrix-wrap {
@@ -1263,19 +1267,10 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
   padding: 0 4px;
 }
 
-.prediction-metrics-status-panel:has(#predictionMetricsStatus:empty) {
-  display: none;
-}
-
 .control-group {
   display: grid;
   gap: 16px;
-  padding: 12px 16px 0;
-}
-
-.controls-panel .control-group {
-  padding-left: 16px;
-  padding-right: 16px;
+  padding: var(--sidebar-card-edge) var(--sidebar-card-edge) 0;
 }
 
 .controls-panel .overlay-pill {
@@ -1304,8 +1299,8 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
 }
 
 .overlay-setting-group.is-separated {
-  padding-top: 12px;
-  margin-top: 12px;
+  padding-top: var(--sidebar-card-edge);
+  margin-top: var(--sidebar-card-edge);
 }
 
 .overlay-setting-group.is-separated::before {
@@ -1343,7 +1338,8 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
 .overlay-pill {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  min-height: 60px;
+  height: 44px;
+  min-height: 44px;
   padding: 5px;
   border: 0;
   border-radius: 999px;
@@ -1437,8 +1433,9 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
-  min-height: 40px;
-  padding: 5px;
+  height: 32px;
+  min-height: 32px;
+  padding: 4px;
   border-radius: 999px;
   background: rgb(var(--tw-zinc-200) / 0.62);
 }
@@ -1446,7 +1443,7 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
 #dotModeCard .scale-toggle-grid .toggle-chip,
 #attributionModeCard .scale-toggle-grid .toggle-chip {
   aspect-ratio: auto;
-  padding: 7px 8px;
+  padding: 4px 7px;
   border-radius: 999px;
   background: transparent;
   color: var(--muted);
@@ -1456,6 +1453,16 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
 #attributionModeCard .scale-toggle-grid .toggle-chip:has(input:checked) {
   background: rgb(var(--tw-zinc-900));
   color: rgb(var(--tw-zinc-50));
+}
+
+#attributionModeCard .scale-toggle-grid .toggle-chip:has(input:checked):has(+ .toggle-chip input:checked) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+#attributionModeCard .scale-toggle-grid .toggle-chip:has(input:checked) + .toggle-chip:has(input:checked) {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 
 #dotModeCard .scale-toggle-grid .toggle-chip:not(:has(input:checked)):hover,
@@ -1541,7 +1548,7 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  padding: 12px 16px 0;
+  padding: var(--sidebar-card-edge) var(--sidebar-card-edge) 0;
 }
 
 .summary-item {
@@ -1639,8 +1646,8 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
   content: "";
   position: absolute;
   left: 0;
-  top: 12px;
-  bottom: 12px;
+  top: var(--sidebar-card-edge);
+  bottom: var(--sidebar-card-edge);
   width: 1px;
   background: rgb(var(--tw-zinc-300) / 0.7);
   pointer-events: none;
@@ -1689,13 +1696,75 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
   display: none;
 }
 
+.diagnostics-panel {
+  padding-bottom: var(--sidebar-card-edge);
+}
+
+.diagnostics-details {
+  padding: var(--sidebar-card-edge) var(--sidebar-card-edge) 0;
+}
+
+.diagnostics-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  list-style: none;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.diagnostics-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.diagnostics-details summary::after {
+  content: "Show";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  height: 22px;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgb(var(--tw-zinc-200) / 0.72);
+  color: rgb(var(--tw-zinc-700));
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.diagnostics-details[open] summary::after {
+  content: "Hide";
+}
+
+.diagnostics-status {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgb(var(--tw-zinc-50) / 0.62);
+  color: var(--muted);
+  font-family: "Roboto Mono", monospace;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.diagnostics-status:empty {
+  display: none;
+}
+
 .chart-block {
   display: grid;
   grid-template-rows: auto auto;
   gap: 8px;
   flex: 0 0 auto;
   min-height: 0;
-  padding: 12px 16px 0;
+  padding: var(--sidebar-card-edge) var(--sidebar-card-edge) 0;
 }
 
 .mini-chart-header h3 {
@@ -1817,7 +1886,7 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
     justify-content: space-between;
     flex: 0 0 var(--topbar-height);
     min-height: var(--topbar-height);
-    padding: 0 8px 0 12px;
+    padding: 0 8px 0 var(--sidebar-card-edge);
     border-bottom: 1px solid rgb(var(--tw-zinc-50) / 0.82);
     background: rgb(var(--tw-zinc-50) / 0.58);
   }
@@ -1839,7 +1908,7 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
     display: flex;
     justify-content: center;
     flex: 0 0 auto;
-    padding: 10px 12px;
+    padding: 10px var(--sidebar-card-edge);
     border-bottom: 1px solid rgb(var(--tw-zinc-50) / 0.82);
     background: rgb(var(--tw-zinc-50) / 0.42);
     contain: layout paint;
@@ -1872,7 +1941,7 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
     .mobile-filter-picker-slot {
       display: block;
       flex: 0 0 auto;
-      padding: 10px 12px 6px;
+      padding: 10px var(--sidebar-card-edge) 6px;
       background: rgb(var(--tw-zinc-50) / 0.42);
     }
 
@@ -1880,7 +1949,7 @@ body.sidebar-collapsed .topbar-sidebar-toggle {
       display: flex;
       justify-content: stretch;
       flex: 0 0 auto;
-      padding: 6px 12px 10px;
+      padding: 6px var(--sidebar-card-edge) 10px;
       border-bottom: 1px solid rgb(var(--tw-zinc-50) / 0.82);
       background: rgb(var(--tw-zinc-50) / 0.42);
     }

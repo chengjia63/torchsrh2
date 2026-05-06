@@ -11,10 +11,10 @@
       href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/static/css/style.css" />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
     <script>
-      window.SILICA_PORTAL = {
+      window.SILICA_SLIDE_VIEWER = {
         slidesUrl: "/api/slides",
         portalAssetBaseUrl: "/portal-assets",
         dziAssetBaseUrl: "/dzi-assets",
@@ -22,8 +22,27 @@
           "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/",
       };
     </script>
-    <script defer src="/static/site-ui.js"></script>
-    <script defer src="/static/app.js"></script>
+    <script defer src="/static/js/shared/ui.js"></script>
+    <script defer src="/static/js/shared/config.js"></script>
+    <script defer src="/static/js/shared/utils.js"></script>
+    <script defer src="/static/js/slide-viewer/model.js"></script>
+    <script defer src="/static/js/slide-viewer/elements.js"></script>
+    <script defer src="/static/js/slide-viewer/assets.js"></script>
+    <script defer src="/static/js/slide-viewer/state.js"></script>
+    <script defer src="/static/js/slide-viewer/query.js"></script>
+    <script defer src="/static/js/slide-viewer/viewport.js"></script>
+    <script defer src="/static/js/slide-viewer/geometry.js"></script>
+    <script defer src="/static/js/slide-viewer/stats.js"></script>
+    <script defer src="/static/js/slide-viewer/cluster-filter.js"></script>
+    <script defer src="/static/js/slide-viewer/colors.js"></script>
+    <script defer src="/static/js/slide-viewer/charts.js"></script>
+    <script defer src="/static/js/slide-viewer/overlay-renderer.js"></script>
+    <script defer src="/static/js/slide-viewer/selection.js"></script>
+    <script defer src="/static/js/slide-viewer/navigation.js"></script>
+    <script defer src="/static/js/slide-viewer/image-layer.js"></script>
+    <script defer src="/static/js/slide-viewer/controls.js"></script>
+    <script defer src="/static/js/slide-viewer/loader.js"></script>
+    <script defer src="/static/js/slide-viewer/app.js"></script>
   </head>
   <body>
     <header class="topbar">
@@ -383,7 +402,7 @@
                       <div class="toggle-grid scale-toggle-grid">
                         <label class="toggle-chip">
                           <input
-                            type="radio"
+                            type="checkbox"
                             id="attributionModeScore"
                             name="attributionMode"
                             value="score"
@@ -393,7 +412,7 @@
                         </label>
                         <label class="toggle-chip">
                           <input
-                            type="radio"
+                            type="checkbox"
                             id="attributionModeCluster"
                             name="attributionMode"
                             value="cluster"
@@ -402,7 +421,7 @@
                         </label>
                         <label class="toggle-chip">
                           <input
-                            type="radio"
+                            type="checkbox"
                             id="attributionModeContribution"
                             name="attributionMode"
                             value="contrib"
@@ -441,7 +460,6 @@
                     <input type="number" id="viewportInputVz" min="0.01" max="1" step="0.01" />
                   </label>
                 </div>
-                <span id="viewportEditorStatus" class="bounds-status" aria-live="polite"></span>
               </form>
             </section>
 
@@ -504,6 +522,12 @@
                 </label>
                 <div id="clusterFilterStatus" class="bounds-status" aria-live="polite"></div>
               </div>
+            </section>
+            <section class="panel-card diagnostics-panel">
+              <details class="diagnostics-details">
+                <summary>Diagnostics</summary>
+                <div id="diagnosticsStatus" class="diagnostics-status" aria-live="polite"></div>
+              </details>
             </section>
           </div>
         </aside>

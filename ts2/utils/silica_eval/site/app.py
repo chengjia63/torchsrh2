@@ -458,11 +458,11 @@ def create_app(
 
     @app.get("/slideviewer", include_in_schema=False)
     def slideviewer() -> FileResponse:
-        return FileResponse(SITE_DIR / "slideviewer.html")
+        return FileResponse(STATIC_DIR / "slideviewer.html")
 
     @app.get("/slideviewer/", include_in_schema=False)
     def slideviewer_slash() -> FileResponse:
-        return FileResponse(SITE_DIR / "slideviewer.html")
+        return FileResponse(STATIC_DIR / "slideviewer.html")
 
     @app.get("/predictions", include_in_schema=False)
     def predictions() -> FileResponse:

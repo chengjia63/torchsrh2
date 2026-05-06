@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/static/css/style.css" />
     <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
     <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
     <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
@@ -23,8 +23,10 @@
         slideViewerUrl: "/slideviewer",
       };
     </script>
-    <script defer src="/static/site-ui.js"></script>
-    <script defer src="/static/predictions.js"></script>
+    <script defer src="/static/js/shared/ui.js"></script>
+    <script defer src="/static/js/shared/config.js"></script>
+    <script defer src="/static/js/shared/utils.js"></script>
+    <script defer src="/static/js/predictions/app.js"></script>
   </head>
   <body class="predictions-page">
     <header class="topbar">
@@ -119,8 +121,11 @@
               <div id="predictionConfusionMatrix" class="prediction-confusion-matrix"></div>
             </section>
 
-            <section class="panel-card prediction-metrics-status-panel">
-              <div id="predictionMetricsStatus" class="hint-box" aria-live="polite"></div>
+            <section class="panel-card diagnostics-panel">
+              <details class="diagnostics-details">
+                <summary>Diagnostics</summary>
+                <div id="predictionDiagnosticsStatus" class="diagnostics-status" aria-live="polite"></div>
+              </details>
             </section>
           </div>
         </aside>
@@ -137,11 +142,6 @@
 
         <section class="viewer-panel panel-card">
           <div class="viewer-frame valid-viewer-frame predictions-frame">
-            <div
-              id="predictionChartStatus"
-              class="viewport-status predictions-status"
-              aria-live="polite"
-            ></div>
             <div id="predictionChart" class="embedded-chart predictions-chart"></div>
           </div>
         </section>
