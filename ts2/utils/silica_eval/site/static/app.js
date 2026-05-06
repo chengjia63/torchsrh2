@@ -33,6 +33,8 @@ const state = {
   binaryDotThreshold: 0.5,
   attnScoreMin: null,
   attnScoreMax: null,
+  attnScoreDataMax: null,
+  pendingAttnScaleMaxValue: null,
   activeClusterFilters: new Set(),
   topbarSelectionRevealed: false,
   activeImageLayer: "srhvhe",
@@ -68,6 +70,8 @@ const DOT_SIZE_QUERY_PARAM = "dot";
 const BOX_SIZE_QUERY_PARAM = "box";
 const PARTITION_ALPHA_QUERY_PARAM = "alpha";
 const BINARY_THRESHOLD_QUERY_PARAM = "threshold";
+const ATTN_SCALE_MAX_QUERY_PARAM = "attnmax";
+const ATTRIBUTION_QUERY_PARAM = "attr";
 const VIEW_QUERY_PARAM = "view";
 const VIEW_MODE_CONTINUOUS = "continuous";
 const VIEW_MODE_BINARY = "binary";
@@ -83,6 +87,8 @@ const VIEWPORT_AUTO_APPLY_DELAY_MS = 220;
 const SIDEBAR_WIDTH_MIN_PERCENT = 18;
 const SIDEBAR_WIDTH_MAX_PERCENT = 55;
 const SIDEBAR_WIDTH_MIN_PX = 280;
+const ATTN_SCALE_MIN = 0;
+const ATTN_SCALE_MAX = 0.2;
 const SLIDE_CELLS_PATH = "cells.json";
 const IMAGE_LAYER_TILE_SOURCES = {
   srhvhe: "srhvhe.dzi",
@@ -92,11 +98,11 @@ const OVERLAY_BOX_STROKE_STYLE = "#ffff00";
 const OVERLAY_TEXT_STROKE_STYLE = "rgb(250 250 249 / 0.92)";
 const OVERLAY_TEXT_FILL_STYLE = "rgb(41 37 36)";
 const SCORE_HISTOGRAM_FILL_STYLE = "rgb(59 130 246)";
-const CLUSTER_HISTOGRAM_FILL_STYLE = "rgb(87 83 78)";
+const CLUSTER_HISTOGRAM_FILL_STYLE = "rgb(82 82 91)";
 const CHART_BACKGROUND_STYLE = "rgb(250 250 249)";
-const CHART_GRID_STROKE_STYLE = "rgb(87 83 78 / 0.12)";
-const CHART_AXIS_STROKE_STYLE = "rgb(87 83 78 / 0.28)";
-const CHART_TEXT_FILL_STYLE = "rgb(120 113 108)";
+const CHART_GRID_STROKE_STYLE = "rgb(82 82 91 / 0.12)";
+const CHART_AXIS_STROKE_STYLE = "rgb(82 82 91 / 0.28)";
+const CHART_TEXT_FILL_STYLE = "rgb(113 113 122)";
 const TUMOR_SCORE_COLOR_STOPS = [
   { position: 0, color: [26, 152, 80] },
   { position: 0.32, color: [217, 239, 139] },
@@ -126,11 +132,20 @@ const els = {};
 function bindElements() {
   Object.assign(els, {
     areaSlideTumorScore: document.getElementById("areaSlideTumorScore"),
-    attnScaleMaxLabel: document.getElementById("attnScaleMaxLabel"),
+    attributionModeCard: document.getElementById("attributionModeCard"),
+    attributionModeCluster: document.getElementById("attributionModeCluster"),
+    attributionModeContribution: document.getElementById("attributionModeContribution"),
+    attributionModeScore: document.getElementById("attributionModeScore"),
+    attributionHint: document.getElementById("attributionHint"),
+    attnScaleBar: document.getElementById("attnScaleBar"),
+    attnScaleStrip: document.getElementById("attnScaleStrip"),
     attnScaleMinLabel: document.getElementById("attnScaleMinLabel"),
-    attnScalePanel: document.getElementById("attnScalePanel"),
+    attnScaleMaxSlider: document.getElementById("attnScaleMaxSlider"),
+    attnScaleMaxValue: document.getElementById("attnScaleMaxValue"),
+    dotModeAttnChip: document.getElementById("dotModeAttnChip"),
+    dotModeCard: document.getElementById("dotModeCard"),
+    dotModeContinuous: document.getElementById("dotModeContinuous"),
     toggleAttnDots: document.getElementById("toggleAttnDots"),
-    toggleAttnDotsChip: document.getElementById("toggleAttnDotsChip"),
     binaryThresholdSlider: document.getElementById("binaryThresholdSlider"),
     binaryThresholdValue: document.getElementById("binaryThresholdValue"),
     boxSizeCard: document.getElementById("boxSizeCard"),
@@ -156,17 +171,17 @@ function bindElements() {
     partitionAlphaSlider: document.getElementById("partitionAlphaSlider"),
     partitionAlphaValue: document.getElementById("partitionAlphaValue"),
     previousSlideButton: document.getElementById("previousSlideButton"),
+    overlayScalePanel: document.getElementById("overlayScalePanel"),
     scoreHistogram: document.getElementById("scoreHistogram"),
     scoreScaleBar: document.getElementById("scoreScaleBar"),
+    scoreScaleStrip: document.getElementById("scoreScaleStrip"),
     slideSelect: document.getElementById("slideSelect"),
     softSlideTumorScore: document.getElementById("softSlideTumorScore"),
     toggleBinaryDots: document.getElementById("toggleBinaryDots"),
     toggleBoxes: document.getElementById("toggleBoxes"),
-    toggleClusterText: document.getElementById("toggleClusterText"),
-    toggleContributionText: document.getElementById("toggleContributionText"),
+    toggleAttributionText: document.getElementById("toggleAttributionText"),
     toggleDots: document.getElementById("toggleDots"),
     togglePartitionFill: document.getElementById("togglePartitionFill"),
-    toggleScoreText: document.getElementById("toggleScoreText"),
     topCluster: document.getElementById("topCluster"),
     totalCellCount: document.getElementById("totalCellCount"),
     viewportBoundsForm: document.getElementById("viewportBoundsForm"),
@@ -876,6 +891,21 @@ function bindControls() {
     commit({ binaryDotThreshold }, { query: true, redraw: true });
     updateBinaryThresholdControl(state.binaryDotThreshold);
   });
+  els.attnScaleMaxSlider.addEventListener("input", (event) => {
+    const sliderValue = Number(event.target.value);
+    if (!Number.isFinite(sliderValue)) {
+      throw new Error(`Invalid attention scale max slider value: ${event.target.value}`);
+    }
+    const attnScoreMax = getAttnScaleMaxFromSliderValue(sliderValue);
+    commit(
+      {
+        attnScoreMax,
+        pendingAttnScaleMaxValue: null,
+      },
+      { query: true, redraw: true },
+    );
+    updateAttnScaleControl();
+  });
   els.viewportBoundsForm.addEventListener("submit", (event) => {
     event.preventDefault();
   });
@@ -904,13 +934,15 @@ function bindControls() {
 function bindOverlayCheckboxes() {
   const redrawCheckboxes = [
     els.toggleDots,
+    els.dotModeContinuous,
     els.toggleAttnDots,
     els.toggleBoxes,
     els.togglePartitionFill,
     els.toggleBinaryDots,
-    els.toggleScoreText,
-    els.toggleClusterText,
-    els.toggleContributionText,
+    els.toggleAttributionText,
+    els.attributionModeScore,
+    els.attributionModeCluster,
+    els.attributionModeContribution,
   ];
 
   for (const input of redrawCheckboxes) {
@@ -923,14 +955,28 @@ function bindOverlayCheckboxes() {
 }
 
 function normalizeOverlayCheckboxes(changedInput = null) {
-  if (!els.toggleDots.checked || !els.toggleAttnDots.checked) {
-    return;
-  }
-  if (changedInput === els.toggleDots) {
+  if (!els.toggleDots.checked) {
+    els.dotModeContinuous.checked = true;
+    els.toggleBinaryDots.checked = false;
     els.toggleAttnDots.checked = false;
     return;
   }
-  els.toggleDots.checked = false;
+  if (changedInput === els.dotModeContinuous) {
+    els.toggleBinaryDots.checked = false;
+    els.toggleAttnDots.checked = false;
+    return;
+  }
+  if (changedInput === els.toggleBinaryDots && els.toggleBinaryDots.checked) {
+    els.toggleAttnDots.checked = false;
+    return;
+  }
+  if (changedInput === els.toggleAttnDots && els.toggleAttnDots.checked) {
+    els.toggleBinaryDots.checked = false;
+    return;
+  }
+  if (!els.toggleBinaryDots.checked && !els.toggleAttnDots.checked) {
+    els.dotModeContinuous.checked = true;
+  }
 }
 
 function bindResponsiveExperimentPicker() {
@@ -1183,6 +1229,7 @@ async function changeSlide(slideKey, options = {}) {
     syncImageLayerControls();
     commit({ activeClusterFilters: new Set(getAllClusterIds()) });
     restorePendingClusterFilterState(preservedClusterFilterState);
+    applyPendingAttnScaleMaxValue();
     applyPendingClusterFilters();
     populateSlideHeader();
     populateExperimentSelector(slideKey);
@@ -1656,12 +1703,59 @@ function updateBinaryThresholdControl(threshold) {
     "--binary-threshold-percent",
     `${thresholdPercent}%`,
   );
-  if (els.scoreScaleBar) {
-    els.scoreScaleBar.style.setProperty(
-      "--binary-threshold-percent",
-      `${thresholdPercent}%`,
-    );
+  els.scoreScaleBar.style.setProperty(
+    "--binary-threshold-percent",
+    `${thresholdPercent}%`,
+  );
+}
+
+function getAttnScaleMaxFromSliderValue(sliderValue) {
+  if (state.attnScoreMin === null || state.attnScoreDataMax === null) {
+    throw new Error("Attention score data range is unavailable");
   }
+  const sliderPercent = clampNumber(sliderValue, 0, 100) / 100;
+  return (
+    ATTN_SCALE_MIN +
+    (ATTN_SCALE_MAX - ATTN_SCALE_MIN) * sliderPercent
+  );
+}
+
+function getAttnScaleSliderValue(attnScoreMax) {
+  if (state.attnScoreMin === null || state.attnScoreDataMax === null) {
+    throw new Error("Attention score data range is unavailable");
+  }
+  const range = ATTN_SCALE_MAX - ATTN_SCALE_MIN;
+  if (range === 0) {
+    return 0;
+  }
+  return clampNumber(((attnScoreMax - ATTN_SCALE_MIN) / range) * 100, 0, 100);
+}
+
+function updateAttnScaleControl() {
+  if (
+    state.attnScoreMin === null ||
+    state.attnScoreMax === null ||
+    state.attnScoreDataMax === null
+  ) {
+    els.attnScaleMaxSlider.disabled = true;
+    els.attnScaleMinLabel.textContent = "-";
+    els.attnScaleMaxValue.textContent = "-";
+    els.attnScaleBar.style.setProperty("--attn-scale-max-percent", "90%");
+    els.attnScaleMaxValue.style.setProperty("--attn-scale-max-percent", "90%");
+    return;
+  }
+  const clampedMax = clampNumber(
+    state.attnScoreMax,
+    ATTN_SCALE_MIN,
+    ATTN_SCALE_MAX,
+  );
+  const maxPercent = `${Math.round(getAttnScaleSliderValue(clampedMax))}%`;
+  els.attnScaleMaxSlider.disabled = false;
+  els.attnScaleMaxSlider.value = `${Math.round(getAttnScaleSliderValue(clampedMax))}`;
+  els.attnScaleMinLabel.textContent = `${ATTN_SCALE_MIN}`;
+  els.attnScaleMaxValue.textContent = clampedMax.toPrecision(3);
+  els.attnScaleBar.style.setProperty("--attn-scale-max-percent", maxPercent);
+  els.attnScaleMaxValue.style.setProperty("--attn-scale-max-percent", maxPercent);
 }
 
 function applyPendingDotRadiusValue() {
@@ -1694,6 +1788,23 @@ function applyPendingBoxSizeValue() {
     pendingBoxSizeValue: null,
   });
   updateBoxSizeControl(clampedSize);
+}
+
+function applyPendingAttnScaleMaxValue() {
+  if (state.pendingAttnScaleMaxValue === null) {
+    return;
+  }
+  if (state.attnScoreMin === null || state.attnScoreDataMax === null) {
+    throw new Error("Attention score data range is unavailable");
+  }
+  commit({
+    attnScoreMax: clampNumber(
+      state.pendingAttnScaleMaxValue,
+      ATTN_SCALE_MIN,
+      ATTN_SCALE_MAX,
+    ),
+    pendingAttnScaleMaxValue: null,
+  });
 }
 
 function applyPendingClusterFilters() {
@@ -1729,11 +1840,12 @@ function applyPendingClusterFilters() {
 
 function getAttnScoreRangePatch(cells) {
   if (!Array.isArray(cells?.attn_score) || cells.attn_score.length === 0) {
-    return { attnScoreMin: null, attnScoreMax: null };
+    return { attnScoreMin: null, attnScoreMax: null, attnScoreDataMax: null };
   }
 
   const attnScores = [];
   let attnScoreMin = Number.POSITIVE_INFINITY;
+  let attnScoreDataMax = Number.NEGATIVE_INFINITY;
   for (let index = 0; index < cells.attn_score.length; index += 1) {
     const value = Number(cells.attn_score[index]);
     if (!Number.isFinite(value)) {
@@ -1741,42 +1853,61 @@ function getAttnScoreRangePatch(cells) {
     }
     attnScores.push(value);
     attnScoreMin = Math.min(attnScoreMin, value);
+    attnScoreDataMax = Math.max(attnScoreDataMax, value);
   }
   attnScores.sort((left, right) => left - right);
   const attnScoreMax = attnScores[Math.floor((attnScores.length - 1) * 0.9)];
 
-  return { attnScoreMin, attnScoreMax };
-}
-
-function updateAttnScaleLabels() {
-  els.attnScaleMinLabel.textContent =
-    state.attnScoreMin === null ? "-" : state.attnScoreMin.toPrecision(3);
-  els.attnScaleMaxLabel.textContent =
-    state.attnScoreMax === null ? "-" : state.attnScoreMax.toPrecision(3);
+  return { attnScoreMin, attnScoreMax, attnScoreDataMax };
 }
 
 function syncOverlayControlVisibility() {
   const hasAttnData = Array.isArray(state.cells?.attn_score) && state.cells.attn_score.length > 0;
-  els.toggleAttnDotsChip.hidden = !hasAttnData;
+  els.toggleAttnDots.disabled = !hasAttnData;
+  els.dotModeAttnChip.classList.toggle("is-disabled", !hasAttnData);
+  els.dotModeAttnChip.setAttribute("aria-disabled", String(!hasAttnData));
   if (!hasAttnData && els.toggleAttnDots.checked) {
     els.toggleAttnDots.checked = false;
+    els.dotModeContinuous.checked = true;
   }
   normalizeOverlayCheckboxes();
+  if (!els.toggleDots.checked && els.toggleBinaryDots.checked) {
+    els.toggleBinaryDots.checked = false;
+  }
   const showDots = els.toggleDots.checked;
   const showAttnDots = els.toggleAttnDots.checked && hasAttnData;
   const showBoxes = els.toggleBoxes.checked;
   const showPartitionFill = els.togglePartitionFill.checked;
-  const showBinaryDots = els.toggleBinaryDots.checked;
+  const showBinaryDots = els.toggleBinaryDots.checked && showDots;
   els.dotSizeCard.hidden = !showDots && !showAttnDots;
-  els.attnScalePanel.hidden = !showAttnDots;
-  els.attnScalePanel.classList.toggle("is-hidden", !showAttnDots);
-  els.attnScalePanel.setAttribute("aria-hidden", String(!showAttnDots));
+  els.dotModeCard.hidden = !showDots;
+  els.attributionModeCard.hidden = !els.toggleAttributionText.checked;
+  els.attributionHint.hidden = !els.toggleAttributionText.checked;
   els.boxSizeCard.hidden = !showBoxes;
   els.partitionAlphaCard.hidden = !showPartitionFill;
+  els.overlayScalePanel.hidden = false;
+  els.scoreScaleStrip.hidden = !showDots || showAttnDots;
+  els.scoreScaleBar.classList.toggle("is-binary", showBinaryDots);
+  els.attnScaleStrip.hidden = !showDots || !showAttnDots;
   els.binaryThresholdSlider.hidden = !showBinaryDots;
   els.binaryThresholdValue.hidden = !showBinaryDots;
-  els.scoreScaleBar?.classList.toggle("is-binary", showBinaryDots);
-  updateAttnScaleLabels();
+  syncOverlaySettingDividers();
+  updateAttnScaleControl();
+}
+
+function syncOverlaySettingDividers() {
+  let hasVisibleGroup = false;
+  const settingsBox = document.querySelector(".overlay-settings-box");
+  for (const group of document.querySelectorAll(".overlay-setting-group")) {
+    const isVisible = Boolean(
+      group.querySelector(".slider-card:not([hidden]), .hint-box:not([hidden])"),
+    );
+    group.classList.toggle("is-separated", isVisible && hasVisibleGroup);
+    if (isVisible) {
+      hasVisibleGroup = true;
+    }
+  }
+  settingsBox.hidden = !hasVisibleGroup;
 }
 
 function setViewportEditorStatus(message) {
@@ -1849,10 +1980,28 @@ function getOverlayToggleConfig() {
     { element: els.toggleAttnDots, key: "attn" },
     { element: els.toggleBoxes, key: "boxes" },
     { element: els.togglePartitionFill, key: "partition" },
-    { element: els.toggleScoreText, key: "score" },
-    { element: els.toggleClusterText, key: "cluster" },
-    { element: els.toggleContributionText, key: "contrib" },
+    { element: els.toggleAttributionText, key: "attribution" },
   ];
+}
+
+function getAttributionMode() {
+  if (els.attributionModeCluster.checked) {
+    return "cluster";
+  }
+  if (els.attributionModeContribution.checked) {
+    return "contrib";
+  }
+  return "score";
+}
+
+function setAttributionMode(mode) {
+  if (mode === "cluster") {
+    els.attributionModeCluster.checked = true;
+  } else if (mode === "contrib") {
+    els.attributionModeContribution.checked = true;
+  } else {
+    els.attributionModeScore.checked = true;
+  }
 }
 
 function applyUiStateFromQuery() {
@@ -1879,6 +2028,22 @@ function applyUiStateFromQuery() {
     for (const overlay of getOverlayToggleConfig()) {
       overlay.element.checked = requestedOverlays.has(overlay.key);
     }
+    if (requestedOverlays.has("score")) {
+      els.toggleAttributionText.checked = true;
+      setAttributionMode("score");
+    } else if (requestedOverlays.has("cluster")) {
+      els.toggleAttributionText.checked = true;
+      setAttributionMode("cluster");
+    } else if (requestedOverlays.has("contrib")) {
+      els.toggleAttributionText.checked = true;
+      setAttributionMode("contrib");
+    }
+  }
+
+  const attributionRaw = (searchParams.get(ATTRIBUTION_QUERY_PARAM) ?? "").trim();
+  if (["score", "cluster", "contrib"].includes(attributionRaw)) {
+    els.toggleAttributionText.checked = true;
+    setAttributionMode(attributionRaw);
   }
 
   const viewRaw = (searchParams.get(VIEW_QUERY_PARAM) ?? "").trim();
@@ -1922,6 +2087,13 @@ function applyUiStateFromQuery() {
     thresholdRawValue === null ? Number.NaN : Number(thresholdRawValue);
   if (Number.isFinite(thresholdRaw)) {
     patch.binaryDotThreshold = clampNumber(thresholdRaw / 100, 0, 1);
+  }
+
+  const attnScaleMaxRawValue = searchParams.get(ATTN_SCALE_MAX_QUERY_PARAM);
+  const attnScaleMaxRaw =
+    attnScaleMaxRawValue === null ? Number.NaN : Number(attnScaleMaxRawValue);
+  if (Number.isFinite(attnScaleMaxRaw)) {
+    patch.pendingAttnScaleMaxValue = attnScaleMaxRaw;
   }
 
   const clustersRaw = searchParams.get(CLUSTER_QUERY_PARAM);
@@ -1984,6 +2156,12 @@ function syncUiStateQuery(slideKey = state.currentSlideKey) {
   const binaryThresholdValue = Math.round(
     clampNumber(state.binaryDotThreshold, 0, 1) * 100,
   );
+  const attnScaleMaxValue =
+    state.attnScoreMin === null ||
+    state.attnScoreMax === null ||
+    state.attnScoreDataMax === null
+      ? null
+      : clampNumber(state.attnScoreMax, state.attnScoreMin, state.attnScoreDataMax);
 
   const allClusterIds = state.cells ? getAllClusterIds() : [];
   let clusterQueryValue = "all";
@@ -2021,6 +2199,9 @@ function syncUiStateQuery(slideKey = state.currentSlideKey) {
   nextSearchParams.set(DOT_SIZE_QUERY_PARAM, dotSizeValue.toFixed(1));
   nextSearchParams.set(BOX_SIZE_QUERY_PARAM, boxSizeValue.toFixed(1));
   nextSearchParams.set(PARTITION_ALPHA_QUERY_PARAM, `${partitionAlphaValue}`);
+  if (els.toggleAttributionText.checked) {
+    nextSearchParams.set(ATTRIBUTION_QUERY_PARAM, getAttributionMode());
+  }
   if (viewportState) {
     nextSearchParams.set(VIEWPORT_X_QUERY_PARAM, `${viewportState.center.x.toFixed(5)}`);
     nextSearchParams.set(VIEWPORT_Y_QUERY_PARAM, `${viewportState.center.y.toFixed(5)}`);
@@ -2031,6 +2212,9 @@ function syncUiStateQuery(slideKey = state.currentSlideKey) {
     binaryViewEnabled ? VIEW_MODE_BINARY : VIEW_MODE_CONTINUOUS,
   );
   nextSearchParams.set(BINARY_THRESHOLD_QUERY_PARAM, `${binaryThresholdValue}`);
+  if (attnScaleMaxValue !== null) {
+    nextSearchParams.set(ATTN_SCALE_MAX_QUERY_PARAM, attnScaleMaxValue.toPrecision(6));
+  }
   nextSearchParams.set(CLUSTER_QUERY_PARAM, clusterQueryValue);
   url.search = nextSearchParams.toString();
 
@@ -2090,33 +2274,35 @@ function ensureMinimumScreenRectSize(rect, centerPoint, minSize) {
 
 function drawCellOverlay(context, visible) {
   const showDots = els.toggleDots.checked;
-  const showBinaryDots = els.toggleBinaryDots.checked;
   const showBoxes = els.toggleBoxes.checked;
   const showPartitionFill = els.togglePartitionFill.checked;
-  const showScoreText = els.toggleScoreText.checked;
-  const showClusterText = els.toggleClusterText.checked;
-  const showContributionText = els.toggleContributionText.checked;
+  const attributionMode = getAttributionMode();
   const viewWidthRatio = visible.bounds.width / state.manifest.image_width;
 
   const renderScoreText =
-    showScoreText &&
+    els.toggleAttributionText.checked &&
+    attributionMode === "score" &&
     visible.indices.length <= TEXT_RENDER_LIMIT &&
     viewWidthRatio <= SCORE_LABEL_VIEW_WIDTH_RATIO;
   const renderClusterText =
-    showClusterText &&
+    els.toggleAttributionText.checked &&
+    attributionMode === "cluster" &&
     visible.indices.length <= TEXT_RENDER_LIMIT &&
     viewWidthRatio <= CLUSTER_LABEL_VIEW_WIDTH_RATIO;
   const renderContributionText =
-    showContributionText &&
+    els.toggleAttributionText.checked &&
+    attributionMode === "contrib" &&
     visible.indices.length <= TEXT_RENDER_LIMIT &&
     viewWidthRatio <= CONTRIBUTION_LABEL_VIEW_WIDTH_RATIO;
   applyPendingDotRadiusValue();
   applyPendingBoxSizeValue();
   const dotRadius = getRenderedDotRadius();
   const showAttnDots =
+    showDots &&
     els.toggleAttnDots.checked &&
     Array.isArray(state.cells?.attn_score) &&
     state.cells.attn_score.length > 0;
+  const showBinaryDots = showDots && els.toggleBinaryDots.checked && !showAttnDots;
   const boxSizeImagePx =
     state.pendingBoxSizeValue ?? state.boxSizeImagePx ?? DEFAULT_BOX_SIZE_IMAGE_PX;
   const dotStrokeWidth = 1.6;
@@ -2141,7 +2327,7 @@ function drawCellOverlay(context, visible) {
       continue;
     }
 
-    if (showDots) {
+    if (showDots && !showAttnDots) {
       const dotColor = getDotOverlayColor(index, showBinaryDots);
       context.save();
       context.globalAlpha = showBinaryDots ? 0.74 : 0.5;
@@ -2193,28 +2379,24 @@ function drawCellOverlay(context, visible) {
       }
     }
 
-    const textLines = [];
+    let textLine = "";
     if (renderScoreText) {
-      textLines.push(`${state.cells.tumor_score_display[index]}`);
+      textLine = `${state.cells.tumor_score_display[index]}`;
+    } else if (renderClusterText) {
+      textLine = `C${state.cells.dominant_cluster[index]}`;
+    } else if (renderContributionText) {
+      textLine = `${state.cells.dominant_cluster_display[index]}%`;
     }
-    if (renderClusterText) {
-      textLines.push(`C${state.cells.dominant_cluster[index]}`);
-    }
-    if (renderContributionText) {
-      textLines.push(`${state.cells.dominant_cluster_display[index]}%`);
-    }
-    if (!textLines.length) {
+    if (!textLine) {
       continue;
     }
 
-    for (let lineIndex = 0; lineIndex < textLines.length; lineIndex += 1) {
-      const textY = point.y - 12 - lineIndex * 12;
-      context.strokeStyle = OVERLAY_TEXT_STROKE_STYLE;
-      context.lineWidth = 3;
-      context.strokeText(textLines[lineIndex], point.x, textY);
-      context.fillStyle = OVERLAY_TEXT_FILL_STYLE;
-      context.fillText(textLines[lineIndex], point.x, textY);
-    }
+    const textY = point.y - 12;
+    context.strokeStyle = OVERLAY_TEXT_STROKE_STYLE;
+    context.lineWidth = 3;
+    context.strokeText(textLine, point.x, textY);
+    context.fillStyle = OVERLAY_TEXT_FILL_STYLE;
+    context.fillText(textLine, point.x, textY);
   }
 }
 
@@ -2533,8 +2715,8 @@ function getAttnDotColor(index) {
   if (state.attnScoreMin === null || state.attnScoreMax === null) {
     throw new Error("Attention score range is unavailable");
   }
-  const scoreRange = state.attnScoreMax - state.attnScoreMin;
-  const normalizedValue = scoreRange === 0 ? 0 : (rawValue - state.attnScoreMin) / scoreRange;
+  const scoreRange = state.attnScoreMax - ATTN_SCALE_MIN;
+  const normalizedValue = scoreRange === 0 ? 1 : (rawValue - ATTN_SCALE_MIN) / scoreRange;
   return colorFromStops(normalizedValue, PLASMA_COLOR_STOPS);
 }
 

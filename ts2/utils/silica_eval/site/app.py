@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import logging
+import os
 import re
 import time
 from pathlib import Path
@@ -11,12 +12,12 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from tqdm import tqdm
 import uvicorn
 
 
-STATIC_DIR = Path(__file__).resolve().parent / "static"
-GROUND_TRUTH_PATH = Path(__file__).resolve().parent / "gt.csv"
+SITE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = SITE_DIR / "static"
+GROUND_TRUTH_PATH = SITE_DIR / "gt.csv"
 DEFAULT_INITIAL_SLIDE_KEY = "NIO_UM_937b-4"
 DEFAULT_SLIDE_PORTAL_DIR = (
     Path(__file__).resolve().parent / "out" / "b1a0cbe3" / "nio_mouse_1-1" / "portal"
@@ -187,6 +188,14 @@ def _make_slide_entry(
     }
 
 
+def _discover_existing_slide_dirs(experiment_root: Path) -> set[str]:
+    return {
+        entry.name
+        for entry in os.scandir(experiment_root)
+        if entry.is_dir()
+    }
+
+
 def _assert_unique_slide_entries(slide_entries: list[dict]) -> None:
     seen_slide_keys: set[str] = set()
     duplicate_slide_keys: set[str] = set()
@@ -216,12 +225,10 @@ def _discover_slide_portals_from_slide_keys_for_root(
         len(slide_keys),
     )
     slide_entries: list[dict] = []
-    for slide_key in tqdm(
-        slide_keys,
-        desc=f"register {experiment_name}",
-        unit="slide",
-        dynamic_ncols=True,
-    ):
+    existing_slide_keys = _discover_existing_slide_dirs(experiment_root)
+    for slide_key in slide_keys:
+        if slide_key not in existing_slide_keys:
+            continue
         slide_entries.append(
             _make_slide_entry(
                 slide_key,
@@ -301,7 +308,6 @@ def discover_slide_portals(
     ):
         if not experiment_root.is_dir():
             continue
-        discovered_experiments.append(experiment_root.name)
         LOGGER.info(
             "Registering experiment=%s slides=%d",
             experiment_root.name,
@@ -310,10 +316,17 @@ def discover_slide_portals(
         experiment_started_at = time.perf_counter()
         experiment_slide_entries = _discover_slide_portals_from_slide_keys_for_root(
             experiment_root=experiment_root,
-                experiment_name=experiment_root.name,
-                slide_keys=slide_keys,
-                slide_dzi_root=resolved_slide_dzi_root,
+            experiment_name=experiment_root.name,
+            slide_keys=slide_keys,
+            slide_dzi_root=resolved_slide_dzi_root,
+        )
+        if not experiment_slide_entries:
+            LOGGER.info(
+                "Skipping experiment=%s because it has no matching slide portals",
+                experiment_root.name,
             )
+            continue
+        discovered_experiments.append(experiment_root.name)
         slide_entries.extend(experiment_slide_entries)
         LOGGER.info(
             "Registered experiment=%s records=%d elapsed=%.2fs",
@@ -445,11 +458,11 @@ def create_app(
 
     @app.get("/slideviewer", include_in_schema=False)
     def slideviewer() -> FileResponse:
-        return FileResponse(STATIC_DIR / "slideviewer.html")
+        return FileResponse(SITE_DIR / "slideviewer.html")
 
     @app.get("/slideviewer/", include_in_schema=False)
     def slideviewer_slash() -> FileResponse:
-        return FileResponse(STATIC_DIR / "slideviewer.html")
+        return FileResponse(SITE_DIR / "slideviewer.html")
 
     @app.get("/predictions", include_in_schema=False)
     def predictions() -> FileResponse:

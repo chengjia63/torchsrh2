@@ -48,7 +48,17 @@
           <span class="topbar-brand-text">Slide Viewer</span>
         </a>
         <div class="topbar-picker">
-          <div class="topbar-filter-pill" role="group" aria-label="Portal filters">
+          <div
+            class="topbar-filter-pill"
+            role="group"
+            aria-label="Portal filters"
+            style="
+              flex: 0 0 var(--topbar-filter-pill-active-width, 512px);
+              inline-size: var(--topbar-filter-pill-active-width, 512px);
+              min-inline-size: var(--topbar-filter-pill-active-min-width, 512px);
+              max-inline-size: var(--topbar-filter-pill-active-max-width, 512px);
+            "
+          >
             <div class="topbar-filter-segment">
               <span class="topbar-select-label" aria-hidden="true">Tumor</span>
               <select
@@ -169,6 +179,61 @@
               </div>
             </section>
 
+            <section class="panel-card scale-panel" id="overlayScalePanel">
+              <div class="panel-header">
+                <div>
+                  <h2>Scale</h2>
+                </div>
+              </div>
+              <div class="control-group">
+                <div id="scoreScaleStrip" class="legend-strip">
+                  <div class="legend-scale">
+                    <div id="scoreScaleBar" class="legend-gradient"></div>
+                    <input
+                      type="range"
+                      id="binaryThresholdSlider"
+                      class="legend-threshold-slider"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value="50"
+                      aria-label="Adjust binary threshold"
+                      hidden
+                    />
+                    <strong id="binaryThresholdValue" class="scale-threshold-value" hidden>
+                      50%
+                    </strong>
+                  </div>
+                  <div class="legend-labels">
+                    <span>Normal</span>
+                    <span>Tumor</span>
+                  </div>
+                </div>
+                <div id="attnScaleStrip" class="legend-strip" hidden>
+                  <div class="legend-scale">
+                    <div id="attnScaleBar" class="legend-gradient legend-gradient-plasma"></div>
+                    <input
+                      type="range"
+                      id="attnScaleMaxSlider"
+                      class="legend-threshold-slider"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value="90"
+                      aria-label="Adjust attention scale maximum"
+                    />
+                    <strong id="attnScaleMaxValue" class="scale-threshold-value">
+                      -
+                    </strong>
+                  </div>
+                  <div class="legend-labels">
+                    <span id="attnScaleMinLabel">-</span>
+                    <span>0.2</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
             <div class="panel-card image-layer-panel" aria-label="Image layer">
               <div class="panel-header">
                 <div>
@@ -205,14 +270,10 @@
               </div>
 
               <div class="control-group">
-                <div class="toggle-grid">
+                <div class="overlay-pill" aria-label="Overlays">
                   <label class="toggle-chip">
                     <input type="checkbox" id="toggleDots" checked />
                     <span class="toggle-label">Dots</span>
-                  </label>
-                  <label class="toggle-chip" id="toggleAttnDotsChip">
-                    <input type="checkbox" id="toggleAttnDots" />
-                    <span class="toggle-label">Attn dots</span>
                   </label>
                   <label class="toggle-chip">
                     <input type="checkbox" id="toggleBoxes" />
@@ -220,70 +281,141 @@
                   </label>
                   <label class="toggle-chip">
                     <input type="checkbox" id="togglePartitionFill" />
-                    <span class="toggle-label">Partition fill</span>
+                    <span class="toggle-label">Fill</span>
                   </label>
                   <label class="toggle-chip">
-                    <input type="checkbox" id="toggleScoreText" />
-                    <span class="toggle-label">Cell score</span>
-                  </label>
-                  <label class="toggle-chip">
-                    <input type="checkbox" id="toggleClusterText" />
-                    <span class="toggle-label">Cell cluster</span>
-                  </label>
-                  <label class="toggle-chip">
-                    <input type="checkbox" id="toggleContributionText" />
-                    <span class="toggle-label">Cluster contrib</span>
+                    <input type="checkbox" id="toggleAttributionText" />
+                    <span class="toggle-label">Attribution</span>
                   </label>
                 </div>
-                <div id="dotSizeCard" class="slider-card">
-                  <div class="slider-row">
-                    <span class="slider-label">Dot size</span>
-                    <strong id="dotSizeValue" class="slider-value">32.0px</strong>
+                <div class="overlay-settings-box">
+                  <div class="overlay-setting-group">
+                    <div id="dotSizeCard" class="slider-card">
+                      <div class="slider-row">
+                        <span class="slider-label">Dot size</span>
+                        <strong id="dotSizeValue" class="slider-value">32.0px</strong>
+                      </div>
+                      <input
+                        type="range"
+                        id="dotSizeSlider"
+                        min="2"
+                        max="64"
+                        step="1"
+                        value="32"
+                        aria-label="Adjust dot size"
+                      />
+                    </div>
+                    <div id="dotModeCard" class="slider-card" hidden>
+                      <div class="slider-row">
+                        <span class="slider-label">Dots mode</span>
+                      </div>
+                      <div class="toggle-grid scale-toggle-grid">
+                        <label class="toggle-chip">
+                          <input
+                            type="radio"
+                            id="dotModeContinuous"
+                            name="dotMode"
+                            value="continuous"
+                            checked
+                          />
+                          <span class="toggle-label">Continuous</span>
+                        </label>
+                        <label class="toggle-chip">
+                          <input
+                            type="radio"
+                            id="toggleBinaryDots"
+                            name="dotMode"
+                            value="binary"
+                          />
+                          <span class="toggle-label">Binary</span>
+                        </label>
+                        <label class="toggle-chip" id="dotModeAttnChip">
+                          <input
+                            type="radio"
+                            id="toggleAttnDots"
+                            name="dotMode"
+                            value="attn"
+                          />
+                          <span class="toggle-label">Attn</span>
+                        </label>
+                      </div>
+                    </div>
                   </div>
-                  <input
-                    type="range"
-                    id="dotSizeSlider"
-                    min="2"
-                    max="64"
-                    step="1"
-                    value="32"
-                    aria-label="Adjust dot size"
-                  />
-                </div>
-                <div id="boxSizeCard" class="slider-card" hidden>
-                  <div class="slider-row">
-                    <span class="slider-label">Box size</span>
-                    <strong id="boxSizeValue" class="slider-value">48.0px</strong>
+                  <div class="overlay-setting-group">
+                    <div id="boxSizeCard" class="slider-card" hidden>
+                      <div class="slider-row">
+                        <span class="slider-label">Box size</span>
+                        <strong id="boxSizeValue" class="slider-value">48.0px</strong>
+                      </div>
+                      <input
+                        type="range"
+                        id="boxSizeSlider"
+                        min="2"
+                        max="64"
+                        step="1"
+                        value="48"
+                        aria-label="Adjust box size"
+                      />
+                    </div>
                   </div>
-                  <input
-                    type="range"
-                    id="boxSizeSlider"
-                    min="2"
-                    max="64"
-                    step="1"
-                    value="48"
-                    aria-label="Adjust box size"
-                  />
-                </div>
-                <div id="partitionAlphaCard" class="slider-card" hidden>
-                  <div class="slider-row">
-                    <span class="slider-label">Partition alpha</span>
-                    <strong id="partitionAlphaValue" class="slider-value">25%</strong>
+                  <div class="overlay-setting-group">
+                    <div id="partitionAlphaCard" class="slider-card" hidden>
+                      <div class="slider-row">
+                        <span class="slider-label">Partition fill alpha</span>
+                        <strong id="partitionAlphaValue" class="slider-value">25%</strong>
+                      </div>
+                      <input
+                        type="range"
+                        id="partitionAlphaSlider"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value="25"
+                        aria-label="Adjust partition alpha"
+                      />
+                    </div>
                   </div>
-                  <input
-                    type="range"
-                    id="partitionAlphaSlider"
-                    min="0"
-                    max="100"
-                    step="1"
-                    value="25"
-                    aria-label="Adjust partition alpha"
-                  />
+                  <div class="overlay-setting-group">
+                    <div id="attributionModeCard" class="slider-card" hidden>
+                      <div class="slider-row">
+                        <span class="slider-label">Attribution</span>
+                      </div>
+                      <div class="toggle-grid scale-toggle-grid">
+                        <label class="toggle-chip">
+                          <input
+                            type="radio"
+                            id="attributionModeScore"
+                            name="attributionMode"
+                            value="score"
+                            checked
+                          />
+                          <span class="toggle-label">Score</span>
+                        </label>
+                        <label class="toggle-chip">
+                          <input
+                            type="radio"
+                            id="attributionModeCluster"
+                            name="attributionMode"
+                            value="cluster"
+                          />
+                          <span class="toggle-label">Cluster</span>
+                        </label>
+                        <label class="toggle-chip">
+                          <input
+                            type="radio"
+                            id="attributionModeContribution"
+                            name="attributionMode"
+                            value="contrib"
+                          />
+                          <span class="toggle-label">Contrib</span>
+                        </label>
+                      </div>
+                    </div>
+                    <div class="hint-box" id="attributionHint" hidden>
+                      Labels appear only when you zoom in enough to keep the view legible.
+                    </div>
+                  </div>
                 </div>
-              </div>
-
-              <div class="hint-box">
-                Labels appear only when you zoom in enough to keep the view legible.
               </div>
             </section>
 
@@ -305,72 +437,12 @@
                     <input type="number" id="viewportInputVy" min="0" max="1" step="0.01" />
                   </label>
                   <label class="bounds-field">
-                    <span class="summary-label">View Height</span>
+                    <span class="summary-label">Height</span>
                     <input type="number" id="viewportInputVz" min="0.01" max="1" step="0.01" />
                   </label>
                 </div>
-                <div class="bounds-actions">
-                  <span id="viewportEditorStatus" class="bounds-status" aria-live="polite"></span>
-                </div>
+                <span id="viewportEditorStatus" class="bounds-status" aria-live="polite"></span>
               </form>
-            </section>
-
-            <section class="panel-card scale-panel">
-              <div class="panel-header">
-                <div>
-                  <h2>Score scale</h2>
-                </div>
-              </div>
-              <div class="control-group">
-                <div class="toggle-grid scale-toggle-grid">
-                  <label class="toggle-chip">
-                    <input type="checkbox" id="toggleBinaryDots" />
-                    <span class="toggle-label">Binary dots</span>
-                  </label>
-                </div>
-                <div class="legend-strip">
-                  <div class="legend-scale">
-                    <div id="scoreScaleBar" class="legend-gradient"></div>
-                    <input
-                      type="range"
-                      id="binaryThresholdSlider"
-                      class="legend-threshold-slider"
-                      min="0"
-                      max="100"
-                      step="5"
-                      value="50"
-                      aria-label="Adjust binary threshold"
-                      hidden
-                    />
-                    <strong id="binaryThresholdValue" class="scale-threshold-value" hidden>
-                      50%
-                    </strong>
-                  </div>
-                  <div class="legend-labels">
-                    <span>Normal</span>
-                    <span>Tumor</span>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section class="panel-card scale-panel attn-scale-panel is-hidden" id="attnScalePanel" hidden>
-              <div class="panel-header">
-                <div>
-                  <h2>Attn scale</h2>
-                </div>
-              </div>
-              <div class="control-group">
-                <div class="legend-strip">
-                  <div class="legend-scale">
-                    <div id="attnScaleBar" class="legend-gradient legend-gradient-plasma"></div>
-                  </div>
-                  <div class="legend-labels">
-                    <span id="attnScaleMinLabel">-</span>
-                    <span id="attnScaleMaxLabel">-</span>
-                  </div>
-                </div>
-              </div>
             </section>
 
             <section class="panel-card score-panel">

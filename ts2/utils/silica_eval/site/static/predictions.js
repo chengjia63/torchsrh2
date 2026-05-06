@@ -259,22 +259,54 @@ function syncPredictionExperimentQuery() {
 }
 
 function handlePredictionChartClick(item) {
-  const datum = item.datum.datum;
-  if (
-    datum.slide_id === null ||
-    datum.slide_id === undefined ||
-    String(datum.slide_id).trim() === ""
-  ) {
-    const message = `Unable to resolve slide key from prediction datum fields: ${Object.keys(datum).join(", ")}`;
-    setPredictionTopbarStatus("error");
-    setPredictionStatus(message);
-    throw new Error(message);
+  if (!item || !item.datum) {
+    return;
   }
-  const slideKey = String(datum.slide_id).trim();
+  const datum = resolvePredictionClickDatum(item);
+  const slideKey = resolvePredictionSlideKey(datum);
   const url = new URL(window.SILICA_PREDICTIONS.slideViewerUrl, window.location.origin);
   url.searchParams.set(SLIDE_QUERY_PARAM, slideKey);
   url.searchParams.set(EXPERIMENT_QUERY_PARAM, predictionState.selectedExperiment);
   window.location.href = url.toString();
+}
+
+function resolvePredictionClickDatum(item) {
+  const datum = item.datum;
+  if (datum.slide_id !== undefined || datum.path !== undefined) {
+    return datum;
+  }
+  if (
+    datum.datum &&
+    (datum.datum.slide_id !== undefined || datum.datum.path !== undefined)
+  ) {
+    return datum.datum;
+  }
+  const message = `Unable to resolve prediction datum from Vega item fields: ${Object.keys(datum).join(", ")}`;
+  setPredictionTopbarStatus("error");
+  setPredictionStatus(message);
+  throw new Error(message);
+}
+
+function resolvePredictionSlideKey(datum) {
+  if (datum.slide_id !== null && datum.slide_id !== undefined) {
+    const slideKey = String(datum.slide_id).trim();
+    if (slideKey) {
+      return slideKey;
+    }
+  }
+  if (datum.path !== null && datum.path !== undefined) {
+    const slideKey = String(datum.path)
+      .trim()
+      .replace(/[\\/]+/g, "-")
+      .replace(/\s+/g, "");
+    if (slideKey) {
+      return slideKey;
+    }
+  }
+  const message = `Unable to resolve slide key from prediction datum fields: ${Object.keys(datum).join(", ")}`;
+  setPredictionTopbarStatus("error");
+  setPredictionStatus(message);
+  throw new Error(message);
 }
 
 function predictionChartSpecUrl(chartId) {
