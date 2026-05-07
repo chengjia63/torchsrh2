@@ -4,6 +4,7 @@ import os
 import altair as alt
 import numpy as np
 import pandas as pd
+from sklearn.metrics import roc_auc_score
 
 from ts2.utils.tailwind import TC
 
@@ -19,6 +20,12 @@ def get_slide_statistics_path(pred_root: str, row: pd.Series) -> str:
 
 def get_prediction_display_key(prediction_key: str) -> str:
     return prediction_key.removesuffix("_slide_tumor_probability")
+
+
+def _json_float(value: float | None) -> float | None:
+    if value is None or pd.isna(value):
+        return None
+    return float(value)
 
 
 def read_slide_predictions(
@@ -49,6 +56,186 @@ def read_slide_predictions(
     }
 
 
+def score_to_pred_label(score: pd.Series, num_classes: int) -> pd.Series:
+    numeric_score = pd.to_numeric(score)
+    pred_label = np.floor(numeric_score.to_numpy(dtype=np.float64) * num_classes)
+    pred_label = np.clip(pred_label, 0, num_classes - 1)
+    return pd.Series(pred_label.astype(np.int64), index=score.index)
+
+
+def confusion_matrix_from_rows(rows: pd.DataFrame, num_classes: int) -> list[list[int]]:
+    matrix = np.zeros((num_classes, num_classes), dtype=np.int64)
+    for row in rows.itertuples(index=False):
+        matrix[int(row.label), int(row.pred_label)] += 1
+    return matrix.tolist()
+
+
+def mean_class_accuracy(rows: pd.DataFrame, num_classes: int) -> float | None:
+    class_accuracies = []
+    for class_idx in range(num_classes):
+        in_class = rows["label"] == class_idx
+        if in_class.any():
+            class_accuracies.append(
+                (rows.loc[in_class, "pred_label"] == rows.loc[in_class, "label"]).mean()
+            )
+    if not class_accuracies:
+        return None
+    return float(np.mean(class_accuracies))
+
+
+def threshold_auroc_metrics(rows: pd.DataFrame, num_classes: int) -> dict:
+    metrics = {}
+    labels = rows["label"].astype(int)
+    raw_score = rows["raw_score"].astype(float)
+    for threshold in range(num_classes - 1):
+        target = (labels > threshold).astype(int)
+        negative_name = "".join(str(idx) for idx in range(threshold + 1))
+        positive_name = "".join(str(idx) for idx in range(threshold + 1, num_classes))
+        metric_key = f"auroc_{negative_name}_vs_{positive_name}"
+        if target.nunique() < 2:
+            metrics[metric_key] = None
+        else:
+            metrics[metric_key] = _json_float(roc_auc_score(target, raw_score))
+    return metrics
+
+
+def compute_prediction_page_metrics(rows: pd.DataFrame, num_classes: int) -> dict:
+    if rows.empty:
+        raise ValueError("No rows with predictions were available for website metrics")
+    label = rows["label"].astype(int)
+    pred_label = rows["pred_label"].astype(int)
+    raw_score = rows["raw_score"].astype(float)
+
+    metrics = {
+        "num_datapoints": int(len(rows)),
+        "confusion_matrix": confusion_matrix_from_rows(rows, num_classes),
+        "pred_label_accuracy": _json_float((pred_label == label).mean()),
+        "pred_label_mean_class_accuracy": _json_float(
+            mean_class_accuracy(rows, num_classes)
+        ),
+        "pred_label_mae": _json_float((pred_label - label).abs().mean()),
+        "pred_label_mse": _json_float(((pred_label - label) ** 2).mean()),
+        "raw_score_pearson": _json_float(raw_score.corr(label, method="pearson")),
+        "raw_score_spearman": _json_float(raw_score.corr(label, method="spearman")),
+    }
+    metrics.update(threshold_auroc_metrics(rows, num_classes))
+    return metrics
+
+
+def build_prediction_page_rows(
+    data: pd.DataFrame,
+    score_key: str,
+    score_label: str,
+    num_classes: int,
+) -> pd.DataFrame:
+    required_columns = {"patient", "mosaic", "label", score_key}
+    missing_columns = required_columns - set(data.columns)
+    if missing_columns:
+        raise KeyError(f"Missing columns for website rows: {sorted(missing_columns)}")
+
+    rows = data.loc[:, ["patient", "mosaic", "label", score_key]].copy()
+    rows["raw_score"] = pd.to_numeric(rows[score_key], errors="coerce")
+    rows = rows.dropna(subset=["label", "raw_score"]).copy()
+    rows["label"] = rows["label"].astype(int)
+    rows["slide_id"] = rows.apply(get_slide_key, axis=1)
+    rows["path"] = rows["slide_id"]
+    rows["pred_label"] = score_to_pred_label(rows["raw_score"], num_classes)
+    rows["score_label"] = score_label
+    return rows
+
+
+def build_prediction_page_chart(
+    rows: pd.DataFrame, experiment_name: str, num_classes: int
+) -> alt.Chart:
+    alt.data_transformers.disable_max_rows()
+    plot_rows = rows.copy()
+    plot_rows["label"] = pd.to_numeric(plot_rows["label"])
+    plot_rows["pred_label"] = pd.to_numeric(plot_rows["pred_label"])
+
+    jitter = (
+        pd.util.hash_pandas_object(plot_rows["slide_id"], index=False) % 1000
+    ) / 999.0
+    plot_rows["label_jitter"] = plot_rows["label"] + (jitter - 0.5) * 0.18
+
+    x_axis = alt.X(
+        "label:O",
+        title="Ground truth",
+        sort=list(range(num_classes)),
+        axis=alt.Axis(ticks=False),
+    )
+    y_axis = alt.Y("raw_score:Q", title="Raw score", axis=alt.Axis(ticks=False))
+    tooltip = [
+        alt.Tooltip("slide_id:N", title="Slide"),
+        alt.Tooltip("patient:N", title="Patient"),
+        alt.Tooltip("mosaic:N", title="Mosaic"),
+        alt.Tooltip("label:N", title="Ground truth"),
+        alt.Tooltip("pred_label:N", title="Predicted"),
+        alt.Tooltip("raw_score:Q", title="Raw score", format=".4f"),
+        alt.Tooltip("score_label:N", title="Score"),
+    ]
+    box = (
+        alt.Chart(plot_rows)
+        .mark_boxplot(
+            extent="min-max",
+            size=48,
+            color="#1F1F1F",
+            box={"fillOpacity": 0, "stroke": "#1F1F1F"},
+            median={"color": "#1F1F1F"},
+            rule={"stroke": "#1F1F1F"},
+            ticks=False,
+        )
+        .encode(x=x_axis, y=y_axis)
+    )
+    points = (
+        alt.Chart(plot_rows)
+        .mark_circle(size=42, opacity=0.7, color="#1F1F1F")
+        .encode(
+            x=alt.X(
+                "label_jitter:Q",
+                title="Ground truth",
+                scale=alt.Scale(domain=[-0.5, num_classes - 0.5]),
+                axis=alt.Axis(values=list(range(num_classes)), ticks=False),
+            ),
+            y=y_axis,
+            tooltip=tooltip,
+        )
+    )
+    return (box + points).properties(width=520, height=420, title=experiment_name)
+
+
+def save_prediction_page_outputs(
+    *,
+    data: pd.DataFrame,
+    experiment_name: str,
+    score_key: str,
+    score_label: str,
+    output_dir: str,
+    num_classes: int,
+) -> None:
+    rows = build_prediction_page_rows(
+        data=data,
+        score_key=score_key,
+        score_label=score_label,
+        num_classes=num_classes,
+    )
+    os.makedirs(output_dir, exist_ok=True)
+
+    chart_path = os.path.join(output_dir, f"{experiment_name}_fg_score_charts.json")
+    chart = build_prediction_page_chart(
+        rows,
+        experiment_name=experiment_name,
+        num_classes=num_classes,
+    )
+    with open(chart_path, "w", encoding="utf-8") as f:
+        json.dump(chart.to_dict(), f)
+    chart.save(f"{experiment_name}_fg_score_charts.html")
+
+    metrics_path = os.path.join(output_dir, f"{experiment_name}_metrics.json")
+    metrics = compute_prediction_page_metrics(rows, num_classes=num_classes)
+    with open(metrics_path, "w", encoding="utf-8") as f:
+        json.dump(metrics, f, sort_keys=True, indent=4)
+
+
 def compute_label_correlations(
     data: pd.DataFrame,
     prediction_keys: list,
@@ -66,7 +253,9 @@ def compute_label_correlations(
                 "prediction_key": prediction_key,
                 "n": len(data.dropna(subset=[prediction_key, "label"])),
                 "pearson_correlation": data[prediction_key].corr(data["label"]),
-                "spearman_correlation": data[prediction_key].corr(data["label"], method="spearman"),
+                "spearman_correlation": data[prediction_key].corr(
+                    data["label"], method="spearman"
+                ),
             }
             for prediction_key in prediction_keys
         ]
@@ -190,7 +379,9 @@ def add_fastglioma_scores(
 ) -> pd.DataFrame:
     data = data.copy()
     data["mosaic"] = data["mosaic"].astype(str)
-    return data.merge(fg_score, on=["patient", "mosaic"], how="left")
+    data = data.merge(fg_score, on=["patient", "mosaic"], how="left")
+    data["fullsrh"] = pd.to_numeric(data["fullsrh"], errors="coerce")
+    return data
 
 
 def warn_missing_fastglioma_scores(data: pd.DataFrame) -> None:
@@ -209,9 +400,16 @@ def warn_missing_fastglioma_scores(data: pd.DataFrame) -> None:
 
 
 def main():
-    prospective_csv = "data/ucsf_retrospective_val.csv"  #"data/ucsf_all_sorted.csv"  # 
+    num_classes = 4
+    prospective_csv = "data/ucsf_retrospective_val.csv"  # "data/ucsf_all_sorted.csv"  #
     output_prefix = os.path.splitext(os.path.basename(prospective_csv))[0]
     pred_root = "/scratch/tocho_root/tocho0/chengjia/silica_ucsf/b1a0cbe3_k1024"
+
+    save_portal_output = True
+    portal_output_dir = "../infil/site_res/prediction_metrics"
+    silica_experiment_name = os.path.basename(os.path.normpath(pred_root))
+    fastglioma_experiment_name = "fastglioma"
+
     sample_slide_map_csv = (
         "../../../playgrounds/data/db_srhdg/SRHcases_ForMelike-MP-2025-03-15.csv"
     )
@@ -241,7 +439,25 @@ def main():
     data_with_predictions = data.dropna(subset=prediction_display_keys)
     data_with_fastglioma = data_with_predictions.dropna(subset=["fullsrh"])
 
-    #import pdb; pdb.set_trace()
+    if save_portal_output:
+        save_prediction_page_outputs(
+            data=data_with_predictions,
+            experiment_name=silica_experiment_name,
+            score_key="area_soft",
+            score_label="Silica area soft slide tumor probability",
+            output_dir=portal_output_dir,
+            num_classes=num_classes,
+        )
+        save_prediction_page_outputs(
+            data=data.dropna(subset=["fullsrh"]),
+            experiment_name=fastglioma_experiment_name,
+            score_key="fullsrh",
+            score_label="FastGlioma fullsrh",
+            output_dir=portal_output_dir,
+            num_classes=num_classes,
+        )
+
+    # import pdb; pdb.set_trace()
     correlations = pd.concat(
         (
             compute_label_correlations(
