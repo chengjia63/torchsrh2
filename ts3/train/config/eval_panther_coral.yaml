@@ -1,0 +1,83 @@
+# @package _global_
+
+defaults:
+  - hydra
+  - _self_
+
+infra:
+  seed: 1000
+  float32_matmul_precision: medium
+  comment: ${inference.split}
+  output_dir: ${hydra:runtime.output_dir}
+
+data:
+  splits:
+    trainval:
+      dataset:
+        _target_: ts3.data.slide_dataset.SlideEmbeddingDataset
+        embedding_root: /scratch/tocho_root/tocho0/chengjia/silica_ucsf_fixpatch/b1a0cbe3_k1024
+        embedding_path_template: "{patient}-{mosaic}/{patient}-{mosaic}-cell_representations.pt"
+        class_order: ["0", "1", "2", "3"]
+        target_transform:
+          _target_: ts3.data.base_dataset.LabelIndexTensorTransform
+          class_order: ${data.splits.trainval.dataset.class_order}
+        slides_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_eval/playground/data/ucsf_retrospective_val.csv
+        balance_instance_class: false
+      sampler: null
+      dataloader:
+        _target_: torch.utils.data.DataLoader
+        _partial_: true
+        collate_fn:
+          _target_: ts3.data.collate.SlideEmbeddingMILCollator
+        num_workers: 7
+        pin_memory: false
+        persistent_workers: true
+        batch_size: 8
+        shuffle: false
+        drop_last: false
+
+meta_arch:
+  _target_: ts3.meta_arch.meta_arch.SlideABMILOrdinalModule
+  num_classes: 4
+  criterion:
+    _target_: ts3.losses.coral.CORALLoss
+    _partial_: true
+  model:
+    _target_: ts3.models.panther.PantherOrdinalModel
+    encoder:
+      _target_: panther.layers.PANTHERBase
+      d: 384
+      p: 1024
+      L: 3
+      tau: 10.0
+      out: allcat
+      ot_eps: 0.1
+      load_proto: true
+      proto_path: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/utils/silica_eval/infil/gmm_models/srhumglioma2m_largek_b1a0cbe3/models/gmm_g2m_m1024.pkl
+      fix_proto: false
+    regressor:
+      _target_: ts3.models.abmil.MLPRegressor
+      input_dim: 787456
+      hidden_dims: []
+      drop: 0.0
+      bias: true
+    head:
+      _target_: ts3.models.ordinal.SharedCORALHead
+      num_classes: ${meta_arch.num_classes}
+
+inference:
+  split: trainval
+  checkpoint_path: TODO
+
+trainer:
+  _target_: pytorch_lightning.Trainer
+  accelerator: auto
+  devices: 1
+  logger: false
+  enable_checkpointing: false
+  enable_progress_bar: true
+  precision: 32-true
+
+hydra:
+  run:
+    dir: ${ts3_eval_dir:${inference.checkpoint_path},${infra.comment}}

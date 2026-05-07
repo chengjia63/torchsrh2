@@ -39,9 +39,9 @@ def _slide_key_from_embedding_path(path: str) -> str:
     return os.path.splitext(os.path.basename(path))[0]
 
 
-def collect_predictions(prediction_batches) -> dict:
+def collect_predictions(prediction_batches: list[dict]) -> dict:
     tensor_keys = ("label", "logits", "raw_score", "pred_label")
-    per_slide_keys = ("attention", "cell_score")
+    per_slide_keys = ("attention", "cell_score", "cluster", "cluster_contribution")
 
     full = {key: [] for key in ("path", *tensor_keys, *per_slide_keys)}
 
@@ -86,12 +86,16 @@ def save_slide_tensors(full: dict, output_dir: str) -> None:
     logging.info("Saved slide tensors to %s", path)
 
 
-def save_gt_vs_ours_plot(rows, num_classes: int, output_dir: str, score_key: str) -> None:
+def save_gt_vs_ours_plot(
+    rows: list[dict], num_classes: int, output_dir: str, score_key: str
+) -> None:
     import altair as alt
 
     alt.data_transformers.disable_max_rows()
 
     df = pd.DataFrame(rows)
+    df["label"] = pd.to_numeric(df["label"])
+    df[score_key] = pd.to_numeric(df[score_key])
     jitter = (pd.util.hash_pandas_object(df["path"], index=False) % 1000) / 999.0
     df["x_jitter"] = df["label"] + (jitter - 0.5) * 0.18
     plot_score_title = score_key.replace("_", " ").capitalize()
@@ -120,7 +124,7 @@ def save_gt_vs_ours_plot(rows, num_classes: int, output_dir: str, score_key: str
             box={"fillOpacity": 0, "stroke": "#1F1F1F"},
             median={"color": "#1F1F1F"},
             rule={"stroke": "#1F1F1F"},
-            ticks={"strokeOpacity": 0},
+            ticks=False,
         )
         .encode(x=x_axis, y=y_axis)
     )

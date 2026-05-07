@@ -84,7 +84,12 @@ def _build_cell_paths_by_slide(embedding_paths: list[str]) -> dict[str, list[str
 
 
 def _build_portal_cells_payload(
-    *, cell_paths: list[str], attention: torch.Tensor, cell_score: torch.Tensor
+    *,
+    cell_paths: list[str],
+    attention: torch.Tensor,
+    cell_score: torch.Tensor,
+    cluster: torch.Tensor,
+    cluster_contribution: torch.Tensor,
 ) -> tuple[dict, dict]:
     if len(cell_paths) != int(attention.shape[0]):
         raise ValueError(
@@ -95,6 +100,16 @@ def _build_portal_cells_payload(
         raise ValueError(
             f"Cell path count does not match cell score length: "
             f"{len(cell_paths)} paths vs {int(cell_score.shape[0])} cell scores"
+        )
+    if len(cell_paths) != int(cluster.shape[0]):
+        raise ValueError(
+            f"Cell path count does not match cluster length: "
+            f"{len(cell_paths)} paths vs {int(cluster.shape[0])} cluster values"
+        )
+    if len(cell_paths) != int(cluster_contribution.shape[0]):
+        raise ValueError(
+            f"Cell path count does not match cluster contribution length: "
+            f"{len(cell_paths)} paths vs {int(cluster_contribution.shape[0])} cluster contribution values"
         )
 
     coords = [_parse_global_cell_coords(path) for path in cell_paths]
@@ -109,8 +124,15 @@ def _build_portal_cells_payload(
         int(round(min(max(float(score), 0.0), 1.0) * 99.0))
         for score in display_cell_score_values
     ]
+    cluster_values = cluster.long().tolist()
+    cluster_contribution_display = torch.clamp(
+        torch.floor(cluster_contribution.float() * 100.0),
+        min=0,
+        max=99,
+    ).long().tolist()
 
     cell_count = len(cell_paths)
+    num_clusters = max(cluster_values) + 1 if cluster_values else 1
     image_width = max(x) + 1 if x else 1
     image_height = max(y) + 1 if y else 1
     mean_cell_score = float(cell_score_values.mean()) if x else 0.0
@@ -119,14 +141,14 @@ def _build_portal_cells_payload(
 
     cells_payload = {
         "cell_count": cell_count,
-        "num_clusters": 1,
+        "num_clusters": num_clusters,
         "x": x,
         "y": y,
         "normal_score": [round(1.0 - float(score), 6) for score in display_cell_score_values],
         "tumor_score": [round(float(score), 6) for score in display_cell_score_values],
         "tumor_score_display": cell_score_display,
-        "dominant_cluster": [0 for _ in range(cell_count)],
-        "dominant_cluster_display": [0 for _ in range(cell_count)],
+        "dominant_cluster": cluster_values,
+        "dominant_cluster_display": cluster_contribution_display,
         "detection_score": [1.0 for _ in range(cell_count)],
         "cell_type": ["attention" for _ in range(cell_count)],
         "dot_color": [_score_to_hex(float(score)) for score in display_cell_score_values],
@@ -164,7 +186,11 @@ def _save_slide_predictions_json(rows, output_dir: str) -> None:
 
 
 def _save_portal_predictions(
-    rows, full, cell_paths_by_slide: dict[str, list[str]], output_dir: str, exp_name: str
+    rows: list[dict],
+    full: dict,
+    cell_paths_by_slide: dict[str, list[str]],
+    output_dir: str,
+    exp_name: str,
 ) -> None:
     os.makedirs(output_dir, exist_ok=True)
     if len(rows) != len(full["attention"]):
@@ -177,10 +203,26 @@ def _save_portal_predictions(
             f"Prediction row count does not match cell score count: "
             f"{len(rows)} rows vs {len(full['cell_score'])} cell score tensors"
         )
+    if len(rows) != len(full["cluster"]):
+        raise ValueError(
+            f"Prediction row count does not match cluster count: "
+            f"{len(rows)} rows vs {len(full['cluster'])} cluster tensors"
+        )
+    if len(rows) != len(full["cluster_contribution"]):
+        raise ValueError(
+            f"Prediction row count does not match cluster contribution count: "
+            f"{len(rows)} rows vs {len(full['cluster_contribution'])} cluster contribution tensors"
+        )
 
     saved_count = 0
-    for row, attention, cell_score in tqdm(
-        zip(rows, full["attention"], full["cell_score"]),
+    for row, attention, cell_score, cluster, cluster_contribution in tqdm(
+        zip(
+            rows,
+            full["attention"],
+            full["cell_score"],
+            full["cluster"],
+            full["cluster_contribution"],
+        ),
         total=len(rows),
         desc="Saving slide portals",
         unit="slide",
@@ -193,6 +235,8 @@ def _save_portal_predictions(
             cell_paths=cell_paths_by_slide[slide_key],
             attention=attention,
             cell_score=cell_score,
+            cluster=cluster,
+            cluster_contribution=cluster_contribution,
         )
 
         portal_dir = opj(output_dir, slide_key, "portal")

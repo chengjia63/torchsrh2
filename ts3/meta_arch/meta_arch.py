@@ -43,7 +43,7 @@ class SlideABMILOrdinalModule(pl.LightningModule):
 
         self.validation_outputs = []
 
-    def forward(self, batch):
+    def forward(self, batch: dict) -> dict:
         if self.model_uses_pe:
             bag_outputs = [
                 self.model(embeddings.float(), coords)
@@ -66,6 +66,10 @@ class SlideABMILOrdinalModule(pl.LightningModule):
                 for output in bag_outputs
             ],
         }
+        optional_per_slide_keys = ("cluster", "cluster_contribution")
+        for key in optional_per_slide_keys:
+            if all(key in output for output in bag_outputs):
+                outputs[key] = [output[key] for output in bag_outputs]
         outputs["raw_score"] = torch.stack(
             [output["score"] for output in bag_outputs], dim=0
         )
@@ -257,9 +261,21 @@ class SlideABMILOrdinalModule(pl.LightningModule):
             dim=0,
         )
 
-    def predict_step(self, batch, _batch_idx, _dataloader_idx=0):
+    def predict_step(self, batch: dict, _batch_idx: int, _dataloader_idx: int = 0) -> dict:
         outputs = self(batch)
         probs = torch.sigmoid(outputs["logits"])
+        cluster = outputs.get("cluster")
+        if cluster is None:
+            cluster = [
+                torch.zeros_like(attention, dtype=torch.long)
+                for attention in outputs["attention"]
+            ]
+        cluster_contribution = outputs.get("cluster_contribution")
+        if cluster_contribution is None:
+            cluster_contribution = [
+                torch.zeros_like(attention)
+                for attention in outputs["attention"]
+            ]
         return {
             "path": batch["path"],
             "label": batch["label"],
@@ -268,6 +284,8 @@ class SlideABMILOrdinalModule(pl.LightningModule):
             "pred_label": (probs > 0.5).sum(dim=1).long(),
             "attention": outputs["attention"],
             "cell_score": outputs["cell_score"],
+            "cluster": cluster,
+            "cluster_contribution": cluster_contribution,
         }
 
     def configure_optimizers(self):

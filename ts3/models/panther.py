@@ -4,7 +4,8 @@ The PANTHER MAP-EM aggregator, DirNIW prior, and ``allcat`` output are imported
 verbatim from the ``panther`` package. This module only adds:
 
   - per-bag forward conforming to ``SlideABMILOrdinalModule``'s contract
-    (single ``[N, D]`` input, returns ``{logits, score, attention}``)
+    (single ``[N, D]`` input, returns
+    ``{logits, score, attention, cluster, cluster_contribution}``)
   - a CORAL-compatible regressor + head wrapper.
 """
 
@@ -24,9 +25,9 @@ class PantherOrdinalModel(nn.Module):
     ``[1, N, D]`` for ``PANTHERBase``, take the ``allcat`` flat representation,
     project it to a scalar with ``regressor``, then apply the CORAL ``head``.
 
-    The placeholder ``attention`` returned here is the per-cell sum of the
-    final EM responsibilities (``qq.sum(-1)``) — a useful scalar per cell that
-    keeps the meta_arch's predict-step plumbing intact.
+    The placeholder ``attention`` returned here is all zeros. ``cluster`` is
+    the per-cell argmax over the final EM responsibilities, and
+    ``cluster_contribution`` is that winning responsibility value.
     """
 
     def __init__(
@@ -42,7 +43,7 @@ class PantherOrdinalModel(nn.Module):
 
     def forward(
         self, embeddings: torch.Tensor, mask: Optional[torch.Tensor] = None
-    ) -> dict:
+    ) -> dict[str, torch.Tensor]:
 
         if embeddings.ndim != 2:
             raise ValueError(
@@ -54,9 +55,18 @@ class PantherOrdinalModel(nn.Module):
         score_logit = self.regressor(out.squeeze(0))  # [1]
         head_out = self.head(score_logit)
         # qqs from PANTHERBase is [B, N, K, H] (H=1).
-        attention = qqs[..., 0].sum(dim=-1)  # [1, N]
+        responsibilities = qqs[..., 0].squeeze(0)  # [N, K]
+        attention = torch.zeros(
+            embeddings.shape[0],
+            device=embeddings.device,
+            dtype=responsibilities.dtype,
+        )
+        cluster = responsibilities.argmax(dim=-1)  # [N]
+        cluster_contribution = responsibilities.max(dim=-1).values  # [N]
         return {
             "logits": head_out["logits"],
             "score": head_out["score"],
             "attention": attention,
+            "cluster": cluster,
+            "cluster_contribution": cluster_contribution,
         }
