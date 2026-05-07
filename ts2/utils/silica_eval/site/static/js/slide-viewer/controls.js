@@ -38,10 +38,10 @@ const SilicaSlideControls = (() => {
     els.slideSelect.addEventListener("change", (event) => {
       handlers.revealTopbarSelectionLabels();
       if (event.target.value) {
-        handlers.syncUiStateQuery(event.target.value);
         handlers.loadSlideFromUi(event.target.value, {
           syncEmptyFilters: true,
           preserveViewport: true,
+          useAvailableExperiment: true,
         });
       }
     });
@@ -56,17 +56,20 @@ const SilicaSlideControls = (() => {
       if (!requestedExperiment) {
         return;
       }
+      const slideKey = state.currentSlideKey || els.slideSelect.value;
+      const slideAvailableExperiments =
+        handlers.getSlideAvailableExperiments(slideKey);
       if (
-        !handlers.getSlideAvailableExperiments(state.currentSlideKey).includes(
-          requestedExperiment,
-        )
+        slideAvailableExperiments.length > 0 &&
+        !slideAvailableExperiments.includes(requestedExperiment)
       ) {
-        handlers.populateExperimentSelector(state.currentSlideKey);
+        handlers.populateExperimentSelector(slideKey);
         return;
       }
-      handlers.commit({ currentExperiment: requestedExperiment }, { query: true });
-      if (state.currentSlideKey) {
-        handlers.loadSlideFromUi(state.currentSlideKey);
+      handlers.commit({ currentExperiment: requestedExperiment });
+      if (slideKey) {
+        handlers.syncUiStateQuery(slideKey);
+        handlers.loadSlideFromUi(slideKey);
       }
     });
     document.querySelector(".image-layer-pill").addEventListener("click", (event) => {

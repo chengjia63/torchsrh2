@@ -439,6 +439,13 @@ def create_app(
     prediction_metrics_root, prediction_metrics = _discover_prediction_metrics(
         prediction_metrics_dir
     )
+    prediction_experiments = {
+        artifact["experiment"] for artifact in prediction_charts + prediction_metrics
+    }
+    available_experiments = sorted(
+        set(discovered_experiments) | prediction_experiments,
+        key=_natural_sort_key,
+    )
     assert STATIC_DIR.is_dir(), f"Static directory not found: {STATIC_DIR}"
 
     app = FastAPI(title="Silica Single-Cell Portal")
@@ -446,7 +453,7 @@ def create_app(
     LOGGER.info(
         "Backend ready: slides=%d experiments=%d diagnoses=%d infiltrations=%d elapsed=%.2fs",
         len(slides_by_key),
-        len(discovered_experiments),
+        len(available_experiments),
         len(diagnoses),
         len(infiltrations),
         time.perf_counter() - started_at,
@@ -482,7 +489,7 @@ def create_app(
             ],
             "default_slide_key": default_slide_key,
             "default_experiment": resolved_default_experiment,
-            "experiments": discovered_experiments,
+            "experiments": available_experiments,
             "filters": {
                 "diagnosis": sorted(diagnoses, key=_natural_sort_key),
                 "infiltration": sorted(infiltrations, key=_natural_sort_key),

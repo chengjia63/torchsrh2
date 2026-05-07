@@ -132,6 +132,9 @@ async function bootstrapPortal() {
     throw new Error("No slides were returned by /api/slides");
   }
   const initialSlideKey = resolveInitialSlideKey(slidesPayload.default_slide_key);
+  if (!getSlideEntry(initialSlideKey)) {
+    commit({ pendingSlideKey: initialSlideKey });
+  }
   commit({
     currentExperiment: resolveInitialExperiment(
       slidesPayload.default_experiment,
@@ -146,7 +149,6 @@ async function bootstrapPortal() {
   await changeSlide(initialSlideKey, {
     syncEmptyFilters: true,
   });
-  initializeViewer();
 }
 
 function revealTopbarSelectionLabels() {
@@ -376,45 +378,19 @@ function restorePendingClusterFilterState(clusterFilterState) {
 }
 
 async function changeSlide(slideKey, options = {}) {
-  const { syncEmptyFilters = false, preserveViewport = false } = options;
+  const {
+    syncEmptyFilters = false,
+    preserveViewport = false,
+    useAvailableExperiment = false,
+  } = options;
   if (!slideKey) {
     throw new Error("No slide is available for the current filter selection");
   }
-  const slideEntry = getSlideEntry(slideKey);
-  if (!slideEntry) {
-    throw new Error(`Unknown slide key: ${slideKey}`);
-  }
-
-  if (
-    syncEmptyFilters &&
-    (!state.activeFilters.diagnosis || !state.activeFilters.infiltration)
-  ) {
-    commit({
-      activeFilters: {
-        ...state.activeFilters,
-        diagnosis: state.activeFilters.diagnosis
-          ? state.activeFilters.diagnosis
-          : slideEntry.diagnosis,
-        infiltration: state.activeFilters.infiltration
-          ? state.activeFilters.infiltration
-          : slideEntry.infiltration,
-      },
-    });
-    populateFilterSelectors();
-    populateSlideSelector();
-  }
-  const resolvedExperiment = ensureValidCurrentExperiment(slideKey);
-  if (resolvedExperiment === null) {
-    throw new Error(`No experiments are available for slide ${slideKey}`);
-  }
-  const preserveCurrentViewerImage = Boolean(state.viewer) && state.currentSlideKey === slideKey;
-  const preservedViewportState =
-    preserveViewport && !preserveCurrentViewerImage ? captureViewportState() : null;
-  const preservedClusterFilterState = snapshotClusterFilterState();
+  setTopbarStatus("loading");
+  commit({ pendingSlideKey: slideKey });
 
   const loadToken = state.slideLoadToken + 1;
   commit({ slideLoadToken: loadToken });
-  setTopbarStatus("loading");
   els.slideSelect.disabled = true;
   els.diagnosisSelect.disabled = true;
   els.infiltrationSelect.disabled = true;
@@ -423,8 +399,49 @@ async function changeSlide(slideKey, options = {}) {
   els.nextSlideButton.disabled = true;
   els.slideSelect.value = slideKey;
   populateExperimentSelector(slideKey);
+  els.experimentSelect.disabled = true;
 
   try {
+    const slideEntry = getSlideEntry(slideKey);
+    if (!slideEntry) {
+      throw new Error(`Unknown slide key: ${slideKey}`);
+    }
+
+    if (
+      syncEmptyFilters &&
+      (!state.activeFilters.diagnosis || !state.activeFilters.infiltration)
+    ) {
+      commit({
+        activeFilters: {
+          ...state.activeFilters,
+          diagnosis: state.activeFilters.diagnosis
+            ? state.activeFilters.diagnosis
+            : slideEntry.diagnosis,
+          infiltration: state.activeFilters.infiltration
+            ? state.activeFilters.infiltration
+            : slideEntry.infiltration,
+        },
+      });
+      populateFilterSelectors();
+      populateSlideSelector();
+    }
+    if (
+      useAvailableExperiment &&
+      state.currentExperiment &&
+      !getSlideAvailableExperiments(slideKey).includes(state.currentExperiment)
+    ) {
+      commit({ currentExperiment: null });
+    }
+    const resolvedExperiment = ensureValidCurrentExperiment(slideKey);
+    if (resolvedExperiment === null) {
+      throw new Error(`No experiments are available for slide ${slideKey}`);
+    }
+    const preserveCurrentViewerImage =
+      Boolean(state.viewer) && state.currentSlideKey === slideKey;
+    const preservedViewportState =
+      preserveViewport && !preserveCurrentViewerImage ? captureViewportState() : null;
+    const preservedClusterFilterState = snapshotClusterFilterState();
+
     const { cells, manifest } = await loadSlidePayloads({
       experimentName: resolvedExperiment,
       slideKey,
@@ -436,6 +453,7 @@ async function changeSlide(slideKey, options = {}) {
     commit({
       currentSlideKey: slideKey,
       currentExperiment: resolvedExperiment,
+      pendingSlideKey: null,
       pendingExperiment: null,
       manifest,
       cells,
@@ -452,14 +470,14 @@ async function changeSlide(slideKey, options = {}) {
     syncOverlayControlVisibility();
     syncSlideQuery(slideKey);
 
-    if (state.viewer) {
-      if (preserveCurrentViewerImage) {
-        setTopbarStatus("ready");
-        commit({}, { redraw: true, sidebar: "immediate" });
-      } else {
-        commit({ pendingViewportState: preservedViewportState });
-        openActiveImageLayer();
-      }
+    if (!state.viewer) {
+      initializeViewer();
+    } else if (preserveCurrentViewerImage) {
+      setTopbarStatus("ready");
+      commit({}, { redraw: true, sidebar: "immediate" });
+    } else {
+      commit({ pendingViewportState: preservedViewportState });
+      openActiveImageLayer();
     }
   } catch (error) {
     if (loadToken === state.slideLoadToken) {
@@ -473,7 +491,6 @@ async function changeSlide(slideKey, options = {}) {
       populateExperimentSelector(slideKey);
       els.diagnosisSelect.disabled = false;
       els.infiltrationSelect.disabled = false;
-      els.experimentSelect.disabled = false;
       if (getFilteredSlides().length > 0) {
         els.slideSelect.value = slideKey;
       }
@@ -993,7 +1010,7 @@ function applyUiStateFromQuery() {
   commit(patch);
 }
 
-function syncUiStateQuery(slideKey = state.currentSlideKey) {
+function syncUiStateQuery(slideKey = state.pendingSlideKey || state.currentSlideKey) {
   const url = new URL(window.location.href);
   const enabledOverlays = getOverlayToggleConfig()
     .filter((overlay) => overlay.element.checked)

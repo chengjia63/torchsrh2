@@ -38,7 +38,7 @@ const SilicaSlideImageLayer = (() => {
       handlers.scheduleRedraw();
       handlers.scheduleSidebarRedraw({ immediate: true });
     });
-    state.viewer.addHandler("open-failed", () => {
+    state.viewer.addHandler("open-failed", (event) => {
       if (state.pendingImageLayerFallback !== null) {
         commit({
           activeImageLayer: state.pendingImageLayerFallback,
@@ -48,7 +48,9 @@ const SilicaSlideImageLayer = (() => {
         handlers.openActiveImageLayer();
         return;
       }
+      const message = event?.message || event?.source || "unknown image source";
       handlers.setTopbarStatus("error");
+      handlers.setViewportEditorStatus(`Failed to open DZI image: ${message}`);
     });
     state.viewer.addHandler("tile-load-failed", (event) => {
       const tileUrl = event?.tile?.url || event?.src || "unknown tile";

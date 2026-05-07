@@ -8,6 +8,11 @@ const predictionState = {
   selectedExperiment: "",
   selectedMetricsId: "",
   chartView: null,
+  chartLoadToken: 0,
+  yDomain: null,
+  yDragStart: null,
+  pendingChartRenderFrame: null,
+  suppressPredictionClickUntil: 0,
   topbarStatus: "idle",
   topbarStatusHideTimer: null,
   sidebarCollapsed: false,
@@ -15,7 +20,12 @@ const predictionState = {
   topbarSelectionRevealed: false,
 };
 const PREDICTION_CHART_Y_DOMAIN = [-5, 6];
+const PREDICTION_Y_ZOOM_WHEEL_FACTOR = 1.0015;
+const PREDICTION_Y_DRAG_THRESHOLD_PX = 4;
+const PREDICTION_DRAG_CLICK_SUPPRESSION_MS = 250;
 const EXPERIMENT_QUERY_PARAM = "experiment";
+const Y_MIN_QUERY_PARAM = "y_min";
+const Y_MAX_QUERY_PARAM = "y_max";
 const SLIDE_QUERY_PARAM = "slide";
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -32,8 +42,10 @@ async function bootstrapPredictions() {
   predictionState.selectedExperiment = resolveInitialPredictionExperiment(
     slidePayload.default_experiment,
   );
+  predictionState.yDomain = resolveInitialPredictionYDomain();
   populatePredictionExperimentSelect(predictionState.experiments);
   bindPredictionControls();
+  bindPredictionChartYAxisInteractions();
   bindPredictionTopbarSelectionReveal();
   bindPredictionSidebarControls();
   syncPredictionExperimentQuery();
@@ -63,6 +75,16 @@ function populatePredictionExperimentSelect(experiments) {
     option.textContent = experiment;
     select.appendChild(option);
   }
+  if (
+    predictionState.selectedExperiment &&
+    !experiments.includes(predictionState.selectedExperiment)
+  ) {
+    const option = document.createElement("option");
+    option.value = predictionState.selectedExperiment;
+    option.textContent = predictionState.selectedExperiment;
+    option.disabled = true;
+    select.appendChild(option);
+  }
   select.value = predictionState.selectedExperiment;
 }
 
@@ -87,6 +109,9 @@ function bindPredictionControls() {
 }
 
 function showMissingPredictionChart() {
+  cancelPendingPredictionChartRender();
+  predictionState.chartLoadToken += 1;
+  predictionState.selectedChartId = "";
   clearPredictionMetrics();
   clearPredictionChart();
   setPredictionTopbarStatus("error");
@@ -102,7 +127,7 @@ function resolveInitialPredictionExperiment(defaultExperiment) {
     return requestedExperiment;
   }
   if (requestedExperiment) {
-    throw new Error(`Unknown experiment: ${requestedExperiment}`);
+    return requestedExperiment;
   }
   if (predictionState.experiments.includes(defaultExperiment)) {
     return defaultExperiment;
@@ -121,10 +146,20 @@ function bindPredictionTopbarSelectionReveal() {
   });
 }
 
-async function renderPredictionChart(chartId) {
+async function renderPredictionChart(
+  chartId,
+  { renderMetrics = true, updateStatus = true } = {},
+) {
+  if (updateStatus) {
+    cancelPendingPredictionChartRender();
+  }
+  const loadToken = predictionState.chartLoadToken + 1;
+  predictionState.chartLoadToken = loadToken;
   predictionState.selectedChartId = chartId;
-  setPredictionTopbarStatus("loading");
-  setPredictionStatus("Loading chart...");
+  if (updateStatus) {
+    setPredictionTopbarStatus("loading");
+    setPredictionStatus("Loading chart...");
+  }
   try {
     const spec = await fetchJson(predictionChartSpecUrl(chartId));
     spec.width = "container";
@@ -136,33 +171,72 @@ async function renderPredictionChart(chartId) {
       resize: true,
     };
     applyPredictionChartYAxisDomain(spec);
+    applyPredictionChartClipping(spec);
+    if (loadToken !== predictionState.chartLoadToken) {
+      return;
+    }
+    if (predictionState.chartView) {
+      predictionState.chartView.finalize();
+      predictionState.chartView = null;
+    }
     const result = await vegaEmbed("#predictionChart", spec, {
       actions: false,
       mode: "vega-lite",
     });
+    if (loadToken !== predictionState.chartLoadToken) {
+      result.view.finalize();
+      return;
+    }
     predictionState.chartView = result.view;
     result.view.addEventListener("click", (_event, item) => {
       handlePredictionChartClick(item);
     });
-    setPredictionStatus("");
+    if (updateStatus) {
+      setPredictionStatus("");
+    }
     refreshPredictionChartLayout();
-    const metricsLoaded = await renderPredictionMetrics();
-    if (metricsLoaded) {
+    const metricsLoaded = renderMetrics
+      ? await renderPredictionMetrics(loadToken)
+      : true;
+    if (loadToken !== predictionState.chartLoadToken) {
+      return;
+    }
+    if (metricsLoaded && updateStatus) {
       setPredictionTopbarStatus("ready");
     }
   } catch (error) {
     console.error(error);
-    setPredictionTopbarStatus("error");
+    if (loadToken !== predictionState.chartLoadToken) {
+      return;
+    }
+    if (updateStatus) {
+      setPredictionTopbarStatus("error");
+    }
     setPredictionStatus(String(error));
-    setPredictionMetricsStatus(String(error));
+    if (renderMetrics) {
+      setPredictionMetricsStatus(String(error));
+    }
   }
 }
 
 function applyPredictionChartYAxisDomain(spec) {
-  const expandedDomain = expandPredictionChartYDomain(
-    collectPredictionChartYDomain(spec, spec.data, spec),
-  );
+  const expandedDomain =
+    predictionState.yDomain ??
+    expandPredictionChartYDomain(collectPredictionChartYDomain(spec, spec.data, spec));
   applyPredictionChartYAxisDomainToSpec(spec, expandedDomain);
+}
+
+function applyPredictionChartClipping(spec) {
+  if (spec.mark) {
+    if (typeof spec.mark === "string") {
+      spec.mark = { type: spec.mark, clip: true };
+    } else {
+      spec.mark = { ...spec.mark, clip: true };
+    }
+  }
+  for (const childSpec of spec.layer ?? []) {
+    applyPredictionChartClipping(childSpec);
+  }
 }
 
 function applyPredictionChartYAxisDomainToSpec(spec, domain) {
@@ -254,14 +328,198 @@ function isNumericDomain(domain) {
   );
 }
 
+function resolveInitialPredictionYDomain() {
+  const searchParams = new URLSearchParams(window.location.search);
+  const yMin = searchParams.get(Y_MIN_QUERY_PARAM);
+  const yMax = searchParams.get(Y_MAX_QUERY_PARAM);
+  if (yMin === null && yMax === null) {
+    return null;
+  }
+  if (yMin === null || yMax === null) {
+    throw new Error("Prediction y-axis URL bounds require both y_min and y_max");
+  }
+  const domain = [Number(yMin), Number(yMax)];
+  if (!isNumericDomain(domain) || domain[0] >= domain[1]) {
+    throw new Error(`Invalid prediction y-axis URL bounds: ${yMin}, ${yMax}`);
+  }
+  return domain;
+}
+
+function updatePredictionYDomain(domain) {
+  if (!isNumericDomain(domain)) {
+    return;
+  }
+  const nextDomain = domain.map(Number);
+  if (nextDomain[0] >= nextDomain[1]) {
+    return;
+  }
+  if (
+    predictionState.yDomain &&
+    predictionState.yDomain[0] === nextDomain[0] &&
+    predictionState.yDomain[1] === nextDomain[1]
+  ) {
+    return;
+  }
+  predictionState.yDomain = nextDomain;
+  syncPredictionExperimentQuery();
+}
+
+function bindPredictionChartYAxisInteractions() {
+  const chartElement = document.getElementById("predictionChart");
+  chartElement.addEventListener(
+    "wheel",
+    (event) => {
+      if (!canScalePredictionChart()) {
+        return;
+      }
+      event.preventDefault();
+      zoomPredictionYAxisFromWheel(event);
+    },
+    { passive: false },
+  );
+  chartElement.addEventListener("pointerdown", (event) => {
+    if (!canScalePredictionChart() || event.button !== 0) {
+      return;
+    }
+    predictionState.yDragStart = {
+      active: false,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      domain: currentPredictionYDomain(),
+      pointerId: event.pointerId,
+    };
+  });
+  chartElement.addEventListener("pointermove", (event) => {
+    if (!predictionState.yDragStart) {
+      return;
+    }
+    const dragDistance = Math.hypot(
+      event.clientX - predictionState.yDragStart.clientX,
+      event.clientY - predictionState.yDragStart.clientY,
+    );
+    if (!predictionState.yDragStart.active) {
+      if (dragDistance < PREDICTION_Y_DRAG_THRESHOLD_PX) {
+        return;
+      }
+      predictionState.yDragStart.active = true;
+      chartElement.setPointerCapture(predictionState.yDragStart.pointerId);
+    }
+    event.preventDefault();
+    panPredictionYAxisFromPointer(event);
+  });
+  chartElement.addEventListener("pointerup", clearPredictionYAxisDrag);
+  chartElement.addEventListener("pointercancel", clearPredictionYAxisDrag);
+  chartElement.addEventListener("lostpointercapture", clearPredictionYAxisDrag);
+}
+
+function zoomPredictionYAxisFromWheel(event) {
+  const domain = currentPredictionYDomain();
+  const chartElement = document.getElementById("predictionChart");
+  const chartRect = chartElement.getBoundingClientRect();
+  if (chartRect.height <= 0) {
+    return;
+  }
+
+  const pointerRatio = Math.min(
+    1,
+    Math.max(0, (event.clientY - chartRect.top) / chartRect.height),
+  );
+  const anchor = domain[1] - (domain[1] - domain[0]) * pointerRatio;
+  const zoomFactor = Math.pow(PREDICTION_Y_ZOOM_WHEEL_FACTOR, event.deltaY);
+  const nextDomain = [
+    anchor - (anchor - domain[0]) * zoomFactor,
+    anchor + (domain[1] - anchor) * zoomFactor,
+  ];
+  updatePredictionYDomain(nextDomain);
+  schedulePredictionChartRender();
+}
+
+function panPredictionYAxisFromPointer(event) {
+  const chartElement = document.getElementById("predictionChart");
+  const chartRect = chartElement.getBoundingClientRect();
+  if (chartRect.height <= 0) {
+    return;
+  }
+
+  const startDomain = predictionState.yDragStart.domain;
+  const domainSpan = startDomain[1] - startDomain[0];
+  const yDelta =
+    ((event.clientY - predictionState.yDragStart.clientY) / chartRect.height) *
+    domainSpan;
+  updatePredictionYDomain([startDomain[0] + yDelta, startDomain[1] + yDelta]);
+  schedulePredictionChartRender();
+}
+
+function clearPredictionYAxisDrag() {
+  if (predictionState.yDragStart?.active) {
+    predictionState.suppressPredictionClickUntil =
+      performance.now() + PREDICTION_DRAG_CLICK_SUPPRESSION_MS;
+  }
+  predictionState.yDragStart = null;
+}
+
+function currentPredictionYDomain() {
+  return predictionState.yDomain ?? PREDICTION_CHART_Y_DOMAIN;
+}
+
+function canScalePredictionChart() {
+  return (
+    Boolean(predictionState.chartView) && predictionState.topbarStatus !== "loading"
+  );
+}
+
+function schedulePredictionChartRender() {
+  if (!predictionState.selectedChartId || predictionState.topbarStatus === "loading") {
+    return;
+  }
+  if (predictionState.pendingChartRenderFrame !== null) {
+    window.cancelAnimationFrame(predictionState.pendingChartRenderFrame);
+  }
+  predictionState.pendingChartRenderFrame = window.requestAnimationFrame(() => {
+    predictionState.pendingChartRenderFrame = null;
+    void renderPredictionChart(predictionState.selectedChartId, {
+      renderMetrics: false,
+      updateStatus: false,
+    });
+  });
+}
+
+function cancelPendingPredictionChartRender() {
+  if (predictionState.pendingChartRenderFrame === null) {
+    return;
+  }
+  window.cancelAnimationFrame(predictionState.pendingChartRenderFrame);
+  predictionState.pendingChartRenderFrame = null;
+}
+
 function syncPredictionExperimentQuery() {
   const url = new URL(window.location.href);
   url.searchParams.set(EXPERIMENT_QUERY_PARAM, predictionState.selectedExperiment);
+  if (predictionState.yDomain) {
+    url.searchParams.set(
+      Y_MIN_QUERY_PARAM,
+      formatPredictionYDomainParam(predictionState.yDomain[0]),
+    );
+    url.searchParams.set(
+      Y_MAX_QUERY_PARAM,
+      formatPredictionYDomainParam(predictionState.yDomain[1]),
+    );
+  } else {
+    url.searchParams.delete(Y_MIN_QUERY_PARAM);
+    url.searchParams.delete(Y_MAX_QUERY_PARAM);
+  }
   window.history.replaceState({}, "", url);
 }
 
+function formatPredictionYDomainParam(value) {
+  return Number(value).toPrecision(8);
+}
+
 function handlePredictionChartClick(item) {
-  if (!item || !item.datum) {
+  if (performance.now() < predictionState.suppressPredictionClickUntil) {
+    return;
+  }
+  if (!item) {
     return;
   }
   const datum = resolvePredictionClickDatum(item);
@@ -279,17 +537,32 @@ function handlePredictionChartClick(item) {
 }
 
 function resolvePredictionClickDatum(item) {
-  const datum = item.datum;
-  if (datum.slide_id !== undefined || datum.path !== undefined) {
-    return datum;
-  }
-  if (
-    datum.datum &&
-    (datum.datum.slide_id !== undefined || datum.datum.path !== undefined)
-  ) {
-    return datum.datum;
+  const seen = new Set();
+  const stack = [item];
+  while (stack.length > 0) {
+    const datum = stack.pop();
+    if (!datum || typeof datum !== "object" || seen.has(datum)) {
+      continue;
+    }
+    seen.add(datum);
+    if (isPredictionChartDatum(datum)) {
+      return datum;
+    }
+    for (const value of Object.values(datum)) {
+      if (value && typeof value === "object") {
+        stack.push(value);
+      }
+    }
   }
   return null;
+}
+
+function isPredictionChartDatum(datum) {
+  return (
+    datum.raw_score !== undefined &&
+    datum.label !== undefined &&
+    (datum.slide_id !== undefined || datum.path !== undefined)
+  );
 }
 
 function resolvePredictionSlideKey(datum) {
@@ -318,10 +591,16 @@ function predictionChartSpecUrl(chartId) {
     .join("/")}`;
 }
 
-async function renderPredictionMetrics() {
+async function renderPredictionMetrics(loadToken = predictionState.chartLoadToken) {
+  if (loadToken !== predictionState.chartLoadToken) {
+    return false;
+  }
   clearPredictionMetrics();
   const metrics = resolveSelectedMetrics();
   if (!metrics) {
+    if (loadToken !== predictionState.chartLoadToken) {
+      return false;
+    }
     setPredictionTopbarStatus("error");
     setPredictionMetricsStatus(
       `No prediction metrics are configured for experiment: ${predictionState.selectedExperiment}`,
@@ -332,6 +611,9 @@ async function renderPredictionMetrics() {
   predictionState.selectedMetricsId = metrics.id;
   setPredictionMetricsStatus("Loading metrics...");
   const payload = await fetchJson(predictionMetricsPayloadUrl(metrics.id));
+  if (loadToken !== predictionState.chartLoadToken) {
+    return false;
+  }
   setMetricText("metricNumDatapoints", formatCount(payload.num_datapoints));
   setMetricText(
     "metricPredLabelMeanClassAccuracy",
@@ -439,6 +721,9 @@ function clearPredictionMetrics() {
 }
 
 function clearPredictionChart() {
+  if (predictionState.chartView) {
+    predictionState.chartView.finalize();
+  }
   predictionState.chartView = null;
   document.getElementById("predictionChart").replaceChildren();
 }

@@ -18,12 +18,13 @@ const SilicaSlideNavigation = (() => {
     const matchingSlides = getFilteredSlides(state);
     const slideSelect = els.slideSelect;
     const previousValue = slideSelect.value;
+    const selectedSlideKey = state.pendingSlideKey || state.currentSlideKey;
     slideSelect.replaceChildren();
 
     if (matchingSlides.length === 0) {
       const option = document.createElement("option");
-      option.value = "";
-      option.textContent = "No slides";
+      option.value = selectedSlideKey || "";
+      option.textContent = selectedSlideKey || "No slides";
       slideSelect.appendChild(option);
       slideSelect.disabled = true;
       syncSlideNavigationButtons({ state, els });
@@ -36,8 +37,23 @@ const SilicaSlideNavigation = (() => {
       option.textContent = slide.label;
       slideSelect.appendChild(option);
     }
+    if (
+      selectedSlideKey &&
+      !matchingSlides.some((slide) => slide.key === selectedSlideKey)
+    ) {
+      const option = document.createElement("option");
+      option.value = selectedSlideKey;
+      option.textContent = selectedSlideKey;
+      option.disabled = true;
+      slideSelect.appendChild(option);
+    }
 
     slideSelect.disabled = false;
+    if (selectedSlideKey) {
+      slideSelect.value = selectedSlideKey;
+      syncSlideNavigationButtons({ state, els });
+      return;
+    }
     if (matchingSlides.some((slide) => slide.key === previousValue)) {
       slideSelect.value = previousValue;
       syncSlideNavigationButtons({ state, els });
@@ -143,10 +159,12 @@ const SilicaSlideNavigation = (() => {
   function ensureValidCurrentExperiment({ state, commit, slideKey }) {
     const slideAvailableExperiments = getSlideAvailableExperiments(state, slideKey);
     if (slideAvailableExperiments.length === 0) {
-      commit({ currentExperiment: null });
+      if (state.currentExperiment) {
+        return state.currentExperiment;
+      }
       return null;
     }
-    if (slideAvailableExperiments.includes(state.currentExperiment)) {
+    if (state.currentExperiment) {
       return state.currentExperiment;
     }
     const fallbackExperiment = slideAvailableExperiments[0];
@@ -157,6 +175,7 @@ const SilicaSlideNavigation = (() => {
   function populateExperimentSelector({ state, els, commit, slideKey }) {
     const select = els.experimentSelect;
 
+    const slideEntry = getSlideEntry(state, slideKey);
     const slideAvailableExperiments = getSlideAvailableExperiments(state, slideKey);
     const resolvedExperiment = ensureValidCurrentExperiment({ state, commit, slideKey });
     select.replaceChildren();
@@ -174,11 +193,22 @@ const SilicaSlideNavigation = (() => {
       const option = document.createElement("option");
       option.value = experimentName;
       option.textContent = experimentName;
-      option.disabled = !slideAvailableExperiments.includes(experimentName);
+      option.disabled =
+        Boolean(slideEntry) && !slideAvailableExperiments.includes(experimentName);
+      select.appendChild(option);
+    }
+    if (
+      state.currentExperiment &&
+      !state.availableExperiments.includes(state.currentExperiment)
+    ) {
+      const option = document.createElement("option");
+      option.value = state.currentExperiment;
+      option.textContent = state.currentExperiment;
+      option.disabled = true;
       select.appendChild(option);
     }
 
-    select.disabled = slideAvailableExperiments.length === 0;
+    select.disabled = state.availableExperiments.length === 0;
     if (resolvedExperiment !== null) {
       select.value = resolvedExperiment;
     }
@@ -225,8 +255,10 @@ const SilicaSlideNavigation = (() => {
     const nextSlideKey = matchingSlides[nextIndex].key;
     els.slideSelect.value = nextSlideKey;
     syncSlideNavigationButtons({ state, els });
-    syncUiStateQuery(nextSlideKey);
-    loadSlideFromUi(nextSlideKey, { preserveViewport: true });
+    loadSlideFromUi(nextSlideKey, {
+      preserveViewport: true,
+      useAvailableExperiment: true,
+    });
   }
 
   function applyFilters({
@@ -251,7 +283,10 @@ const SilicaSlideNavigation = (() => {
       : matchingSlides[0].key;
     els.slideSelect.value = preferredSlideKey;
     if (preferredSlideKey !== state.currentSlideKey) {
-      loadSlideFromUi(preferredSlideKey, { preserveViewport: true });
+      loadSlideFromUi(preferredSlideKey, {
+        preserveViewport: true,
+        useAvailableExperiment: true,
+      });
     }
   }
 

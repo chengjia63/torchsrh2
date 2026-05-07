@@ -21,6 +21,7 @@ const SilicaSlideState = (() => {
       viewer: null,
       currentSlideKey: null,
       currentExperiment: null,
+      pendingSlideKey: null,
       pendingExperiment: null,
       topbarStatusHideTimer: null,
       topbarStatus: "idle",

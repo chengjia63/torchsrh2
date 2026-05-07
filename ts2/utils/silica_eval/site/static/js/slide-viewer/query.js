@@ -44,6 +44,10 @@ const SilicaSlideViewerQuery = (() => {
     if (requestedExperiment) {
       patch.pendingExperiment = requestedExperiment;
     }
+    const requestedSlide = (searchParams.get(SLIDE_QUERY_PARAM) ?? "").trim();
+    if (requestedSlide) {
+      patch.pendingSlideKey = requestedSlide;
+    }
 
     const requestedOverlays = parseOverlaySet(searchParams.get(OVERLAY_QUERY_PARAM));
     const attributionModes = resolveAttributionModes(

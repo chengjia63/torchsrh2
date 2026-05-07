@@ -8,7 +8,7 @@ const SilicaSlideSelection = (() => {
   }
 
   function resolveInitialSlideKey({ defaultSlideKey, requestedSlideKey, slides }) {
-    if (requestedSlideKey && getSlideEntry(slides, requestedSlideKey)) {
+    if (requestedSlideKey) {
       return requestedSlideKey;
     }
     if (defaultSlideKey && getSlideEntry(slides, defaultSlideKey)) {
@@ -23,8 +23,13 @@ const SilicaSlideSelection = (() => {
     pendingExperiment,
     slideAvailableExperiments,
   }) {
+    const requestedExperiment =
+      typeof pendingExperiment === "string" ? pendingExperiment.trim() : "";
+    if (requestedExperiment) {
+      return requestedExperiment;
+    }
+
     const candidateExperiments = [
-      pendingExperiment,
       typeof defaultExperiment === "string" ? defaultExperiment.trim() : "",
       slideAvailableExperiments[0],
       availableExperiments[0],
