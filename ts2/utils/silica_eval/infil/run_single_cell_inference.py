@@ -511,6 +511,77 @@ def _drop_duplicate_representation_cells(
     return deduped, dropped_count
 
 
+def _representation_records_from_detection_results(
+    results: pd.DataFrame,
+) -> tuple[list[str], list[str]]:
+    if results.empty:
+        return [], []
+
+    required_columns = {"patch", "celltype", "score", "centroid_r", "centroid_c"}
+    missing_columns = required_columns.difference(results.columns)
+    assert not missing_columns, (
+        "Cannot compute expected representation records because detection results are "
+        f"missing columns: {sorted(missing_columns)}"
+    )
+
+    eligible_mask = results["celltype"].isin({"nuclei", "mp"}) & (
+        results["score"].astype(float) > 0.5
+    )
+    eligible_results = results.loc[eligible_mask]
+    paths = [
+        _representation_path_from_detection_row(row)
+        for _, row in eligible_results.iterrows()
+    ]
+    labels = [str(label) for label in eligible_results["celltype"].tolist()]
+    return paths, labels
+
+
+def _cell_representations_match_records(
+    cell_representations: dict,
+    expected_paths: list[str],
+    expected_labels: list[str],
+) -> bool:
+    assert "path" in cell_representations, "Cell representations missing `path`."
+    assert "label" in cell_representations, "Cell representations missing `label`."
+    assert (
+        "embeddings" in cell_representations
+    ), "Cell representations missing `embeddings`."
+
+    cached_paths = [str(path) for path in cell_representations["path"]]
+    cached_labels = [str(label) for label in cell_representations["label"]]
+    assert len(cached_paths) == len(cached_labels), (
+        "Cached cell representation path and label counts differ: "
+        f"{len(cached_paths)} paths, {len(cached_labels)} labels."
+    )
+    assert cell_representations["embeddings"].shape[0] == len(cached_paths), (
+        "Cached cell representation embedding count does not match path count: "
+        f"{cell_representations['embeddings'].shape[0]} embeddings, "
+        f"{len(cached_paths)} paths."
+    )
+
+    return cached_paths == expected_paths and cached_labels == expected_labels
+
+
+def _gmm_predictions_match_cell_representations(
+    gmm_predictions: pd.DataFrame,
+    cell_representations: dict,
+) -> bool:
+    required_columns = {"path", "label"}
+    missing_columns = required_columns.difference(gmm_predictions.columns)
+    assert not missing_columns, (
+        "Cached GMM predictions are missing columns: " f"{sorted(missing_columns)}"
+    )
+
+    prediction_paths = [str(path) for path in gmm_predictions["path"].tolist()]
+    prediction_labels = [str(label) for label in gmm_predictions["label"].tolist()]
+    representation_paths = [str(path) for path in cell_representations["path"]]
+    representation_labels = [str(label) for label in cell_representations["label"]]
+    return (
+        prediction_paths == representation_paths
+        and prediction_labels == representation_labels
+    )
+
+
 def _ensure_output_dir(output_dir: str) -> None:
     os.makedirs(output_dir, exist_ok=True)
     assert os.path.isdir(output_dir), f"Failed to create output directory: {output_dir}"
@@ -520,11 +591,13 @@ def resolve_mosaic_output_dirs(
     mosaic_run: dict,
     out_root: str,
     static_infra_out_root: str,
+    representation_out_root: str,
     portal_out_root: str,
     viz_candidate_name: str,
 ) -> dict[str, str]:
     assert out_root, "Expected a non-empty out_root."
     assert static_infra_out_root, "Expected a non-empty static_infra_out_root."
+    assert representation_out_root, "Expected a non-empty representation_out_root."
     assert portal_out_root, "Expected a non-empty portal_out_root."
 
     output_dir = mosaic_run.get(
@@ -534,6 +607,10 @@ def resolve_mosaic_output_dirs(
         "static_output_dir",
         os.path.join(static_infra_out_root, viz_candidate_name),
     )
+    representation_output_dir = mosaic_run.get(
+        "representation_output_dir",
+        os.path.join(representation_out_root, viz_candidate_name),
+    )
     portal_dir = mosaic_run.get(
         "portal_dir",
         os.path.join(portal_out_root, viz_candidate_name, "portal"),
@@ -541,6 +618,7 @@ def resolve_mosaic_output_dirs(
     return {
         "output_dir": output_dir,
         "static_output_dir": static_output_dir,
+        "representation_output_dir": representation_output_dir,
         "portal_dir": portal_dir,
     }
 
@@ -836,11 +914,13 @@ def run_single_mosaic_pipeline(
         mosaic_run=mosaic_run,
         out_root=cf.infra.out_root,
         static_infra_out_root=cf.infra.static_infra_out_root,
+        representation_out_root=cf.infra.representation_out_root,
         portal_out_root=cf.infra.portal_out_root,
         viz_candidate_name=viz_candidate_name,
     )
     output_dir = output_dirs["output_dir"]
     static_output_dir = output_dirs["static_output_dir"]
+    representation_output_dir = output_dirs["representation_output_dir"]
     portal_dir = output_dirs["portal_dir"]
 
     assert ch2_dicom_paths, f"No CH2 DICOM paths provided for {viz_candidate_name}."
@@ -857,11 +937,17 @@ def run_single_mosaic_pipeline(
     )
     _ensure_output_dir(output_dir)
     _ensure_output_dir(static_output_dir)
+    _ensure_output_dir(representation_output_dir)
     logger.info("Writing all outputs for %s under %s", viz_candidate_name, output_dir)
     logger.info(
         "Writing static infra outputs for %s under %s",
         viz_candidate_name,
         static_output_dir,
+    )
+    logger.info(
+        "Writing representation outputs for %s under %s",
+        viz_candidate_name,
+        representation_output_dir,
     )
 
     artifact_prefix = f"{viz_candidate_name}-"
@@ -882,7 +968,7 @@ def run_single_mosaic_pipeline(
     )
     srhrgb_image_path = os.path.join(static_output_dir, f"{artifact_prefix}srhrgb.png")
     cell_representations_path = os.path.join(
-        output_dir, f"{artifact_prefix}cell_representations.pt"
+        representation_output_dir, f"{artifact_prefix}cell_representations.pt"
     )
     gmm_predictions_csv_path = os.path.join(
         output_dir, f"{artifact_prefix}cell_gmm_predictions.csv"
@@ -940,7 +1026,8 @@ def run_single_mosaic_pipeline(
         resolve=True,
     )
     cell_detection_kwargs.pop("ckpt_path", None)
-    if _can_use_cache(cf.infra.cache_stages, "C"):
+    use_detection_cache = _can_use_cache(cf.infra.cache_stages, "C")
+    if use_detection_cache:
         logger.info(
             "[%s] Loading cached detection outputs from %s and %s",
             viz_candidate_name,
@@ -1050,25 +1137,43 @@ def run_single_mosaic_pipeline(
     logger.info(
         "[%s] Begin step 3: run cell representation inference", viz_candidate_name
     )
-    use_repr_cache = (
-        _can_use_cache(cf.infra.cache_stages, "R") and dropped_duplicate_repr_cells == 0
+    expected_repr_paths, expected_repr_labels = (
+        _representation_records_from_detection_results(results)
     )
-    if use_repr_cache:
+    use_repr_cache = False
+    if _can_use_cache(cf.infra.cache_stages, "R"):
         logger.info(
             "[%s] Loading cached cell representations from %s",
             viz_candidate_name,
             cell_representations_path,
         )
-        cell_representations = torch.load(cell_representations_path, weights_only=False)
-    else:
-        if dropped_duplicate_repr_cells > 0 and os.path.exists(
-            cell_representations_path
-        ):
+        cached_cell_representations = torch.load(
+            cell_representations_path,
+            weights_only=False,
+        )
+        use_repr_cache = _cell_representations_match_records(
+            cell_representations=cached_cell_representations,
+            expected_paths=expected_repr_paths,
+            expected_labels=expected_repr_labels,
+        )
+        if use_repr_cache:
+            cell_representations = cached_cell_representations
+        else:
             logger.info(
-                "[%s] Ignoring cached cell representations because detection "
-                "deduplication changed the inference set",
+                "[%s] Ignoring cached cell representations because cached "
+                "paths/labels do not match the current detection set",
                 viz_candidate_name,
             )
+            cell_representations = run_cell_representation_inference(
+                patch_dict=patch_dict,
+                cell_predictions=results,
+                data_xform=cf.data_xform,
+                representation_model=representation_model,
+                device=cf.infra.device,
+                batch_size=cell_batch_size,
+            )
+            torch.save(cell_representations, cell_representations_path)
+    else:
         cell_representations = run_cell_representation_inference(
             patch_dict=patch_dict,
             cell_predictions=results,
@@ -1080,7 +1185,7 @@ def run_single_mosaic_pipeline(
         torch.save(cell_representations, cell_representations_path)
     assert (
         "embeddings" in cell_representations
-    ), "Cached cell representations missing `embeddings`."
+    ), "Cell representations missing `embeddings`."
     logger.info(
         "[%s] End step 3: run cell representation inference", viz_candidate_name
     )
@@ -1089,28 +1194,34 @@ def run_single_mosaic_pipeline(
         "[%s] Begin step 4: run GMM inference and compute slide statistics",
         viz_candidate_name,
     )
-    use_gmm_cache = (
-        _can_use_cache(cf.infra.cache_stages, "G") and dropped_duplicate_repr_cells == 0
-    )
-    if use_gmm_cache:
+    use_gmm_cache = False
+    if _can_use_cache(cf.infra.cache_stages, "G"):
         logger.info(
-            "[%s] Loading cached GMM predictions from %s and slide statistics from %s",
+            "[%s] Loading cached GMM predictions from %s",
             viz_candidate_name,
             gmm_predictions_csv_path,
-            slide_statistics_path,
         )
         gmm_predictions = pd.read_csv(gmm_predictions_csv_path)
-        with open(slide_statistics_path, "r", encoding="utf-8") as fd:
-            slide_statistics = json.load(fd)
-    else:
-        if dropped_duplicate_repr_cells > 0 and os.path.exists(
-            gmm_predictions_csv_path
-        ):
+        use_gmm_cache = _gmm_predictions_match_cell_representations(
+            gmm_predictions=gmm_predictions,
+            cell_representations=cell_representations,
+        )
+        if use_gmm_cache:
             logger.info(
-                "[%s] Ignoring cached GMM predictions because detection "
-                "deduplication changed the inference set",
+                "[%s] Loading cached slide statistics from %s",
+                viz_candidate_name,
+                slide_statistics_path,
+            )
+            with open(slide_statistics_path, "r", encoding="utf-8") as fd:
+                slide_statistics = json.load(fd)
+        else:
+            logger.info(
+                "[%s] Ignoring cached GMM predictions because cached paths/labels "
+                "do not match the current cell representations",
                 viz_candidate_name,
             )
+
+    if not use_gmm_cache:
         gmm_predictions = run_single_slide_gmm_inference(
             cell_representations=cell_representations,
             gmm_metadata=gmm_metadata,
@@ -1143,19 +1254,17 @@ def run_single_mosaic_pipeline(
         "[%s] Begin step 5: render GMM visualizations and export portal metadata",
         viz_candidate_name,
     )
-    use_viz_cache = _can_use_cache(cf.infra.cache_stages, "V") and (
-        dropped_duplicate_repr_cells == 0
-    )
+    use_viz_cache = _can_use_cache(cf.infra.cache_stages, "V") and use_gmm_cache
     if use_viz_cache:
         logger.info(
             "[%s] Using cached GMM visualization and portal metadata outputs",
             viz_candidate_name,
         )
     else:
-        if dropped_duplicate_repr_cells > 0:
+        if _can_use_cache(cf.infra.cache_stages, "V") and not use_gmm_cache:
             logger.info(
-                "[%s] Regenerating GMM visualizations and portal metadata because detection "
-                "deduplication changed downstream predictions",
+                "[%s] Regenerating GMM visualizations and portal metadata because "
+                "GMM predictions were regenerated",
                 viz_candidate_name,
             )
         if cf.infra.get("save_traditional_output", False):
@@ -1194,6 +1303,7 @@ def run_single_mosaic_pipeline(
         "viz_candidate_name": viz_candidate_name,
         "output_dir": output_dir,
         "static_output_dir": static_output_dir,
+        "representation_output_dir": representation_output_dir,
         "portal_dir": portal_dir,
         "slide_statistics_path": slide_statistics_path,
         "patch_valid_regions_path": patch_valid_regions_path,
@@ -1228,6 +1338,9 @@ def main(config_path: str) -> None:
     assert (
         cf.infra.static_infra_out_root
     ), "Expected infra.static_infra_out_root in config."
+    assert (
+        cf.infra.representation_out_root
+    ), "Expected infra.representation_out_root in config."
     assert cf.infra.portal_out_root, "Expected infra.portal_out_root in config."
 
     logger.info("Loading cell detection model from %s", cf.cell_detection.ckpt_path)

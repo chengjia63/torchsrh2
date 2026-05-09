@@ -1,6 +1,7 @@
 infra:
   out_root: /scratch/tocho_root/tocho0/chengjia/silica/b1a0cbe3_k1024
   static_infra_out_root: /scratch/tocho_root/tocho0/chengjia/silica/common
+  representation_out_root: /scratch/tocho_root/tocho0/chengjia/silica_fixpatch/cellfeat/b1a0cbe3
   portal_out_root: ./site_res/debug_out_1024
 
   device: cuda

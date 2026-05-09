@@ -228,7 +228,6 @@ def save_prediction_page_outputs(
     )
     with open(chart_path, "w", encoding="utf-8") as f:
         json.dump(chart.to_dict(), f)
-    chart.save(f"{experiment_name}_fg_score_charts.html")
 
     metrics_path = os.path.join(output_dir, f"{experiment_name}_metrics.json")
     metrics = compute_prediction_page_metrics(rows, num_classes=num_classes)
@@ -402,23 +401,27 @@ def warn_missing_fastglioma_scores(data: pd.DataFrame) -> None:
 def main():
     num_classes = 4
     prospective_csv = "data/ucsf_retrospective_val.csv"  # "data/ucsf_all_sorted.csv"  #
-    output_prefix = os.path.splitext(os.path.basename(prospective_csv))[0]
-    pred_root = "/scratch/tocho_root/tocho0/chengjia/silica_ucsf/b1a0cbe3_k1024"
+    pred_root = "/scratch/tocho_root/tocho0/chengjia/silica_ucsf/gmm/b1a0cbe3_k16"
+
+    sample_slide_map_csv = (
+        "../../../playgrounds/data/db_srhdg/SRHcases_ForMelike-MP-2025-03-15.csv"
+    )
+    fg_score_ucsf_csv = "../../../playgrounds/data/db_srhdg/scoresforsanjeev_ucsf.csv"
+
+    prediction_keys = [
+        "area_soft_slide_tumor_probability",
+        "hard_slide_tumor_probability",
+        "soft_slide_tumor_probability",
+    ]
 
     save_portal_output = True
     portal_output_dir = "../infil/site_res/prediction_metrics"
     silica_experiment_name = os.path.basename(os.path.normpath(pred_root))
     fastglioma_experiment_name = "fastglioma"
 
-    sample_slide_map_csv = (
-        "../../../playgrounds/data/db_srhdg/SRHcases_ForMelike-MP-2025-03-15.csv"
-    )
-    fg_score_ucsf_csv = "../../../playgrounds/data/db_srhdg/scoresforsanjeev_ucsf.csv"
-    prediction_keys = [
-        "area_soft_slide_tumor_probability",
-        "hard_slide_tumor_probability",
-        "soft_slide_tumor_probability",
-    ]
+    os.makedirs(silica_experiment_name)
+    output_prefix = os.path.join(silica_experiment_name, os.path.splitext(os.path.basename(prospective_csv))[0])
+
     prediction_display_keys = [
         get_prediction_display_key(prediction_key) for prediction_key in prediction_keys
     ]
