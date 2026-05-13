@@ -27,6 +27,7 @@ setup(
         "pyyaml",
         "matplotlib",
         "altair",
+        "pyvis",
         "nibabel",
         "monai",
         "timm",
