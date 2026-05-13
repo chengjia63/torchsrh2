@@ -1,0 +1,152 @@
+# Next LLM Handoff Notes
+## Context
+The user is working in `/Volumes/umms-tocho/code/chengjia/torchsrh2`.
+Important user constraints:
+- Do not run Python, scripts, or start servers.
+- Avoid broad scans such as blanket `find`, `ls`, or repo-wide searches. The server/filesystem is slow.
+- Do not run `git status`.
+- Prefer targeted reads of specific files only when absolutely needed.
+- Use `apply_patch` for edits.
+- Keep diffs minimal and localized.
+## What Was Done
+### New Clustering Package
+GMM-related scripts were moved out of:
+```text
+ts2/utils/silica_eval/infil/
+```
+into:
+```text
+ts2/utils/silica_eval/clustering/
+```
+Current relevant files:
+```text
+ts2/utils/silica_eval/clustering/__init__.py
+ts2/utils/silica_eval/clustering/fit_gmm.py
+ts2/utils/silica_eval/clustering/fit_consensus.py
+```
+### Consensus Clustering
+Created:
+```text
+ts2/utils/silica_eval/clustering/fit_consensus.py
+```
+It is analysis-first and does not implement inference yet.
+Features:
+- Global sampling via `global_sample_n`.
+- Base clustering ensemble over multiple `k_range` values and random seeds.
+- Defaults to `MiniBatchKMeans` because it should scale better for 2M normalized DINO-style SRH cell embeddings.
+- Also supports GMM base clusterings with `algorithm="gmm"`.
+- Produces:
+  - `consensus_assignments.csv`
+  - `consensus_assignments.npz`
+  - `base_clustering_metrics.csv`
+  - `base_clustering_specs.json`
+  - `consensus_metrics.csv`
+  - `consensus_cluster_summary.csv`
+  - `cluster_similarity.csv`
+  - `cluster_similarity.png/html`
+  - sampled cell-cell co-association matrix artifacts
+  - consensus TSNE artifacts
+Outliers are reported with `is_outlier`; they are not removed automatically.
+### Partial GMM Refactor
+`fit_gmm.py` was split into component modules:
+```text
+ts2/utils/silica_eval/clustering/data.py
+ts2/utils/silica_eval/clustering/embeddings.py
+ts2/utils/silica_eval/clustering/models.py
+ts2/utils/silica_eval/clustering/metrics.py
+ts2/utils/silica_eval/clustering/plots.py
+ts2/utils/silica_eval/clustering/joblib_utils.py
+ts2/utils/silica_eval/clustering/pipeline.py
+```
+Intended split:
+- `data.py`: embedding table loading, label merge, cell sampling, dataset/image helpers.
+- `embeddings.py`: embedding normalization and TSNE.
+- `models.py`: GMM fit/load/save.
+- `metrics.py`: cluster membership stats, metrics CSV, db mean save, metrics parsing.
+- `plots.py`: Altair/image artifacts.
+- `joblib_utils.py`: `tqdm_joblib`.
+- `pipeline.py`: currently should only own `ensure_output_dirs`, but see TODO.
+- `fit_gmm.py`: should be the runnable GMM main script and compatibility facade.
+## Current User Request
+The user asked to move these functions back into the GMM main file:
+```python
+fit_and_save_gmm_pipeline
+regenerate_metrics_for_existing_models
+```
+They should live directly in:
+```text
+ts2/utils/silica_eval/clustering/fit_gmm.py
+```
+The lower-level components should remain split out.
+## TODO
+### 1. Inspect Only Targeted Files
+Open only:
+```text
+ts2/utils/silica_eval/clustering/fit_gmm.py
+ts2/utils/silica_eval/clustering/pipeline.py
+```
+Do not run `git status`.
+Do not run broad `rg`, `find`, or `ls`.
+### 2. Fix `fit_gmm.py`
+In `fit_gmm.py`, make sure imports include:
+```python
+import torch
+from tqdm.auto import tqdm
+```
+Change the pipeline import from:
+```python
+from ts2.utils.silica_eval.clustering.pipeline import (
+    ensure_output_dirs,
+    fit_and_save_gmm_pipeline,
+    regenerate_metrics_for_existing_models,
+)
+```
+to:
+```python
+from ts2.utils.silica_eval.clustering.pipeline import ensure_output_dirs
+```
+Then paste the definitions of:
+```python
+fit_and_save_gmm_pipeline
+regenerate_metrics_for_existing_models
+```
+directly into `fit_gmm.py`, ideally before `_configure_logging()`.
+They should be identical to the current versions in `pipeline.py`.
+### 3. Simplify `pipeline.py`
+After moving the two functions into `fit_gmm.py`, remove them from:
+```text
+ts2/utils/silica_eval/clustering/pipeline.py
+```
+Leave only:
+```python
+import logging
+import os
+logger = logging.getLogger(__name__)
+def ensure_output_dirs(out_dir: str) -> None:
+    os.makedirs(f"{out_dir}/tsne", exist_ok=True)
+    os.makedirs(f"{out_dir}/models", exist_ok=True)
+    os.makedirs(f"{out_dir}/stats", exist_ok=True)
+    os.makedirs(f"{out_dir}/mixture_samples", exist_ok=True)
+    logger.info("Ensured output directories under %s", out_dir)
+```
+This matters because `fit_consensus.py` currently imports:
+```python
+from ts2.utils.silica_eval.clustering.pipeline import ensure_output_dirs
+```
+### 4. Check `fit_consensus.py` Import State
+`fit_consensus.py` was already changed to import from component modules directly, not from the `fit_gmm.py` facade.
+Expected import sources:
+```python
+from ts2.utils.silica_eval.clustering.data import ...
+from ts2.utils.silica_eval.clustering.embeddings import ...
+from ts2.utils.silica_eval.clustering.joblib_utils import tqdm_joblib
+from ts2.utils.silica_eval.clustering.metrics import ...
+from ts2.utils.silica_eval.clustering.pipeline import ensure_output_dirs
+from ts2.utils.silica_eval.clustering.plots import ...
+```
+No need to change this unless `pipeline.py` is deleted. Prefer not deleting `pipeline.py`.
+## Caution
+Several previous `apply_patch` and `sed` operations were interrupted because the filesystem was slow. It is unknown whether the last import patch to `fit_gmm.py` partially applied.
+Before editing, inspect the top of `fit_gmm.py` only.
+Do not assume the file is exactly as described above.
+
