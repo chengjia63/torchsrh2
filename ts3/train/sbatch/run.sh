@@ -43,4 +43,4 @@ for i in "${!COMBINATIONS[@]}"; do
   fi
 done
 wait
-config/train_abmil_panther_coral
+
