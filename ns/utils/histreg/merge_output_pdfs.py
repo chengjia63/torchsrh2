@@ -1,4 +1,4 @@
-import fitz  # PyMuPDF
+import fitz  #  pip install pymupdf
 import os
 import pandas as pd
 from os.path import join as opj
@@ -7,6 +7,7 @@ from tqdm import tqdm
 import pickle
 import numpy as np
 import einops
+
 
 def decompose_affine_matrix_batched(matrices):
     """
@@ -40,7 +41,7 @@ def decompose_affine_matrix_batched(matrices):
     sy = np.where(
         np.sin(theta) == 0,
         (A[:, 1, 1] - msy * np.sin(theta)) / np.cos(theta),
-        (msy * np.cos(theta) - A[:, 0, 1]) / np.sin(theta)
+        (msy * np.cos(theta) - A[:, 0, 1]) / np.sin(theta),
     )
 
     shear = msy / sy
@@ -51,9 +52,8 @@ def decompose_affine_matrix_batched(matrices):
         "scale_y": sy,
         "shear": np.degrees(shear),
         "tx": tx,
-        "ty": ty
+        "ty": ty,
     }
-
 
 
 def merge_two_pdfs(file1, file2, output_file):
@@ -79,63 +79,66 @@ def merge_two_pdfs(file1, file2, output_file):
     new_pdf.close()
 
 
-def main():
+def main() -> None:
 
-    block_align_out_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_rigid_ransac" #"/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_affine_ransac"
-    block_align_out_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_affine_ransac"
-    meta_root="/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ts2/playgrounds/pixel_alignment/sections_annot2/meta/"
-    block_align_viz_root = "./viz_out_crop_affine_ransac_0423"
-    block_align_viz_root_bad = "./viz_out_crop_affine_ransac_0423_reject"
-    align_finished = os.listdir(block_align_out_root)
+    review_series: str = "2605a"
 
-    #im = set([i.removesuffix("_align.pkl") for i in align_finished if i.endswith("_align.pkl")])
-    #to_review = sorted(im)
+    block_align_out_root = "/nfs/turbo/umms-tocho-snr/exp/chengjia/neuroslides/histreg/block_align_crop_affine_ransac"
+    meta_root = "/nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ns/utils/sections_annot/sections_annot2/meta"
+    block_align_viz_root = f"./toreview_{review_series}"
+    block_align_viz_root_bad = f"./toreview_{review_series}_REJECT"
 
-    to_review = pd.read_csv("data/to_reg_250320.csv")["block"].tolist()
+    to_review = pd.read_csv(f"playground/toreview_{review_series}.csv")["block"].tolist()
+    slide_idx_width = max(1, len(str(len(to_review))))
 
-    #previously_reviewed_root = "./viz_out_crop_affine"
-    #if previously_reviewed_root:
-    #    previously_reviewed = os.listdir(previously_reviewed_root)
-    #    previously_reviewed = [pr.removesuffix("_mask_align.pdf") for pr in previously_reviewed]
-    #    to_review = sorted(set(to_review).difference(previously_reviewed))
-
-    #previously_accepted_blocks = pd.read_csv("accepted.csv")["block"] 
-
-    #to_review = sorted(set(to_review).difference(previously_accepted_blocks))
     os.makedirs(block_align_viz_root, exist_ok=True)
     os.makedirs(block_align_viz_root_bad, exist_ok=True)
 
+    out_fname = opj(
+        block_align_viz_root, f"to_review_{datetime.now().strftime('%y%m%d')}.csv"
+    )
+    pd.DataFrame(to_review, columns=["block"]).to_csv(out_fname, index=False)
 
-    out_fname = opj(block_align_viz_root,
-                     f"to_review_{datetime.now().strftime('%y%m%d')}.csv") 
-    pd.DataFrame(to_review, columns=["block"]).to_csv(out_fname,
-                                                         index=False)
-
-    for tr in tqdm(to_review):
+    for slide_idx, tr in tqdm(enumerate(to_review, start=1), total=len(to_review)):
 
         try:
             block_meta = pd.read_csv(opj(meta_root, f"{tr}_sections_annot_meta.csv"))
 
-            stain_list = sorted(set(block_meta[~(block_meta["comment"]=="RM")]["Stain"].tolist()))
+            stain_list = sorted(
+                set(block_meta[~(block_meta["comment"] == "RM")]["Stain"].tolist())
+            )
             with open(opj(block_align_out_root, f"{tr}_align.pkl"), "rb") as fd:
                 align_results = pickle.load(fd)
 
-            decomposed_params = pd.DataFrame(decompose_affine_matrix_batched(einops.rearrange(align_results["matrices"], "he ihc mh mw -> (he ihc) mh mw")))
-            
-            reject = ((decomposed_params["shear"]>2).any() or
-                ((decomposed_params["scale_x"] - 1).abs() > 0.2).any() or
-                ((decomposed_params["scale_y"] - 1).abs() > 0.2).any() or
-                (align_results["num_matches"] <= 50).any())
+            decomposed_params = pd.DataFrame(
+                decompose_affine_matrix_batched(
+                    einops.rearrange(
+                        align_results["matrices"], "he ihc mh mw -> (he ihc) mh mw"
+                    )
+                )
+            )
+
+            reject = (
+                (decomposed_params["shear"] > 2).any()
+                or ((decomposed_params["scale_x"] - 1).abs() > 0.2).any()
+                or ((decomposed_params["scale_y"] - 1).abs() > 0.2).any()
+                or (align_results["num_matches"] <= 50).any()
+            )
 
             if reject:
                 curr_out_dir = block_align_viz_root_bad
             else:
                 curr_out_dir = block_align_viz_root
 
-            first =  opj(block_align_out_root, f"{tr}_im_align.pdf")
+            first = opj(block_align_out_root, f"{tr}_im_align.pdf")
             second = opj(block_align_out_root, f"{tr}_mask_align.pdf")
-            merge_two_pdfs(first, second, opj(curr_out_dir, f"{tr}_mask_align.pdf"))
+            out_pdf_name = (
+                f"{review_series}_{slide_idx:0{slide_idx_width}d}_{tr}_mask_align.pdf"
+            )
+            merge_two_pdfs(first, second, opj(curr_out_dir, out_pdf_name))
         except:
             print(f"no viz - {tr}")
 
-if __name__=="__main__": main()
+
+if __name__ == "__main__":
+    main()

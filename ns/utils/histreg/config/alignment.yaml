@@ -15,9 +15,9 @@ alignment:
   device: cuda
 
 infra:
-  svs_root: /nfs/mm-isilon/brainscans/dropbox/Slide_Incoming/svs
-  annot_root: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ns/utils/pixel_alignment/sections_annot2/block_annot/
-  out_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia/block_align_crop_affine_ransac
-  num_block_per_job: 60
-  blocks_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/histreg/data/to_reg_250423.csv
+  svs_root: /nfs/mm-isilon/brainscans/dropbox/neuroslides/svs/
+  annot_root: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ns/utils/sections_annot/sections_annot2/
+  out_dir: /nfs/turbo/umms-tocho-snr/exp/chengjia/neuroslides/histreg/block_align_crop_affine_ransac/
+  blocks_csv: /nfs/turbo/umms-tocho/code/chengjia/torchsrh2/ns/utils/histreg/config/data/to_reg_2605b.csv
+  num_block_per_job: 32
 

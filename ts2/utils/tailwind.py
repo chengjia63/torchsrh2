@@ -1,5 +1,5 @@
 from collections import namedtuple
-from typing import List, Dict
+from typing import Dict, List, Optional, Union
 import numpy as np
 import itertools
 
@@ -362,17 +362,17 @@ class TailwindColors:
     @staticmethod
     def get_steps(
         n: int,
-        s: int | list[int] | None = 6,
-    ) -> list[int]:
+        s: Optional[Union[int, List[int]]] = 6,
+    ) -> List[int]:
         if isinstance(s, int):
             return [s] * n
         return [int(v) for v in s]
 
     @staticmethod
     def __call__(
-        c: str | None = None,
-        nc: int | None = None,
-        s: int | list[int] | None = 6,
+        c: Optional[str] = None,
+        nc: Optional[int] = None,
+        s: Optional[Union[int, List[int]]] = 6,
     ) -> List[str]:
         """Return colors by explicit symbols or by sampled family count."""
 
